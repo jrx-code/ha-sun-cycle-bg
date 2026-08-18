@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.1.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.1.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -21,7 +21,7 @@
  * Performance contract: every animation is transform/opacity-only (runs on the
  * compositor), one animated layer each for rays / moon / stars, repaints only
  * when the sun moves >= 0.15 deg in elevation or >= 0.6 deg in azimuth
- * (~ every half minute). Measured on a 1280x400 RPi5 kiosk: 56 fps.
+ * (~ every half minute). Measured with this card on a 1280x400 RPi5 kiosk: 60 fps.
  *
  * Usage — add to every view you want painted (e.g. a hidden column or a
  * shared include):
@@ -162,7 +162,9 @@
       const wave = Math.pow(Math.max(0, Math.cos(t * bands * 2 * Math.PI)), softness);
       stops.push(`rgba(255,238,205,${(wave * peak).toFixed(3)}) ${(t * 360).toFixed(1)}deg`);
     }
-    return `conic-gradient(from 0deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
+    // Odd lobe count and a 23 deg offset: an even count centred on 0 deg lays the
+    // lobes out along the axes and reads as a cross, not as a fan.
+    return `conic-gradient(from 23deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
   }
 
   /* Moon drawn as the real phase: a lit region bounded by the terminator
@@ -425,7 +427,7 @@
       ray.style.opacity = (horizon * this._rayPeak).toFixed(3);
       ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
       ray.style.filter = this._rayBlur > 0 ? `blur(${this._rayBlur}px)` : '';
-      if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 4, 0.55, 0.5);
+      if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
 
       // --- moon: own position and phase -----------------------------------
       if (this._showMoon && isFinite(this._lat) && isFinite(this._lon)) {

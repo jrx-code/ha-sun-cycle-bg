@@ -178,7 +178,9 @@
       const wave = Math.pow(Math.max(0, Math.cos(u*bands*2*Math.PI)), softness);
       stops.push(`rgba(255,238,205,${(wave*peak).toFixed(3)}) ${(u*360).toFixed(1)}deg`);
     }
-    return `conic-gradient(from 0deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
+    // Odd lobe count and a 23 deg offset: an even count centred on 0 deg lays
+    // the lobes out along the axes and reads as a cross, not as a fan.
+    return `conic-gradient(from 23deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
   }
   const litPath = (k) => `M 0,-1 A 1,1 0 0 1 0,1 A ${Math.abs(1-2*k).toFixed(4)},1 0 0 ${k>0.5?1:0} 0,-1 Z`;
   document.getElementById('moon').innerHTML =
@@ -203,7 +205,7 @@
     const horizon = smoothstep(clamp(1-Math.abs(sun.alt)/22,0,1)) * smoothstep(clamp((sun.alt+6)/6,0,1));
     ray.style.opacity = (horizon*0.5).toFixed(3);
     ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
-    if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 4, 0.55, 0.5);
+    if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
 
     const mp = project(moon.alt, moon.az);
     const mEl = document.getElementById('moon');
@@ -218,7 +220,8 @@
     document.getElementById('stars').style.opacity = p.stars.toFixed(2);
   }
 
-  // URL params: ?t=<minutes> ?bare=1 ?seed=<n>  (frame rendering / deep links)
+  // URL params: ?t=<minutes> ?d=<day of year> ?lat=<deg> ?bare=1 ?seed=<n>
+  // (frame rendering / deep links)
   const Q = new URLSearchParams(location.search);
   let _seed = Q.has('seed') ? ((parseInt(Q.get('seed')) || 42) >>> 0) : null;
   const R = _seed === null ? Math.random : function () {
@@ -269,7 +272,10 @@
   dSlider.addEventListener('input', upd);
   latSlider.addEventListener('input', upd);
   slider.addEventListener('input', upd); upd();
-  if (Q.has('t')) { slider.value = Math.max(0, Math.min(1440, +Q.get('t') || 0)); upd(); }
+  if (Q.has('d')) dSlider.value = Math.max(0, Math.min(364, +Q.get('d') || 0));
+  if (Q.has('lat')) latSlider.value = Math.max(0, Math.min(66, +Q.get('lat') || 52));
+  if (Q.has('t')) slider.value = Math.max(0, Math.min(1440, +Q.get('t') || 0));
+  upd();
   if (Q.has('bare')) document.body.classList.add('bare');
   // Autoplay: full 24 h in ~60 s (24 min of day per second), loops until paused
   const playBtn = document.getElementById('play');

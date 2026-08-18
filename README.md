@@ -2,9 +2,9 @@
 
 ![Full day cycle — 24 h in 4 s](docs/cycle.gif)
 
-*Dawn · noon · sunset · night:*
+*The sun on its real arc: night, dawn, noon, sunset (52° N, early September):*
 
-![Dawn, noon, sunset and night phases](docs/phases.png)
+![Night, dawn, noon and sunset phases](docs/phases.png)
 
 A living day-cycle background for Home Assistant dashboards. One invisible
 Lovelace card paints the whole view from the **real position of the sun and
@@ -45,12 +45,13 @@ Designed for wall-mounted kiosk tablets:
 - one animated layer each for rays, moon and stars,
 - the palette repaints only when the sun moves ≥ 0.15° in elevation or ≥ 0.6°
   in azimuth (about every half minute),
-- the star field is 5 DOM nodes total (multi-point `box-shadow` stars,
-  group-level twinkle),
+- the star field is 5 painted nodes per copy — 10 for the drifting strip, 5
+  when rotating (multi-point `box-shadow` stars, group-level twinkle),
 - the whole astronomy pass is a few dozen floating-point operations per
   repaint — no dependencies, no network.
 
-Measured on a 1280×400 Raspberry Pi 5 kiosk (32-bit Chromium): **56 fps**.
+Measured with this card running on a 1280×400 Raspberry Pi 5 kiosk (32-bit
+Chromium, blur enabled): **60 fps**.
 
 `stars.rotate: true` is the one option with a real cost. Rotating a field
 about the pole means the layer has to cover the entire disc it sweeps, which
@@ -134,9 +135,16 @@ open it in a browser after changing anything.
 
 ## Demo
 
-Open [`demo/simulator.html`](demo/simulator.html) in a browser — a 24 h
-slider (with an autoplay button: full day in 60 s) that runs the exact same
-palette function against a simulated sun elevation.
+Open [`demo/simulator.html`](demo/simulator.html) in a browser. It runs the
+same astronomy and the same placement the card uses, with sliders for time of
+day, date and latitude, plus an autoplay button (full day in 60 s). Move the
+latitude slider to watch the diurnal arc stand up towards the equator and lie
+down towards the pole; move the date slider to watch it rise and fall with the
+seasons.
+
+The frames above were rendered from it — it accepts `?t=<minutes>`,
+`?d=<day of year>`, `?lat=<degrees>`, `?seed=<n>` (deterministic stars) and
+`?bare=1` (just the scene, no chrome).
 
 ## How it works
 
