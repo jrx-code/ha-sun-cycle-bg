@@ -1,0 +1,58 @@
+<div id="host"></div>
+<script>
+// minimal stand-ins for the HA view chrome the card climbs to
+class HuiViewContainer extends HTMLElement {}
+class HuiViewBackground extends HTMLElement {}
+class HuiView extends HTMLElement {}
+customElements.define('hui-view-container', HuiViewContainer);
+customElements.define('hui-view-background', HuiViewBackground);
+customElements.define('hui-view', HuiView);
+const FROZEN = new Date(Date.UTC(2026, 7, 28, 23, 43, 0));   // reference instant: moon high, deep night
+const RealDate = Date;
+Date = class extends RealDate {
+  constructor(...a) { return a.length ? new RealDate(...a) : new RealDate(FROZEN); }
+  static now() { return FROZEN.getTime(); }
+};
+</script>
+<script src="../sun-cycle-bg.js"></script>
+<script>
+const out = [];
+function scene(elev, azim) {
+  document.getElementById('host').innerHTML = '';
+  const cont = document.createElement('hui-view-container');
+  cont.appendChild(document.createElement('hui-view-background'));
+  cont.appendChild(document.createElement('hui-view'));
+  document.getElementById('host').appendChild(cont);
+  const card = document.createElement('sun-cycle-bg-card');
+  card.setConfig({ stars: { count: 40 } });
+  cont.insertBefore(card, cont.firstChild);
+  card.hass = {
+    states: { 'sun.sun': { attributes: { elevation: elev, azimuth: azim } } },
+    config: { latitude: 53.51821624932938, longitude: 14.457042217254639 }
+  };
+  const bg = cont.querySelector('hui-view-background');
+  const ray = cont.querySelector('.sun-cycle-ray');
+  const moon = cont.querySelector('.sun-cycle-moon');
+  const lit = moon && moon.querySelector('.scb-lit');
+  const stars = cont.querySelector('.sun-cycle-stars');
+  const m = /at ([\d.]+)% ([\d.]+)%/.exec(bg.style.background || '');
+  return {
+    elev, azim,
+    sunX: m ? +m[1] : null, sunY: m ? +m[2] : null,
+    rayOpacity: ray ? +ray.style.opacity : null,
+    rayBlur: ray ? ray.style.filter : null,
+    moonLeft: moon ? moon.style.left : null,
+    moonTop: moon ? moon.style.top : null,
+    moonAlpha: moon ? +moon.style.opacity : null,
+    litPath: lit ? lit.getAttribute('d') : null,
+    litRot: lit ? lit.getAttribute('transform') : null,
+    starDots: stars ? stars.querySelectorAll('.scs').length : 0,
+    bgHasGradient: /linear-gradient/.test(bg.style.background || '')
+  };
+}
+out.push(['WSCHOD  elev=+1 az=70 ', scene(1, 70)]);
+out.push(['POLUDNIE elev=+49 az=180', scene(49, 180)]);
+out.push(['ZACHOD  elev=+1 az=290', scene(1, 290)]);
+out.push(['NOC     elev=-16 az=322', scene(-16.18, 321.56)]);
+document.title = JSON.stringify(out);
+</script>

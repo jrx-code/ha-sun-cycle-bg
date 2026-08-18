@@ -16,21 +16,20 @@
   .card > p { margin: 0 0 14px; color: var(--muted); font-size: 14px; max-width: 82ch; }
   .scene { position: relative; aspect-ratio: 16/9; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); }
   .layer { position: absolute; inset: 0; }
-  .rayclip { position: absolute; inset: 0; overflow: hidden;
-    -webkit-mask-image: linear-gradient(200deg, black 40%, rgba(0,0,0,.55) 68%, transparent 92%);
-    mask-image: linear-gradient(200deg, black 40%, rgba(0,0,0,.55) 68%, transparent 92%); }
-  .ray { position: absolute; inset: -35%; animation: ray-sway 24s ease-in-out infinite; }
-  @keyframes ray-sway { 0% { transform: rotate(-4deg); } 50% { transform: rotate(3deg); } 100% { transform: rotate(-4deg); } }
+  .rayclip { position: absolute; inset: 0; overflow: hidden; }
+  .ray { position: absolute; inset: -45%; filter: blur(28px);
+    animation: ray-sway 42s ease-in-out infinite; transition: opacity 1s linear; }
+  @keyframes ray-sway { 0% { transform: rotate(-3deg); } 50% { transform: rotate(2.5deg); } 100% { transform: rotate(-3deg); } }
   @media (prefers-reduced-motion: reduce) { .ray { animation: none; } }
-  .moon { position: absolute; left: 13%; width: 19%; aspect-ratio: 1; transform: translate(-50%,-50%); pointer-events: none; }
-  .moon i { position: absolute; inset: 0; border-radius: 50%; display: block;
-    background: radial-gradient(circle, rgba(250,252,255,1) 0%, rgba(240,246,255,.95) 7%, rgba(222,233,250,.45) 13%, rgba(198,215,242,.20) 30%, rgba(182,202,236,.08) 48%, transparent 66%);
+  .moon { position: absolute; width: 15%; aspect-ratio: 1; transform: translate(-50%,-50%);
+    pointer-events: none; transition: opacity 1s linear; }
+  .moon svg { display: block; width: 100%; height: 100%; overflow: visible;
     animation: moon-shimmer 7s ease-in-out infinite; }
   @keyframes moon-shimmer { 0%,100% { transform: scale(1); opacity: .82; } 50% { transform: scale(1.05); opacity: 1; } }
   .stars { position: absolute; inset: 0; overflow: hidden; transition: opacity .3s linear; }
   .stardrift { position: absolute; top: 0; left: 0; width: 200%; height: 100%;
     animation: stardrift 90s linear infinite; will-change: transform; }
-  @keyframes stardrift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @keyframes stardrift { from { transform: translateX(-50%); } to { transform: translateX(0); } }
   .starhalf { position: absolute; top: 0; width: 50%; height: 100%; }
   .stars i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #eaf3ff;
     animation: tw 3.4s ease-in-out infinite; }
@@ -66,14 +65,14 @@
 <main>
   <div class="lead">
     <h1>Sun Cycle Background — day simulator</h1>
-    <p>The exact palette function the card runs on your dashboard, driven here by a simulated sun elevation instead of <code>sun.sun</code>. Sky colors, the sun halo (color, alpha and <em>position</em>), ray strength, the moon and star visibility all interpolate continuously — dawn, sunrise, noon, sunset, dusk and night simply fall out of the number of degrees above the horizon.</p>
+    <p>The exact palette and placement the card runs on your dashboard, driven here by real astronomy instead of <code>sun.sun</code>. The sun follows its true diurnal arc for the chosen latitude and date, the moon runs on its own ephemeris with its real phase, and the sky colors interpolate continuously — dawn, golden hour, dusk and night simply fall out of the sun's elevation.</p>
   </div>
   <section class="card">
     <h2>24 h simulator</h2>
-    <p>Drag the slider or press play (full day in 60 s). The sun rises from below the bottom edge and climbs; after sunset a silver moon rises on the left; stars twinkle and drift — rising at the right edge, setting at the left (sped up here ~20×; the card defaults to 30 min per screen width).</p>
+    <p>Drag the sliders or press play (full day in 60 s). The sun rises in the east, culminates in the south and sets in the west along a path tilted by (90° − latitude); crepuscular rays fan out near the horizon and fade as it climbs. The moon keeps its own schedule and phase. Stars drift east to west (sped up here ~20×; the card defaults to 30 min per screen width).</p>
     <div class="scene" id="scene">
       <div class="layer" id="sky"></div>
-      <div class="moon" id="moon"><i></i></div>
+      <div class="moon" id="moon"></div>
       <div class="stars" id="stars"></div>
       <div class="rayclip"><div class="ray" id="ray"></div></div>
     </div>
@@ -83,6 +82,14 @@
         <input type="range" id="t" min="0" max="1440" value="780" step="1" aria-label="Time of day">
         <div class="ticks"><span>00:00</span><span>03:00</span><span>06:00</span><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span><span>21:00</span><span>24:00</span></div>
       </div>
+      <div class="sliderbox">
+        <input type="range" id="d" min="0" max="364" value="171" step="1" aria-label="Day of year">
+        <div class="ticks"><span>Jan</span><span>Apr</span><span>Jul</span><span>Oct</span><span>Dec</span></div>
+      </div>
+      <div class="sliderbox" style="max-width:190px">
+        <input type="range" id="lat" min="0" max="66" value="52" step="1" aria-label="Latitude">
+        <div class="ticks"><span>0° equator</span><span>66° polar</span></div>
+      </div>
       <div class="phase"><b id="phname">Day</b><br><span id="phinfo"></span></div>
     </div>
   </section>
@@ -91,17 +98,17 @@
     <p>Between anchors everything is linear RGB interpolation — steps are invisible, because solar elevation moves by fractions of a degree per minute.</p>
     <div class="anchors" id="anchors"></div>
   </section>
-  <p class="note"><strong>Tuning:</strong> the palette lives in the <code>STOPS</code> table (same values here and in <code>sun-cycle-bg.js</code>): seven anchors keyed by elevation, each with sky RGB, sun halo, ray strength, star opacity and moon position.</p>
+  <p class="note"><strong>Tuning:</strong> the palette lives in the <code>STOPS</code> table (same values here and in <code>sun-cycle-bg.js</code>): seven anchors keyed by elevation, each with sky RGB, the sun halo and star opacity. Positions are not in the table — sun and moon are placed from their real coordinates, so latitude and date change the arc on their own.</p>
 </main>
 <script>
   const STOPS = [
-    {e:-18, name:'Night',            top:[11,16,32],   mid:[10,14,24],   bot:[7,10,18],    halo:[190,205,235,0],   ray:0,   stars:1,   hy:118, ma:1,   my:24},
-    {e:-9,  name:'Astro dawn', top:[17,24,48],   mid:[14,19,38],   bot:[10,13,24],   halo:[220,160,150,.22], ray:0,   stars:.65, hy:108, ma:.85, my:46},
-    {e:-4,  name:'Dawn / dusk',top:[28,36,64],   mid:[35,42,72],   bot:[51,44,78],   halo:[235,150,130,.45], ray:.08, stars:.2,  hy:96,  ma:.45, my:74},
-    {e:0,   name:'Sunrise / sunset',top:[43,63,102],  mid:[49,72,111],  bot:[39,64,100],  halo:[255,170,95,.58],  ray:.25, stars:0,   hy:80,  ma:0,   my:98},
-    {e:7,   name:'Golden hour',  top:[74,118,166], mid:[63,107,157], bot:[43,79,121],  halo:[255,205,130,.52], ray:.6,  stars:0,   hy:52,  ma:0,   my:112},
-    {e:22,  name:'Day',          top:[111,166,212],mid:[72,121,159], bot:[38,73,111],  halo:[255,235,180,.55], ray:.92, stars:0,   hy:16,  ma:0,   my:112},
-    {e:52,  name:'High noon', top:[127,178,220],mid:[76,126,173], bot:[38,73,111],  halo:[255,245,215,.6],  ray:1,   stars:0,   hy:-10, ma:0,   my:112},
+    {e:-18, name:'Night',            top:[11,16,32],   mid:[10,14,24],   bot:[7,10,18],    halo:[190,205,235,0], stars:1},
+    {e:-9,  name:'Astro dawn', top:[17,24,48],   mid:[14,19,38],   bot:[10,13,24],   halo:[220,160,150,.22], stars:.65},
+    {e:-4,  name:'Dawn / dusk',top:[28,36,64],   mid:[35,42,72],   bot:[51,44,78],   halo:[235,150,130,.45], stars:.2},
+    {e:0,   name:'Sunrise / sunset',top:[43,63,102],  mid:[49,72,111],  bot:[39,64,100],  halo:[255,170,95,.58], stars:0},
+    {e:7,   name:'Golden hour',  top:[74,118,166], mid:[63,107,157], bot:[43,79,121],  halo:[255,205,130,.52], stars:0},
+    {e:22,  name:'Day',          top:[111,166,212],mid:[72,121,159], bot:[38,73,111],  halo:[255,235,180,.55], stars:0},
+    {e:52,  name:'High noon', top:[127,178,220],mid:[76,126,173], bot:[38,73,111],  halo:[255,245,215,.6], stars:0},
   ];
   const lerp = (a,b,t) => a + (b-a)*t;
   const lerpA = (a,b,t) => a.map((v,i) => lerp(v, b[i], t));
@@ -112,27 +119,105 @@
     const a = STOPS[i], b = STOPS[i+1], t = (elev - a.e) / (b.e - a.e);
     return { name: t < .5 ? a.name : b.name,
       top: lerpA(a.top,b.top,t), mid: lerpA(a.mid,b.mid,t), bot: lerpA(a.bot,b.bot,t),
-      halo: lerpA(a.halo,b.halo,t), ray: lerp(a.ray,b.ray,t), stars: lerp(a.stars,b.stars,t), hy: lerp(a.hy,b.hy,t), ma: lerp(a.ma,b.ma,t), my: lerp(a.my,b.my,t) };
+      halo: lerpA(a.halo,b.halo,t), stars: lerp(a.stars,b.stars,t) };
   }
   const rgb = (c) => `rgb(${c.slice(0,3).map(Math.round).join(',')})`;
   const rgba = (c) => `rgba(${c.slice(0,3).map(Math.round).join(',')},${c[3].toFixed(2)})`;
-  function apply(p) {
-    const hy = p.hy;
-    document.getElementById('sky').style.background =
-      `radial-gradient(44% 48% at 96% ${hy}%, ${rgba(p.halo)} 0%, ${rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*.45])} 35%, transparent 72%),` +
-      `linear-gradient(200deg, ${rgb(p.top)} 0%, ${rgb(p.mid)} 48%, ${rgb(p.bot)} 100%)`;
-    const ray = document.getElementById('ray');
-    ray.style.opacity = p.ray.toFixed(2);
-    ray.style.transformOrigin = `79% ${15 + hy*0.35}%`;
-    ray.style.background = `conic-gradient(from 168deg at 79% ${15 + hy*0.35}%,` +
-      'transparent 0deg, rgba(255,250,222,.32) 10deg, transparent 21deg,' +
-      'transparent 27deg, rgba(255,250,222,.20) 36deg, transparent 46deg,' +
-      'transparent 52deg, rgba(255,250,222,.13) 61deg, transparent 71deg)';
-    document.getElementById('stars').style.opacity = p.stars.toFixed(2);
-    const moon = document.getElementById('moon');
-    moon.style.top = p.my.toFixed(1) + '%';
-    moon.style.opacity = p.ma.toFixed(2);
+  const D2R = Math.PI/180, R2D = 180/Math.PI;
+  const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+  const smoothstep = (x) => x*x*(3-2*x);
+
+  // --- astronomy (same series as the card) --------------------------------
+  function julian(dt) {
+    let y = dt.getUTCFullYear(), m = dt.getUTCMonth()+1;
+    const d = dt.getUTCDate() + (dt.getUTCHours() + dt.getUTCMinutes()/60)/24;
+    if (m <= 2) { y -= 1; m += 12; }
+    const A = Math.floor(y/100), B = 2 - A + Math.floor(A/4);
+    return Math.floor(365.25*(y+4716)) + Math.floor(30.6001*(m+1)) + d + B - 1524.5;
   }
+  const gmst = (J) => (280.46061837 + 360.98564736629*(J-2451545)) % 360;
+  function altaz(ra, dec, J, lat, lon) {
+    const H = ((gmst(J)+lon-ra)%360)*D2R, dr = dec*D2R, pr = lat*D2R;
+    const alt = Math.asin(Math.sin(dr)*Math.sin(pr) + Math.cos(dr)*Math.cos(pr)*Math.cos(H));
+    const az = Math.atan2(-Math.sin(H)*Math.cos(dr),
+                          Math.cos(pr)*Math.sin(dr) - Math.sin(pr)*Math.cos(dr)*Math.cos(H));
+    return { alt: alt*R2D, az: ((az*R2D)%360+360)%360 };
+  }
+  function sunEq(J) {
+    const n = J-2451545, L = (280.460+0.9856474*n)%360;
+    const g = ((357.528+0.9856003*n)%360)*D2R;
+    const lam = ((L + 1.915*Math.sin(g) + 0.020*Math.sin(2*g))%360)*D2R, eps = 23.439*D2R;
+    return { ra: ((Math.atan2(Math.cos(eps)*Math.sin(lam), Math.cos(lam))*R2D)%360+360)%360,
+             dec: Math.asin(Math.sin(eps)*Math.sin(lam))*R2D, lam: lam*R2D };
+  }
+  function moonEq(J) {
+    const T = (J-2451545)/36525, s = (x) => Math.sin(x*D2R);
+    const Lp=(218.316+481267.8813*T)%360, M=(357.529+35999.0503*T)%360;
+    const Mp=(134.963+477198.8676*T)%360, D=(297.850+445267.1115*T)%360, F=(93.272+483202.0175*T)%360;
+    const lam = (Lp + 6.289*s(Mp) + 1.274*s(2*D-Mp) + 0.658*s(2*D) + 0.214*s(2*Mp)
+      - 0.186*s(M) - 0.114*s(2*F) + 0.059*s(2*D-2*Mp) + 0.057*s(2*D-M-Mp)
+      + 0.053*s(2*D+Mp) + 0.046*s(2*D-M) - 0.041*s(M-Mp) - 0.035*s(D) - 0.031*s(M+Mp))%360;
+    const beta = 5.128*s(F) + 0.281*s(Mp+F) - 0.278*s(F-Mp) + 0.176*s(2*D-F)
+      - 0.075*s(2*F-Mp) - 0.041*s(Mp-2*F);
+    const eps=23.439*D2R, lr=lam*D2R, br=beta*D2R;
+    return { ra: ((Math.atan2(Math.sin(lr)*Math.cos(eps)-Math.tan(br)*Math.sin(eps), Math.cos(lr))*R2D)%360+360)%360,
+             dec: Math.asin(Math.sin(br)*Math.cos(eps)+Math.cos(br)*Math.sin(eps)*Math.sin(lr))*R2D,
+             lam: (lam+360)%360 };
+  }
+
+  // --- placement ----------------------------------------------------------
+  const AZ0 = 50, AZ1 = 310;
+  const project = (alt, az) => ({
+    x: clamp((az-AZ0)/(AZ1-AZ0), -0.05, 1.05)*100,
+    y: 92 - clamp((alt+6)/60, -0.1, 1)*86
+  });
+  function rayGradient(x, y, bands, softness, peak) {
+    const steps = bands*10, stops = [];
+    for (let i = 0; i <= steps; i++) {
+      const u = i/steps;
+      const wave = Math.pow(Math.max(0, Math.cos(u*bands*2*Math.PI)), softness);
+      stops.push(`rgba(255,238,205,${(wave*peak).toFixed(3)}) ${(u*360).toFixed(1)}deg`);
+    }
+    return `conic-gradient(from 0deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
+  }
+  const litPath = (k) => `M 0,-1 A 1,1 0 0 1 0,1 A ${Math.abs(1-2*k).toFixed(4)},1 0 0 ${k>0.5?1:0} 0,-1 Z`;
+  document.getElementById('moon').innerHTML =
+    '<svg viewBox="-2.6 -2.6 5.2 5.2"><defs><radialGradient id="mg">' +
+    '<stop offset="0%" stop-color="rgba(226,238,255,0.40)"/>' +
+    '<stop offset="38%" stop-color="rgba(210,226,252,0.13)"/>' +
+    '<stop offset="100%" stop-color="rgba(198,215,242,0)"/></radialGradient></defs>' +
+    '<circle r="2.6" fill="url(#mg)"/><circle r="1" fill="rgba(126,142,175,0.16)"/>' +
+    '<path class="lit" fill="#f4f8ff"/></svg>';
+
+  function apply(state) {
+    const { sun, moon, k, p } = state;
+    const sp = project(sun.alt, sun.az);
+    document.getElementById('sky').style.background =
+      `radial-gradient(38% 62% at ${sp.x.toFixed(1)}% ${sp.y.toFixed(1)}%, ` +
+      `${rgba(p.halo)} 0%, ${rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*0.42])} 28%, ` +
+      `${rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*0.12])} 62%, transparent 100%),` +
+      `linear-gradient(200deg, ${rgb(p.top)} 0%, ${rgb(p.mid)} 48%, ${rgb(p.bot)} 100%)`;
+
+    const ray = document.getElementById('ray');
+    const rx = (sp.x+45)/1.9, ry = (sp.y+45)/1.9;
+    const horizon = smoothstep(clamp(1-Math.abs(sun.alt)/22,0,1)) * smoothstep(clamp((sun.alt+6)/6,0,1));
+    ray.style.opacity = (horizon*0.5).toFixed(3);
+    ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
+    if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 4, 0.55, 0.5);
+
+    const mp = project(moon.alt, moon.az);
+    const mEl = document.getElementById('moon');
+    mEl.style.left = mp.x.toFixed(1)+'%';
+    mEl.style.top = mp.y.toFixed(1)+'%';
+    mEl.style.opacity = (clamp((-sun.alt-1)/8,0,1) * clamp((moon.alt+2)/8,0,1)).toFixed(2);
+    const lit = mEl.querySelector('.lit');
+    lit.setAttribute('d', litPath(k));
+    lit.setAttribute('transform',
+      `rotate(${(Math.atan2(sp.y-mp.y, sp.x-mp.x)*R2D).toFixed(1)})`);
+
+    document.getElementById('stars').style.opacity = p.stars.toFixed(2);
+  }
+
   // URL params: ?t=<minutes> ?bare=1 ?seed=<n>  (frame rendering / deep links)
   const Q = new URLSearchParams(location.search);
   let _seed = Q.has('seed') ? ((parseInt(Q.get('seed')) || 42) >>> 0) : null;
@@ -153,13 +238,36 @@
   const halfB = halfA.cloneNode(true); halfB.style.left = '50%';
   const driftEl = document.createElement('div'); driftEl.className = 'stardrift';
   driftEl.appendChild(halfA); driftEl.appendChild(halfB); stars.appendChild(driftEl);
-  // time -> simulated elevation (summer-ish curve for demo)
-  const elevFor = (min) => { const h = min/60; const x = Math.sin(Math.PI*(h-4.5)/16); return x >= 0 ? 60*x : Math.max(-18, 40*x); };
+  // real sun/moon for the chosen date, latitude and time (year fixed at 2026)
   const slider = document.getElementById('t');
-  const upd = () => { const min = +slider.value; const e = elevFor(min); const p = paletteFor(e); apply(p);
-    document.getElementById('phname').textContent = p.name;
+  const dSlider = document.getElementById('d');
+  const latSlider = document.getElementById('lat');
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function nameFor(e) {
+    if (e < -15) return 'Night'; if (e < -6) return 'Astro twilight';
+    if (e < -0.5) return 'Dawn / dusk'; if (e < 5) return 'Sunrise / sunset';
+    if (e < 15) return 'Golden hour'; if (e < 35) return 'Day'; return 'High noon';
+  }
+  const upd = () => {
+    const min = +slider.value, doy = +dSlider.value, lat = +latSlider.value;
+    const utc = new Date(Date.UTC(2026, 0, 1+doy, 0, min));   // local == UTC in the demo
+    const J = julian(utc);
+    const se = sunEq(J), me = moonEq(J);
+    const sun = altaz(se.ra, se.dec, J, lat, 0), moon = altaz(me.ra, me.dec, J, lat, 0);
+    const elong = ((me.lam - se.lam)%360+360)%360;
+    const k = (1-Math.cos(elong*D2R))/2;
+    const p = paletteFor(sun.alt);
+    apply({ sun, moon, k, p });
+    const dd = new Date(Date.UTC(2026, 0, 1+doy));
+    document.getElementById('phname').textContent = nameFor(sun.alt);
     document.getElementById('phinfo').textContent =
-      String(Math.floor(min/60)).padStart(2,'0') + ':' + String(min%60).padStart(2,'0') + ' · elevation ' + e.toFixed(1) + '°'; };
+      String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0') +
+      ' · ' + dd.getUTCDate() + ' ' + MONTHS[dd.getUTCMonth()] + ' · ' + lat + '°N' +
+      ' · sun ' + sun.alt.toFixed(1) + '° / az ' + sun.az.toFixed(0) + '°' +
+      ' · moon ' + (k*100).toFixed(0) + '% lit';
+  };
+  dSlider.addEventListener('input', upd);
+  latSlider.addEventListener('input', upd);
   slider.addEventListener('input', upd); upd();
   if (Q.has('t')) { slider.value = Math.max(0, Math.min(1440, +Q.get('t') || 0)); upd(); }
   if (Q.has('bare')) document.body.classList.add('bare');
@@ -191,6 +299,6 @@
   // anchors strip
   const an = document.getElementById('anchors');
   STOPS.forEach(s => { const d = document.createElement('div'); d.className = 'anchor';
-    d.innerHTML = `<div class="sw" style="background:radial-gradient(60% 70% at 85% ${s.hy}%, ${rgba(s.halo)} 0%, transparent 70%), linear-gradient(200deg, ${rgb(s.top)} 0%, ${rgb(s.mid)} 48%, ${rgb(s.bot)} 100%)"></div><p>${s.name}<br>${s.e}°</p>`;
+    d.innerHTML = `<div class="sw" style="background:radial-gradient(55% 65% at 62% 68%, ${rgba(s.halo)} 0%, transparent 72%), linear-gradient(200deg, ${rgb(s.top)} 0%, ${rgb(s.mid)} 48%, ${rgb(s.bot)} 100%)"></div><p>${s.name}<br>${s.e}°</p>`;
     an.appendChild(d); });
 </script>
