@@ -57,6 +57,11 @@
     border-radius: 12px; padding: 12px 16px; }
   .note strong { color: var(--text); }
   .note code { color: #b9c4d4; font: 12.5px ui-monospace, monospace; }
+  body.bare { padding: 0; }
+  body.bare .lead, body.bare .controls, body.bare .card > p, body.bare .card h2,
+  body.bare section.card:nth-of-type(2), body.bare .note { display: none; }
+  body.bare .card { padding: 0; border: none; background: none; border-radius: 0; }
+  body.bare .scene { position: fixed; inset: 0; aspect-ratio: auto; border-radius: 0; border: none; }
 </style>
 <main>
   <div class="lead">
@@ -128,13 +133,23 @@
     moon.style.top = p.my.toFixed(1) + '%';
     moon.style.opacity = p.ma.toFixed(2);
   }
+  // URL params: ?t=<minutes> ?bare=1 ?seed=<n>  (frame rendering / deep links)
+  const Q = new URLSearchParams(location.search);
+  let _seed = Q.has('seed') ? ((parseInt(Q.get('seed')) || 42) >>> 0) : null;
+  const R = _seed === null ? Math.random : function () {
+    _seed = (_seed + 0x6D2B79F5) >>> 0;
+    let z = _seed;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  };
   // demo star field — drifting strip (two identical copies, seamless wrap);
   // demo speed 90 s per screen-width, on the panel it is 1800 s (30 min)
   const stars = document.getElementById('stars');
   const halfA = document.createElement('div'); halfA.className = 'starhalf'; halfA.style.left = '0';
   for (let i = 0; i < 60; i++) { const s = document.createElement('i');
-    s.style.left = (Math.random()*100)+'%'; s.style.top = (Math.random()*100)+'%';
-    s.style.animationDelay = (Math.random()*3.4)+'s'; s.style.transform = 'scale('+(0.5+Math.random())+')'; halfA.appendChild(s); }
+    s.style.left = (R()*100)+'%'; s.style.top = (R()*100)+'%';
+    s.style.animationDelay = (R()*3.4)+'s'; s.style.transform = 'scale('+(0.5+R())+')'; halfA.appendChild(s); }
   const halfB = halfA.cloneNode(true); halfB.style.left = '50%';
   const driftEl = document.createElement('div'); driftEl.className = 'stardrift';
   driftEl.appendChild(halfA); driftEl.appendChild(halfB); stars.appendChild(driftEl);
@@ -146,6 +161,8 @@
     document.getElementById('phinfo').textContent =
       String(Math.floor(min/60)).padStart(2,'0') + ':' + String(min%60).padStart(2,'0') + ' · elevation ' + e.toFixed(1) + '°'; };
   slider.addEventListener('input', upd); upd();
+  if (Q.has('t')) { slider.value = Math.max(0, Math.min(1440, +Q.get('t') || 0)); upd(); }
+  if (Q.has('bare')) document.body.classList.add('bare');
   // Autoplay: full 24 h in ~60 s (24 min of day per second), loops until paused
   const playBtn = document.getElementById('play');
   let playing = false, rafId = null, lastTs = null, playPos = null;

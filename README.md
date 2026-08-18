@@ -1,5 +1,11 @@
 # Sun Cycle Background
 
+![Full day cycle — 24 h in 4 s](docs/cycle.gif)
+
+*Dawn · noon · sunset · night:*
+
+![Dawn, noon, sunset and night phases](docs/phases.png)
+
 A living day-cycle background for Home Assistant dashboards. One invisible
 Lovelace card paints the whole view from the **real position of the sun**
 (`sun.sun` elevation) and keeps it gently moving around the clock:
