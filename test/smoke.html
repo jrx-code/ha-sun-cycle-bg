@@ -35,10 +35,13 @@ function scene(elev, azim) {
   const moon = cont.querySelector('.sun-cycle-moon');
   const lit = moon && moon.querySelector('.scb-lit');
   const stars = cont.querySelector('.sun-cycle-stars');
-  const m = /at ([\d.]+)% ([\d.]+)%/.exec(bg.style.background || '');
+  const bgs = bg.style.background || '';
+  const band = /radial-gradient\((\d+)% (\d+)% at ([\d.]+)% 100%/.exec(bgs);
+  const m = /at ([\d.]+)% ([\d.]+)%\)?,?\s*rgba/.exec(bgs) || /at ([\d.]+)% ([\d.]+)%/g.exec(bgs);
   return {
     elev, azim,
     sunX: m ? +m[1] : null, sunY: m ? +m[2] : null,
+    bandW: band ? +band[1] : null, bandH: band ? +band[2] : null, bandX: band ? +band[3] : null,
     rayOpacity: ray ? +ray.style.opacity : null,
     rayBlur: ray ? ray.style.filter : null,
     moonLeft: moon ? moon.style.left : null,

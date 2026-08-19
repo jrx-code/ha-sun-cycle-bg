@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.1.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.2.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -11,6 +11,9 @@
  *     the west, on a path tilted by (90 - latitude) exactly like the sky,
  *   - near the horizon a soft, blurred crepuscular fan spreads from the sun
  *     and smoothly gives way to a plain aureole as the sun climbs,
+ *   - the twilight glow stays where it belongs: a wide, flat band along the
+ *     horizon centred on the sun's azimuth, instead of an oval riding along
+ *     with the disc and sliding off the bottom edge after sunset,
  *   - the moon runs on its own ephemeris (position AND phase), so it keeps its
  *     own schedule instead of mirroring the sun, and is drawn as the actual
  *     crescent/gibbous shape with the bright limb facing the sun,
@@ -29,6 +32,7 @@
  *   type: custom:sun-cycle-bg-card
  *   # all options are optional:
  *   sun_entity: sun.sun
+ *   twilight_palette: false   # true = warmer amber dusk anchors instead of mauve
  *   azimuth: [50, 310]    # sky window mapped across the frame, degrees
  *   rays:
  *     blur: 28            # px; 0 disables the blur filter
@@ -61,7 +65,16 @@
     { e: 22, top: [111, 166, 212], mid: [72, 121, 159], bot: [38, 73, 111], halo: [255, 235, 180, 0.55], stars: 0 },
     { e: 52, top: [127, 178, 220], mid: [76, 126, 173], bot: [38, 73, 111], halo: [255, 245, 215, 0.6], stars: 0 },
   ];
-  function paletteFor(elev) {
+  // Opt-in warmer dusk: the default anchors drift into mauve around -4 deg,
+  // which reads grey once the glow spreads along the horizon.
+  const WARM_DUSK = { '-9': [235, 120, 86, 0.26], '-4': [252, 138, 84, 0.50], '0': [255, 168, 88, 0.60] };
+  function paletteFor(elev, warmDusk) {
+    const TABLE = warmDusk
+      ? STOPS.map((s) => (WARM_DUSK[String(s.e)] ? { ...s, halo: WARM_DUSK[String(s.e)] } : s))
+      : STOPS;
+    return paletteFrom(TABLE, elev);
+  }
+  function paletteFrom(STOPS, elev) {
     if (elev <= STOPS[0].e) return STOPS[0];
     if (elev >= STOPS[STOPS.length - 1].e) return STOPS[STOPS.length - 1];
     let i = 0;
@@ -333,6 +346,7 @@
       this._rayBlur = r && r.blur !== undefined ? r.blur : 28;
       this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
       this._showMoon = this._cfg.moon !== false;
+      this._warmDusk = this._cfg.twilight_palette === true;
     }
 
     set hass(h) {
@@ -383,17 +397,36 @@
     _apply(force) {
       const c = this._container, e = this._elev;
       if (!c || !c.isConnected || e === undefined) return;
-      const p = paletteFor(e);
+      const p = paletteFor(e, this._warmDusk);
 
       // --- sun position: real arc when azimuth is available ---------------
       const sunPos = this._azim !== null ? this._project(e, this._azim)
                                          : { x: 96, y: 92 - clamp((e + 6) / 60, -0.1, 1) * 86 };
 
+      // --- twilight glow ---------------------------------------------------
+      // The scattered light of dusk belongs to the horizon, not to the disc:
+      // a wide, flat band centred on the sun's azimuth at the bottom edge. It
+      // widens as the sun sinks (light scatters along the whole horizon) and
+      // fades out by roughly -15 deg, before its centre can drift off-frame.
+      // The disc keeps its own aureole, which grows back to the full daytime
+      // 38% x 62% above ~14 deg — so full daylight looks exactly as before.
+      const u = clamp(1 - (e + 8) / 20, 0, 1);
+      const bandW = 70 + 120 * u, bandH = 26 + 16 * u;
+      const bandA = smoothstep(clamp(1 - Math.abs(e + 1) / 14, 0, 1));
+      const discA = smoothstep(clamp((e + 2) / 8, 0, 1));
+      const day = smoothstep(clamp((e - 2) / 12, 0, 1));
+      const dw = lerp(26, 38, day), dh = lerp(46, 62, day);
+      const sx = sunPos.x.toFixed(1), sy = sunPos.y.toFixed(1);
+
       const bg = c.querySelector('hui-view-background');
       if (bg) bg.style.background =
-        `radial-gradient(38% 62% at ${sunPos.x.toFixed(1)}% ${sunPos.y.toFixed(1)}%, ` +
-        `${rgba(p.halo, 1)} 0%, ${rgba(p.halo, 0.42)} 28%, ${rgba(p.halo, 0.12)} 62%, ` +
-        'transparent 100%),' +
+        `radial-gradient(${bandW.toFixed(0)}% ${bandH.toFixed(0)}% at ${sx}% 100%, ` +
+        `${rgba(p.halo, 0.85 * bandA)} 0%, ${rgba(p.halo, 0.32 * bandA)} 38%, ` +
+        `${rgba(p.halo, 0.07 * bandA)} 70%, transparent 100%),` +
+        `radial-gradient(${dw.toFixed(0)}% ${dh.toFixed(0)}% at ${sx}% ${sy}%, ` +
+        `${rgba(p.halo, discA)} 0%, ` +
+        `${rgba(p.halo, lerp(0.35, 0.42, day) * discA)} ${(28 * lerp(0.74, 1, day)).toFixed(0)}%, ` +
+        `${rgba(p.halo, 0.12 * discA * day)} 62%, transparent 100%),` +
         `linear-gradient(200deg, ${rgb(p.top)} 0%, ${rgb(p.mid)} 48%, ${rgb(p.bot)} 100%)`;
 
       const root = c.getRootNode();

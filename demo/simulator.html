@@ -194,10 +194,20 @@
   function apply(state) {
     const { sun, moon, k, p } = state;
     const sp = project(sun.alt, sun.az);
+    // twilight glow anchored to the horizon + the disc's own aureole (v1.2.0)
+    const e = sun.alt;
+    const u = clamp(1-(e+8)/20,0,1), bandW = 70+120*u, bandH = 26+16*u;
+    const bandA = smoothstep(clamp(1-Math.abs(e+1)/14,0,1));
+    const discA = smoothstep(clamp((e+2)/8,0,1));
+    const day = smoothstep(clamp((e-2)/12,0,1));
+    const dw = 26+(38-26)*day, dh = 46+(62-46)*day;
+    const ha = (m) => rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*m]);
     document.getElementById('sky').style.background =
-      `radial-gradient(38% 62% at ${sp.x.toFixed(1)}% ${sp.y.toFixed(1)}%, ` +
-      `${rgba(p.halo)} 0%, ${rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*0.42])} 28%, ` +
-      `${rgba([p.halo[0],p.halo[1],p.halo[2],p.halo[3]*0.12])} 62%, transparent 100%),` +
+      `radial-gradient(${bandW.toFixed(0)}% ${bandH.toFixed(0)}% at ${sp.x.toFixed(1)}% 100%, ` +
+      `${ha(0.85*bandA)} 0%, ${ha(0.32*bandA)} 38%, ${ha(0.07*bandA)} 70%, transparent 100%),` +
+      `radial-gradient(${dw.toFixed(0)}% ${dh.toFixed(0)}% at ${sp.x.toFixed(1)}% ${sp.y.toFixed(1)}%, ` +
+      `${ha(discA)} 0%, ${ha((0.35+0.07*day)*discA)} ${(28*(0.74+0.26*day)).toFixed(0)}%, ` +
+      `${ha(0.12*discA*day)} 62%, transparent 100%),` +
       `linear-gradient(200deg, ${rgb(p.top)} 0%, ${rgb(p.mid)} 48%, ${rgb(p.bot)} 100%)`;
 
     const ray = document.getElementById('ray');

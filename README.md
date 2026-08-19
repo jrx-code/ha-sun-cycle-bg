@@ -19,6 +19,12 @@ moon**, and keeps it gently moving around the clock:
   in the west along a path tilted by (90° − your latitude), exactly like the
   sky outside. The arc flattens in winter and towers in summer on its own,
   because the data does.
+- **Twilight glow that stays at the horizon** — the scattered light of dusk
+  and dawn is a wide, flat band along the bottom of the sky, centred on the
+  sun's azimuth. It widens as the sun sinks (light scatters along the whole
+  horizon, not just towards the sun) and fades out before its centre can drift
+  off-frame. The disc keeps its own aureole, which grows back to its full
+  daytime size above ~14°, so broad daylight looks exactly as it did.
 - **Crepuscular rays** — a wide, blurred fan spreads from the sun near the
   horizon and, as the sun climbs, fades smoothly (smoothstep over 0–22° of
   elevation) into a plain aureole. No hard edges, no visible switch, nothing
@@ -86,6 +92,7 @@ All options, with defaults:
 ```yaml
 type: custom:sun-cycle-bg-card
 sun_entity: sun.sun     # any entity with `elevation` (and ideally `azimuth`)
+twilight_palette: false # true = warmer amber dusk anchors instead of mauve
 azimuth: [50, 310]      # sky window mapped across the frame, degrees
 rays:
   blur: 28              # px of blur on the ray fan; 0 disables the filter
@@ -130,8 +137,8 @@ series is checked against textbook geometry: 1.6° from the sun at new moon,
 about three pixels.
 
 `test/smoke.html` runs the card against stubbed view chrome at a frozen
-instant and prints the resulting sun/moon positions, ray opacity and phase —
-open it in a browser after changing anything.
+instant and prints the resulting sun/moon positions, ray opacity, phase and
+the twilight band's geometry — open it in a browser after changing anything.
 
 ## Demo
 
