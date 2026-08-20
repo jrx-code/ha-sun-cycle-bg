@@ -17,24 +17,36 @@ Date = class extends RealDate {
 <script src="../sun-cycle-bg.js"></script>
 <script>
 const out = [];
-function scene(elev, azim) {
+function buduj(elev, azim, extra) {
   document.getElementById('host').innerHTML = '';
   const cont = document.createElement('hui-view-container');
+  // Give it the kiosk view's size: the sun blur is a share of the disc, which
+  // is a share of the container width, so a zero-width stand-in would silently
+  // test the "no blur" branch only.
+  cont.style.cssText = 'display:block;position:relative;width:1920px;height:1030px';
   cont.appendChild(document.createElement('hui-view-background'));
   cont.appendChild(document.createElement('hui-view'));
   document.getElementById('host').appendChild(cont);
   const card = document.createElement('sun-cycle-bg-card');
-  card.setConfig({ stars: { count: 40 } });
+  card.setConfig(Object.assign({ stars: { count: 40 } }, extra || {}));
   cont.insertBefore(card, cont.firstChild);
   card.hass = {
     states: { 'sun.sun': { attributes: { elevation: elev, azimuth: azim } } },
     config: { latitude: 53.51821624932938, longitude: 14.457042217254639 }
   };
+  return cont;
+}
+// Reading is split from building: the moon artwork only reaches the DOM after
+// its file decodes, so the picture-mode checks build, wait, then read.
+function czytaj(cont, elev, azim) {
   const bg = cont.querySelector('hui-view-background');
   const ray = cont.querySelector('.sun-cycle-ray');
   const moon = cont.querySelector('.sun-cycle-moon');
   const lit = moon && moon.querySelector('.scb-lit');
   const stars = cont.querySelector('.sun-cycle-stars');
+  const sunDisc = cont.querySelector('.sun-cycle-sun');
+  const spin = moon && moon.querySelector('.scb-spin');
+  const mimg = moon && moon.querySelector('image');
   const bgs = bg.style.background || '';
   const band = /radial-gradient\((\d+)% (\d+)% at ([\d.]+)% 100%/.exec(bgs);
   const m = /at ([\d.]+)% ([\d.]+)%\)?,?\s*rgba/.exec(bgs) || /at ([\d.]+)% ([\d.]+)%/g.exec(bgs);
@@ -50,12 +62,42 @@ function scene(elev, azim) {
     litPath: lit ? lit.getAttribute('d') : null,
     litRot: lit ? lit.getAttribute('transform') : null,
     starDots: stars ? stars.querySelectorAll('.scs').length : 0,
-    bgHasGradient: /linear-gradient/.test(bg.style.background || '')
+    bgHasGradient: /linear-gradient/.test(bg.style.background || ''),
+    // artwork path (1.3.0); null on the drawn card
+    sunDiscW: sunDisc ? sunDisc.style.width : null,
+    sunDiscPos: sunDisc ? sunDisc.style.left + '/' + sunDisc.style.top : null,
+    sunDiscShift: sunDisc ? sunDisc.style.transform : null,
+    sunDiscAlpha: sunDisc ? +sunDisc.style.opacity : null,
+    sunDiscFilter: sunDisc ? sunDisc.style.filter : null,
+    moonMode: moon && moon.firstElementChild ? moon.firstElementChild.dataset.mode : null,
+    moonSpin: spin ? spin.getAttribute('transform') : null,
+    moonImgBox: mimg ? ['x','y','width','height'].map(a => mimg.getAttribute(a)).join(' ') : null,
+    moonFilter: moon ? (moon.style.filter || null) : null,
   };
 }
+const scene = (elev, azim, extra) => czytaj(buduj(elev, azim, extra), elev, azim);
 out.push(['WSCHOD  elev=+1 az=70 ', scene(1, 70)]);
 out.push(['POLUDNIE elev=+49 az=180', scene(49, 180)]);
 out.push(['ZACHOD  elev=+1 az=290', scene(1, 290)]);
 out.push(['NOC     elev=-16 az=322', scene(-16.18, 321.56)]);
-document.title = JSON.stringify(out);
+
+// 1.3.0: the same instants with artwork configured. The moon needs its file
+// decoded before the SVG can be built, so the picture-mode checks wait for it.
+const OBRAZKI = {
+  sun_image: '../demo/assets/sun.png',
+  sun_image_width: 10.5,
+  sun_image_blur: 11.5,
+  sun_image_disc: [0.78878, 0.50816, 0.48469],
+  moon_image: '../demo/assets/moon.png',
+  moon_image_width: 13,
+  moon_image_disc: [0.42870, 0.5, 0.5],
+};
+out.push(['OBRAZKI dzien  elev=+49', scene(49, 180, OBRAZKI)]);
+const contNoc = buduj(-16.18, 321.56, OBRAZKI);
+out.push(['OBRAZKI noc  przed wczytaniem pliku', czytaj(contNoc, -16.18, 321.56)]);
+setTimeout(() => {
+  out.push(['OBRAZKI noc  po wczytaniu pliku', czytaj(contNoc, -16.18, 321.56)]);
+  document.title = JSON.stringify(out);
+  window.__smokeDone = true;
+}, 400);
 </script>

@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.2.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.3.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -42,6 +42,35 @@
  *     count: 90           # stars visible on screen
  *     drift: 1800         # seconds per screen-width, 0 = static
  *     rotate: false       # true = rotate about the pole instead of drifting
+ *
+ *   # Optional: draw the discs from your own artwork instead of the render.
+ *   # Both are independent; whatever is left out keeps the drawn version. The
+ *   # images are NOT shipped with the card — point these at your own files
+ *   # (e.g. /local/...), so the card carries no third-party artwork.
+ *   sun_image: /local/sun-cycle/sun.png
+ *   sun_image_width: 10.5   # disc diameter, % of the view width
+ *   sun_image_blur: 11.5    # % of that diameter; 0 = none. A sharp disc reads
+ *                           # as a sticker pasted on the sky.
+ *   sun_image_disc: [0.789, 0.508, 0.485]   # see below
+ *   moon_image: /local/sun-cycle/moon.png
+ *   moon_image_width: 13
+ *   moon_image_disc: [0.429, 0.5, 0.5]
+ *
+ * `*_image_disc` is [diameter / image width, cx / image width, cy / image
+ * height] — where the disc actually sits inside the file. It matters because
+ * artwork rarely fills its frame: a sun render carries rays sticking out on one
+ * side, a moon render carries a baked glow, and placing such a file by its own
+ * centre puts the disc beside its aureole. Measure it from the alpha channel.
+ * Default [1, 0.5, 0.5] = the disc fills a square image.
+ *
+ * The sun disc has no drawn counterpart — without `sun_image` the sun is the
+ * aureole and the ray fan, as before. It fades out below -3 deg elevation:
+ * the projection parks anything under the horizon on the bottom edge rather
+ * than pushing it out of frame, so an un-faded disc would sit there all night.
+ * The moon image is clipped by the terminator, so the phase still shows and the
+ * artwork serves as the texture of the lit part. Both discs are graded to the
+ * sky palette (the sun reddens and dims towards the horizon, the moon pales at
+ * dusk) so they do not read as pasted on.
  *
  * If a `#star-twinkle-layer` element from a different star card is present,
  * its opacity is driven too (fades at dawn, returns at dusk).
@@ -151,6 +180,12 @@
     '.sun-cycle-clip{position:absolute;inset:0;overflow:hidden;pointer-events:none;}' +
     '.sun-cycle-ray{position:absolute;inset:-45%;animation:sun-ray-sway 42s ease-in-out infinite;' +
     'transition:opacity 3s linear;will-change:transform,opacity;}' +
+    // The sun disc exists only when `sun_image` is set; it carries a blur
+    // filter, so no transform animation rides on it (re-filtering every frame
+    // is exactly what the performance contract is there to avoid).
+    '.sun-cycle-sun{position:absolute;pointer-events:none;transition:opacity 2s linear;' +
+    'will-change:opacity;}' +
+    '.sun-cycle-sun>img{display:block;width:100%;height:auto;}' +
     '.sun-cycle-moon{position:absolute;width:15%;max-width:190px;aspect-ratio:1;' +
     'transform:translate(-50%,-50%);pointer-events:none;transition:opacity 2s linear;' +
     'will-change:opacity;}' +
@@ -180,12 +215,28 @@
     return `conic-gradient(from 23deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
   }
 
+  /* Where the disc actually sits inside a supplied image, as fractions:
+     [diameter / width, cx / width, cy / height]. Artwork rarely fills its
+     frame — a sun render has rays sticking out on one side, a moon render has
+     a baked glow — and placing such a file by its own centre puts the disc
+     beside its aureole. */
+  function discSpec(v) {
+    const a = Array.isArray(v) ? v : [];
+    const n = (x, def) => (isFinite(x) && Number(x) > 0 ? Number(x) : def);
+    return { dia: n(a[0], 1), cx: isFinite(a[1]) ? Number(a[1]) : 0.5,
+             cy: isFinite(a[2]) ? Number(a[2]) : 0.5 };
+  }
+
   /* Moon drawn as the real phase: a lit region bounded by the terminator
-     ellipse, rotated so the bright limb faces the sun on screen. */
-  function moonSVG() {
+     ellipse, rotated so the bright limb faces the sun on screen. With `img`
+     the same terminator becomes a clip path and the artwork is the lit
+     texture — the mask turns towards the sun while the image counter-rotates,
+     so the maria stay upright. `ar` is the image's height/width. */
+  function moonSVG(img, disc, ar) {
     const ns = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(ns, 'svg');
     svg.setAttribute('viewBox', '-2.6 -2.6 5.2 5.2');
+    svg.dataset.mode = img ? 'image' : 'drawn';
     const defs = document.createElementNS(ns, 'defs');
     const grad = document.createElementNS(ns, 'radialGradient');
     grad.setAttribute('id', 'scb-moon-glow');
@@ -206,9 +257,36 @@
     dark.setAttribute('fill', 'rgba(126,142,175,0.16)');
     svg.appendChild(dark);
     const lit = document.createElementNS(ns, 'path');
-    lit.setAttribute('fill', '#f4f8ff');
     lit.setAttribute('class', 'scb-lit');
-    svg.appendChild(lit);
+    if (!img) {
+      lit.setAttribute('fill', '#f4f8ff');
+      svg.appendChild(lit);
+      return svg;
+    }
+    // The terminator becomes a clip path instead of a filled shape.
+    const clip = document.createElementNS(ns, 'clipPath');
+    clip.setAttribute('id', 'scb-moon-clip');
+    clip.appendChild(lit);
+    defs.appendChild(clip);
+    // Map the file onto the unit circle: the disc, not the frame, has to land
+    // on r = 1, and the disc is generally off-centre in the file.
+    const w = 2 / disc.dia, h = w * ar;
+    const im = document.createElementNS(ns, 'image');
+    im.setAttribute('href', img);
+    im.setAttribute('x', (-w * disc.cx).toFixed(4));
+    im.setAttribute('y', (-h * disc.cy).toFixed(4));
+    im.setAttribute('width', w.toFixed(4));
+    im.setAttribute('height', h.toFixed(4));
+    const spin = document.createElementNS(ns, 'g');   // turns towards the sun
+    spin.setAttribute('class', 'scb-spin');
+    const hold = document.createElementNS(ns, 'g');   // keeps the maria upright
+    hold.setAttribute('class', 'scb-hold');
+    hold.appendChild(im);
+    const clipped = document.createElementNS(ns, 'g');
+    clipped.setAttribute('clip-path', 'url(#scb-moon-clip)');
+    clipped.appendChild(hold);
+    spin.appendChild(clipped);
+    svg.appendChild(spin);
     return svg;
   }
   function litPath(k) {
@@ -347,6 +425,30 @@
       this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
       this._showMoon = this._cfg.moon !== false;
       this._warmDusk = this._cfg.twilight_palette === true;
+
+      // --- optional artwork for the two discs ----------------------------
+      const num = (v, def) => (isFinite(v) ? Number(v) : def);
+      this._sunImg = typeof this._cfg.sun_image === 'string' ? this._cfg.sun_image : null;
+      this._sunImgW = num(this._cfg.sun_image_width, 10.5);
+      this._sunImgBlur = num(this._cfg.sun_image_blur, 11.5);
+      this._sunDisc = discSpec(this._cfg.sun_image_disc);
+      this._moonImg = typeof this._cfg.moon_image === 'string' ? this._cfg.moon_image : null;
+      this._moonImgW = num(this._cfg.moon_image_width, 0);
+      this._moonDisc = discSpec(this._cfg.moon_image_disc);
+      // The moon SVG needs the file's aspect ratio to place the <image>, and
+      // that is only known once the file is decoded. Until then the drawn moon
+      // stays up; the repaint on load swaps it in.
+      this._moonAR = null;
+      if (this._moonImg) {
+        const probe = new Image();
+        probe.onload = () => {
+          if (probe.naturalWidth > 0) {
+            this._moonAR = probe.naturalHeight / probe.naturalWidth;
+            this._apply(true);
+          }
+        };
+        probe.src = this._moonImg;
+      }
     }
 
     set hass(h) {
@@ -462,6 +564,40 @@
       ray.style.filter = this._rayBlur > 0 ? `blur(${this._rayBlur}px)` : '';
       if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
 
+      // --- sun disc, when artwork is supplied ------------------------------
+      if (this._sunImg) {
+        let disc = c.querySelector('.sun-cycle-sun');
+        if (!disc) {
+          disc = document.createElement('div');
+          disc.className = 'sun-cycle-sun';
+          const im = document.createElement('img');
+          im.src = this._sunImg;
+          im.alt = '';
+          disc.appendChild(im);
+          this._before(c, disc);
+        }
+        const d = this._sunDisc;
+        // The element is sized by the *disc*, so the whole file is wider by
+        // 1 / dia; the offsets put the disc centre, not the file centre, on
+        // the projected position.
+        disc.style.width = (this._sunImgW / d.dia).toFixed(3) + '%';
+        disc.style.left = sunPos.x.toFixed(1) + '%';
+        disc.style.top = sunPos.y.toFixed(1) + '%';
+        disc.style.transform =
+          `translate(${(-d.cx * 100).toFixed(3)}%, ${(-d.cy * 100).toFixed(3)}%)`;
+        // Below -3 deg the projection has nowhere left to put the sun, so it
+        // would sit on the bottom edge glowing all night. Fade it instead.
+        disc.style.opacity = smoothstep(clamp((e + 3) / 6, 0, 1)).toFixed(3);
+        // Blur is a share of the disc diameter, never a pixel figure: the same
+        // card runs on a 430 px card and a 1920 px kiosk view.
+        const px = (c.clientWidth || 0) * this._sunImgW / 100 * this._sunImgBlur / 100;
+        disc.style.filter =
+          (px > 0.05 ? `blur(${px.toFixed(2)}px) ` : '') +
+          `brightness(${lerp(0.86, 1.06, day).toFixed(3)}) ` +
+          `saturate(${lerp(1.3, 0.95, day).toFixed(3)}) ` +
+          `hue-rotate(${lerp(-13, 0, day).toFixed(1)}deg)`;
+      }
+
       // --- moon: own position and phase -----------------------------------
       if (this._showMoon && isFinite(this._lat) && isFinite(this._lon)) {
         const J = julian(new Date());
@@ -473,23 +609,45 @@
         // visible when the sky is dark enough and the moon is up
         const alpha = clamp((-e - 1) / 8, 0, 1) * clamp((mp.alt + 2) / 8, 0, 1);
 
+        // Artwork can only be used once its aspect ratio is known; until the
+        // probe resolves, and forever if it fails, the drawn moon stands in.
+        const useImg = !!(this._moonImg && this._moonAR);
+        const tryb = useImg ? 'image' : 'drawn';
         let moon = c.querySelector('.sun-cycle-moon');
         if (!moon) {
           moon = document.createElement('div');
           moon.className = 'sun-cycle-moon';
-          moon.appendChild(moonSVG());
           this._before(c, moon);
+        }
+        const svg = moon.firstElementChild;
+        if (!svg || svg.dataset.mode !== tryb) {
+          moon.textContent = '';
+          moon.appendChild(moonSVG(useImg ? this._moonImg : null, this._moonDisc, this._moonAR));
+        }
+        if (this._moonImgW > 0) {
+          moon.style.width = this._moonImgW + '%';
+          moon.style.maxWidth = 'none';       // the 190 px cap is for the drawn disc
         }
         moon.style.left = pos.x.toFixed(1) + '%';
         moon.style.top = pos.y.toFixed(1) + '%';
         moon.style.opacity = alpha.toFixed(2);
+        // Bright limb points at the sun in the same projection. The lit region
+        // is drawn facing +x, and SVG rotate() turns clockwise in the same
+        // y-down frame atan2 measures in, so the angle maps directly.
+        const ang = Math.atan2(sunPos.y - pos.y, sunPos.x - pos.x) * R2D;
         const lit = moon.querySelector('.scb-lit');
-        if (lit) {
-          lit.setAttribute('d', litPath(k));
-          // Bright limb points at the sun in the same projection. The lit
-          // region is drawn facing +x, and SVG rotate() turns clockwise in the
-          // same y-down frame atan2 measures in, so the angle maps directly.
-          const ang = Math.atan2(sunPos.y - pos.y, sunPos.x - pos.x) * R2D;
+        if (lit) lit.setAttribute('d', litPath(k));
+        if (useImg) {
+          const spin = moon.querySelector('.scb-spin');
+          const hold = moon.querySelector('.scb-hold');
+          if (spin) spin.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+          if (hold) hold.setAttribute('transform', `rotate(${(-ang).toFixed(1)})`);
+          // Pale at dusk, full brightness deep in the night — otherwise a photo
+          // of a full moon reads as a lamp glued to a still-blue sky.
+          const noc = clamp((-e - 2) / 10, 0, 1);
+          moon.style.filter = `brightness(${lerp(0.82, 1.04, noc).toFixed(3)}) ` +
+            `saturate(${lerp(0.7, 1, noc).toFixed(3)})`;
+        } else if (lit) {
           lit.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
         }
       }

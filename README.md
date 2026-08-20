@@ -102,7 +102,52 @@ stars:                  # `stars: false` disables the built-in field
   count: 90             # stars visible on screen
   drift: 1800           # seconds per screen-width of drift, 0 = static
   rotate: false         # true = rotate about the celestial pole instead
+
+# Optional artwork for the two discs — see below. Left out, both stay drawn.
+sun_image: null         # e.g. /local/sun-cycle/sun.png
+sun_image_width: 10.5   # disc diameter, % of the view width
+sun_image_blur: 11.5    # % of that diameter, not px; 0 disables the blur
+sun_image_disc: [1, 0.5, 0.5]
+moon_image: null
+moon_image_width: 0     # 0 keeps the CSS default (15%, capped at 190 px)
+moon_image_disc: [1, 0.5, 0.5]
 ```
+
+## Drawing the discs from your own artwork
+
+The sun has no drawn disc: by default it *is* the aureole and the ray fan. The
+moon is drawn as a circle with the real terminator. Point `sun_image` and
+`moon_image` at your own files and those places are taken over by pictures,
+while every glow stays rendered — the twilight band, the disc aureole, the ray
+fan and the moon halo. The two options are independent.
+
+**No artwork ships with the card.** These are paths to your files (`/local/...`),
+so the repository carries no third-party images and you keep whatever licence
+your own artwork has.
+
+`*_image_disc` is `[diameter / image width, cx / image width, cy / image
+height]` — where the disc actually sits inside the file. Artwork rarely fills
+its frame: a sun render carries rays sticking out on one side, a moon render
+carries a baked glow. Placing such a file by its own centre puts the disc
+beside its aureole, so measure the disc from the alpha channel and pass it
+here. The default `[1, 0.5, 0.5]` means a disc filling a square image.
+
+Two details that are not obvious:
+
+- **Blur is a share of the disc diameter, never a pixel figure.** The same card
+  runs in a 430 px card and on a 1920 px kiosk, and a pixel value tuned in one
+  is four times wrong in the other. A sharp-edged disc reads as a sticker
+  pasted on the sky; something around 10 % of the diameter looks like a sun.
+- **The sun disc fades out below −3° elevation.** The projection parks anything
+  under the horizon on the bottom edge instead of pushing it out of frame, so
+  an un-faded disc would sit there glowing all night.
+
+Both discs are graded to the sky palette — the sun reddens and dims towards the
+horizon, the moon pales at dusk and reaches full brightness deep in the night —
+so a flat image does not read as pasted on. The moon image is clipped by the
+terminator, so the phase still shows with the artwork as the lit texture; the
+mask turns towards the sun while the image counter-rotates, keeping the maria
+upright.
 
 The default azimuth window (50° → 310°) assumes the frame looks south: east
 on the left, west on the right, wide enough that a midsummer sunrise (67°)
