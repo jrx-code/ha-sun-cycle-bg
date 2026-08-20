@@ -26,6 +26,12 @@
   .moon svg { display: block; width: 100%; height: 100%; overflow: visible;
     animation: moon-shimmer 7s ease-in-out infinite; }
   @keyframes moon-shimmer { 0%,100% { transform: scale(1); opacity: .82; } 50% { transform: scale(1.05); opacity: 1; } }
+  /* ?art=1 — discs drawn from demo/assets instead of the render, the way
+     sun_image / moon_image do it on the card. Sized by the disc, not by the
+     file: both renders carry extras (rays, a baked glow) around theirs. */
+  .sundisc { position: absolute; pointer-events: none; transition: opacity 1s linear; display: none; }
+  .sundisc img { display: block; width: 100%; height: auto; }
+  body.art .sundisc { display: block; }
   .stars { position: absolute; inset: 0; overflow: hidden; transition: opacity .3s linear; }
   .stardrift { position: absolute; top: 0; left: 0; width: 200%; height: 100%;
     animation: stardrift 90s linear infinite; will-change: transform; }
@@ -74,6 +80,7 @@
       <div class="layer" id="sky"></div>
       <div class="moon" id="moon"></div>
       <div class="stars" id="stars"></div>
+      <div class="sundisc" id="sundisc"><img src="assets/sun.png" alt=""></div>
       <div class="rayclip"><div class="ray" id="ray"></div></div>
     </div>
     <div class="controls">
@@ -183,13 +190,33 @@
     return `conic-gradient(from 23deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
   }
   const litPath = (k) => `M 0,-1 A 1,1 0 0 1 0,1 A ${Math.abs(1-2*k).toFixed(4)},1 0 0 ${k>0.5?1:0} 0,-1 Z`;
+
+  // ?art=1 — the same settings the card ships with as sun_image_* / moon_image_*.
+  // The disc figures are measured from each file's alpha channel: neither render
+  // fills its frame, and placing them by the file centre would put the disc
+  // beside its own aureole.
+  const ART = new URLSearchParams(location.search).has('art');
+  const SUN_ART = { w: 10.5, blur: 11.5, dia: 0.78878, cx: 0.50816, cy: 0.48469 };
+  const MOON_ART = { w: 13, dia: 0.42870, cx: 0.5, cy: 0.5, ar: 720/1080 };
+  if (ART) document.body.classList.add('art');
+  const MW = 2 / MOON_ART.dia, MH = MW * MOON_ART.ar;
   document.getElementById('moon').innerHTML =
     '<svg viewBox="-2.6 -2.6 5.2 5.2"><defs><radialGradient id="mg">' +
     '<stop offset="0%" stop-color="rgba(226,238,255,0.40)"/>' +
     '<stop offset="38%" stop-color="rgba(210,226,252,0.13)"/>' +
-    '<stop offset="100%" stop-color="rgba(198,215,242,0)"/></radialGradient></defs>' +
+    '<stop offset="100%" stop-color="rgba(198,215,242,0)"/></radialGradient>' +
+    (ART ? '<clipPath id="mc"><path class="lit"/></clipPath>' : '') + '</defs>' +
     '<circle r="2.6" fill="url(#mg)"/><circle r="1" fill="rgba(126,142,175,0.16)"/>' +
-    '<path class="lit" fill="#f4f8ff"/></svg>';
+    (ART
+      // The mask turns towards the sun, the image turns back, so the phase is
+      // real while the maria stay upright.
+      ? '<g class="spin"><g clip-path="url(#mc)"><g class="hold">' +
+        `<image href="assets/moon.png" x="${(-MW*MOON_ART.cx).toFixed(4)}" ` +
+        `y="${(-MH*MOON_ART.cy).toFixed(4)}" width="${MW.toFixed(4)}" height="${MH.toFixed(4)}"/>` +
+        '</g></g></g>'
+      : '<path class="lit" fill="#f4f8ff"/>') +
+    '</svg>';
+  if (ART) document.getElementById('moon').style.width = MOON_ART.w + '%';
 
   function apply(state) {
     const { sun, moon, k, p } = state;
@@ -224,8 +251,32 @@
     mEl.style.opacity = (clamp((-sun.alt-1)/8,0,1) * clamp((moon.alt+2)/8,0,1)).toFixed(2);
     const lit = mEl.querySelector('.lit');
     lit.setAttribute('d', litPath(k));
-    lit.setAttribute('transform',
-      `rotate(${(Math.atan2(sp.y-mp.y, sp.x-mp.x)*R2D).toFixed(1)})`);
+    const ang = Math.atan2(sp.y-mp.y, sp.x-mp.x)*R2D;
+    if (ART) {
+      mEl.querySelector('.spin').setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+      mEl.querySelector('.hold').setAttribute('transform', `rotate(${(-ang).toFixed(1)})`);
+      const noc = clamp((-sun.alt-2)/10, 0, 1);
+      mEl.style.filter = `brightness(${(0.82+(1.04-0.82)*noc).toFixed(3)}) ` +
+        `saturate(${(0.7+0.3*noc).toFixed(3)})`;
+      // Sun disc: sized by its disc, shifted onto the disc centre, blurred by a
+      // share of that diameter, faded out below -3 deg (the projection parks
+      // anything under the horizon on the bottom edge instead of off-frame).
+      const sEl = document.getElementById('sundisc');
+      const sceneW = document.getElementById('scene').getBoundingClientRect().width;
+      const day = smoothstep(clamp((sun.alt-2)/12,0,1));
+      sEl.style.width = (SUN_ART.w / SUN_ART.dia).toFixed(3) + '%';
+      sEl.style.left = sp.x.toFixed(1)+'%';
+      sEl.style.top = sp.y.toFixed(1)+'%';
+      sEl.style.transform =
+        `translate(${(-SUN_ART.cx*100).toFixed(3)}%, ${(-SUN_ART.cy*100).toFixed(3)}%)`;
+      sEl.style.opacity = smoothstep(clamp((sun.alt+3)/6,0,1)).toFixed(3);
+      const px = sceneW * SUN_ART.w/100 * SUN_ART.blur/100;
+      sEl.style.filter = (px > 0.05 ? `blur(${px.toFixed(2)}px) ` : '') +
+        `brightness(${(0.86+0.20*day).toFixed(3)}) saturate(${(1.3-0.35*day).toFixed(3)}) ` +
+        `hue-rotate(${(-13+13*day).toFixed(1)}deg)`;
+    } else {
+      lit.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+    }
 
     document.getElementById('stars').style.opacity = p.stars.toFixed(2);
   }

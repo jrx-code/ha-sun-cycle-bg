@@ -134,6 +134,13 @@ carries a baked glow. Placing such a file by its own centre puts the disc
 beside its aureole, so measure the disc from the alpha channel and pass it
 here. The default `[1, 0.5, 0.5]` means a disc filling a square image.
 
+![A full day with the discs drawn from artwork](docs/artwork.gif)
+
+*The same four phases with `sun_image` and `moon_image` set — night, dawn,
+noon, sunset (52° N, 3 September, a 65 %-lit moon):*
+
+![Night, dawn, noon and sunset drawn from artwork](docs/artwork.png)
+
 Two details that are not obvious:
 
 - **Blur is a share of the disc diameter, never a pixel figure.** The same card
@@ -197,8 +204,15 @@ down towards the pole; move the date slider to watch it rise and fall with the
 seasons.
 
 The frames above were rendered from it — it accepts `?t=<minutes>`,
-`?d=<day of year>`, `?lat=<degrees>`, `?seed=<n>` (deterministic stars) and
-`?bare=1` (just the scene, no chrome).
+`?d=<day of year>`, `?lat=<degrees>`, `?seed=<n>` (deterministic stars),
+`?bare=1` (just the scene, no chrome) and `?art=1` (discs drawn from
+`demo/assets` instead of the render). `tools/render_docs.py` drives it
+headlessly and rebuilds `docs/artwork.gif` and `docs/artwork.png`, so the
+documentation cannot drift away from the code.
+
+[`demo/images-poc.html`](demo/images-poc.html) is the page the artwork numbers
+were tuned on: four ways of drawing the discs on one shared instant, with
+sliders for disc size and blur.
 
 ## How it works
 
