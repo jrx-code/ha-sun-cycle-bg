@@ -129,6 +129,10 @@
         <input type="range" id="moonw" min="4" max="26" value="15" step="0.5" aria-label="Wielkość księżyca">
         <div class="ticks"><span>tarcza księżyca</span><span id="moonwv">15%</span></div>
       </div>
+      <div class="sliderbox" style="max-width:240px">
+        <input type="range" id="sunblur" min="0" max="16" value="8" step="0.5" aria-label="Rozmycie słońca">
+        <div class="ticks"><span>rozmycie słońca</span><span id="sunblurv">8%</span></div>
+      </div>
       <div class="przel">
         <label><input type="checkbox" id="glow" checked> poświata z rendera</label>
         <label><input type="checkbox" id="rays" checked> wachlarz promieni</label>
@@ -171,6 +175,11 @@
     przy horyzoncie, księżyc blednie o zmierzchu), żeby obrazek nie wyglądał na naklejony.
     <br><strong>Słońce znika przy −3°</strong> — projekcja karty przykleja tarczę do dolnej
     krawędzi zamiast wyprowadzić ją poza kadr, więc bez wygaszania świeciłaby przez całą noc.
+    <br><strong>Rozmycie tarczy słońca liczy się w % jej średnicy</strong>, nie w
+    pikselach: scena w tym demo ma 434 px szerokości, a widok na kiosku 1920, więc
+    liczba pikseli dobrana tutaj byłaby tam cztery razy za miękka. Przy 11 % kadru
+    i tej scenie 8 % wychodzi 3,8 px. Ostra tarcza (0 %) wygląda jak naklejka —
+    porównanie 0 / 3 / 6 / 10 % jest w opisie zmiany.
     <br><strong>Tarcze nie świecą razem.</strong> Słońce gaśnie do −3°, a księżyc zapala się
     dopiero, gdy niebo ściemnieje — dla 20 sierpnia i 52°N najlepsza wspólna chwila to
     <code>0,11 × 0,09</code> krycia, czyli praktycznie nic. Stąd trzy skróty: „południe"
@@ -362,6 +371,12 @@
     const sp = project(sun.alt, sun.az), mp = project(moon.alt, moon.az);
     const glowOn = el('glow').checked, raysOn = el('rays').checked, starsOn = el('starsOn').checked;
     const sunW = +el('sunw').value, moonW = +el('moonw').value;
+    // Blur is set as a share of the disc's own diameter, not in pixels: the demo
+    // scene is ~430 px wide and the kiosk view is 1920, so a pixel figure tuned
+    // here would be four times too soft there. One layout read per frame, shared
+    // by all four scenes (they are the same size).
+    const sceneW = sceny.R.sky.getBoundingClientRect().width;
+    const blurPx = sceneW * sunW / 100 * (+el('sunblur').value) / 100;
 
     // twilight band + disc aureole + sky gradient — verbatim from the card (1.2.0)
     const u = clamp(1-(e+8)/20,0,1), bandW = 70+120*u, bandH = 26+16*u;
@@ -421,11 +436,12 @@
       s.sun.style.top = sp.y.toFixed(1)+'%';
       s.sun.style.transform = `translate(-${SUN_OFF_X.toFixed(3)}%, -${SUN_OFF_Y.toFixed(3)}%)`;
       s.sun.style.opacity = sunA.toFixed(2);
-      s.sun.style.filter = id === 'C'
+      const rozmycie = blurPx > 0.05 ? `blur(${blurPx.toFixed(2)}px) ` : '';
+      s.sun.style.filter = rozmycie + (id === 'C'
         ? `brightness(${lerp(0.86, 1.06, day).toFixed(3)}) ` +
           `saturate(${lerp(1.3, 0.95, day).toFixed(3)}) ` +
           `hue-rotate(${lerp(-13, 0, day).toFixed(1)}deg)`
-        : '';
+        : '');
     }
     return { sp, mp, sunA, moonA, horizon, e, k };
   }
@@ -442,6 +458,7 @@
     const min = +el('t').value, doy = +el('d').value, lat = +el('lat').value;
     el('sunwv').textContent = el('sunw').value + '%';
     el('moonwv').textContent = el('moonw').value + '%';
+    el('sunblurv').textContent = el('sunblur').value + '%';
     const utc = new Date(Date.UTC(2026, 0, 1+doy, 0, min));   // local == UTC here
     const J = julian(utc);
     const se = sunEq(J), me = moonEq(J);
@@ -457,7 +474,7 @@
       ' · słońce ' + sun.alt.toFixed(1) + '° / az ' + sun.az.toFixed(0) + '°' +
       ' · księżyc ' + moon.alt.toFixed(1) + '° / ' + (k*100).toFixed(0) + '% oświetlony';
   }
-  ['t','d','lat','sunw','moonw'].forEach(id => {
+  ['t','d','lat','sunw','moonw','sunblur'].forEach(id => {
     el(id).addEventListener('input', upd);
     // Scrolling the page with the pointer over a slider silently reassigns it —
     // caught while screenshotting this page: one scroll moved both the hour and
@@ -483,6 +500,7 @@
       '# ustawienia z tej strony',
       'sun_image_width:  ' + el('sunw').value + '%   # średnica tarczy względem szerokości kadru',
       'moon_image_width: ' + el('moonw').value + '%',
+      'sun_image_blur:   ' + el('sunblur').value + '%   # rozmycie w % średnicy tarczy, nie w px',
       '',
       '# stałe zmierzone z plików (kanał alfa)',
       'SUN  = { w: 980, h: 980, d: 773, cx: 498, cy: 475 }   // skala ' + SUN_SCALE.toFixed(4) +
