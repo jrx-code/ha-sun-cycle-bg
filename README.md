@@ -122,8 +122,10 @@ while every glow stays rendered — the twilight band, the disc aureole, the ray
 fan and the moon halo. The two options are independent.
 
 **No artwork ships with the card.** These are paths to your files (`/local/...`),
-so the repository carries no third-party images and you keep whatever licence
-your own artwork has.
+so the card itself carries no images and you keep whatever licence your own
+artwork has. The two PNGs under `demo/assets/` exist only to drive
+`demo/images-poc.html`; they are the repository owner's own artwork and fall
+under this repository's MIT licence like the rest of it.
 
 `*_image_disc` is `[diameter / image width, cx / image width, cy / image
 height]` — where the disc actually sits inside the file. Artwork rarely fills
