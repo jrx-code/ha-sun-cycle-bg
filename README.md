@@ -48,7 +48,10 @@ Designed for wall-mounted kiosk tablets:
 
 - every animation is **transform/opacity only** — runs entirely on the
   compositor, no layout, no paint, no JS animation loops,
-- one animated layer each for rays, moon and stars,
+- one animated layer each for rays, moon and stars — and the ray fan **leaves
+  the tree entirely** once the sun is far enough below the horizon, so it costs
+  nothing at night (a fan faded to `opacity: 0` still holds its layer, and an
+  animated layer forces every element painted above it into a layer of its own),
 - the palette repaints only when the sun moves ≥ 0.15° in elevation or ≥ 0.6°
   in azimuth (about every half minute),
 - the star field is 5 painted nodes per copy — 10 for the drifting strip, 5
@@ -58,6 +61,13 @@ Designed for wall-mounted kiosk tablets:
 
 Measured with this card running on a 1280×400 Raspberry Pi 5 kiosk (32-bit
 Chromium, blur enabled): **60 fps**.
+
+A note for weak GPUs: an animated layer promotes everything drawn above it
+(Chromium calls the reason *overlap*). On a busy dashboard that can add up to
+more layer memory than the device holds, and the symptom is individual cards
+blinking — the transparent ones first, because they can never merge into the
+root layer. If you meet that, `stars.drift: 0` removes the widest animated
+layer while keeping the field itself.
 
 `stars.rotate: true` is the one option with a real cost. Rotating a field
 about the pole means the layer has to cover the entire disc it sweeps, which
