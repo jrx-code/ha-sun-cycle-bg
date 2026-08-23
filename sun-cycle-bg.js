@@ -559,10 +559,22 @@
       // again once the sun is well below the horizon (nothing left to scatter)
       const horizon = smoothstep(clamp(1 - Math.abs(e) / 22, 0, 1)) *
         smoothstep(clamp((e + 6) / 6, 0, 1));
-      ray.style.opacity = (horizon * this._rayPeak).toFixed(3);
-      ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
-      ray.style.filter = this._rayBlur > 0 ? `blur(${this._rayBlur}px)` : '';
-      if (horizon > 0.01) ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
+      // A fan faded to nothing is not free: the element keeps its sway
+      // animation, `will-change: transform` and a blur filter, so the
+      // compositor holds a full-viewport layer for it all night — and promotes
+      // everything painted above it to its own layer for overlap. Measured at
+      // night on a 1920x1080 panel: 44 MB for the invisible fan alone. Take it
+      // out of the tree instead.
+      const rayVisible = horizon > 0.01;
+      ray.style.display = rayVisible ? '' : 'none';
+      if (!rayVisible) {
+        ray.style.filter = '';
+      } else {
+        ray.style.opacity = (horizon * this._rayPeak).toFixed(3);
+        ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
+        ray.style.filter = this._rayBlur > 0 ? `blur(${this._rayBlur}px)` : '';
+        ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
+      }
 
       // --- sun disc, when artwork is supplied ------------------------------
       if (this._sunImg) {
