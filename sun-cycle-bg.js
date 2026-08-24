@@ -513,20 +513,25 @@
       const root = document.documentElement;
       if (this._inkDark === teraz) return;
       this._inkDark = teraz;
+      // Dzien NIE odwraca pisma na ciemne: uzytkownik chce jasnego. Biel to
+      // zmierzony sufit jasnego tuszu na tym tle (2.81 na najjasniejszym
+      // punkcie pod kolumnami, wobec 2.29 dla kinari), wiec samo rozjasnienie
+      // nie wystarcza — dochodzi cien pod literami. Cien nie jest podkladka
+      // pod kafel: nie zmienia tla karty, tylko rysunek glifu. WCAG cieni nie
+      // punktuje, wiec liczba kontrastu zostaje niska mimo realnej poprawy
+      // czytelnosci — to jest zapisane wprost, zeby nikt nie czytal 2.81 jako
+      // 'zdaje'.
       const zestaw = teraz
-        ? { tusz: '#141A22', tuszRgb: '20,26,34',
-            tusz2: '#3A3E46', tusz2Rgb: '58,62,70',
-            akcent: '#6B2418', akcentRgb: '107,36,24',
-            // Kolory znaczace nie ida za tuszem, bo niosa sens, a nie tylko
-            // czytelnosc. Warianty dzienne wybrane pomiarem: przyciemnione
-            // tak, zeby najgorszy punkt pod kolumnami dal maksimum tego, co
-            // na tym tle w ogole osiagalne (bursztyn 1.03 -> 2.24,
-            // zielen 1.08 -> 2.13).
-            bursztyn: '#b8791a', zielen: '#2f9d5b' }
+        ? { tusz: '#FFFFFF', tuszRgb: '255,255,255',
+            tusz2: '#E9EDF1', tusz2Rgb: '233,237,241',
+            akcent: '#FF9A78', akcentRgb: '255,154,120',
+            bursztyn: '#FFD166', zielen: '#86EFAC',
+            cien: '0 1px 2px rgba(6,12,22,.9), 0 0 10px rgba(6,12,22,.6)' }
         : { tusz: '#EFE7D9', tuszRgb: '239,231,217',
             tusz2: '#9A9384', tusz2Rgb: '154,147,132',
             akcent: '#B14A30', akcentRgb: '177,74,48',
-            bursztyn: '#fbbf24', zielen: '#4ade80' };
+            bursztyn: '#fbbf24', zielen: '#4ade80',
+            cien: 'none' };
       root.style.setProperty('--jrx-tusz', zestaw.tusz);
       root.style.setProperty('--jrx-tusz-rgb', zestaw.tuszRgb);
       root.style.setProperty('--jrx-tusz2', zestaw.tusz2);
@@ -535,7 +540,8 @@
       root.style.setProperty('--jrx-akcent-rgb', zestaw.akcentRgb);
       root.style.setProperty('--jrx-bursztyn', zestaw.bursztyn);
       root.style.setProperty('--jrx-zielen', zestaw.zielen);
-      root.setAttribute('data-jrx-pismo', teraz ? 'ciemne' : 'jasne');
+      root.style.setProperty('--jrx-cien', zestaw.cien);
+      root.setAttribute('data-jrx-pismo', teraz ? 'dzien' : 'noc');
     }
 
     _apply(force) {
