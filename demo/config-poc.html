@@ -1,0 +1,1031 @@
+<meta charset="utf-8">
+<title>Sun Cycle — every knob, live</title>
+<style>
+  :root {
+    --bg: #0d1015; --surface: #151a22; --line: rgba(255,255,255,.08);
+    --text: #e8ebf1; --muted: #96a0b0; --accent: #7cb3f9;
+  }
+  body { background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 28px 20px 64px; }
+  main { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .lead h1 { font-size: 24px; font-weight: 750; margin: 0 0 6px; letter-spacing: -.2px; }
+  .lead p { color: var(--muted); margin: 0 0 4px; max-width: 86ch; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card > p.sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; max-width: 92ch; }
+  code { background: rgba(255,255,255,.06); border-radius: 4px; padding: 1px 5px; font-size: .92em; }
+
+  .layout { display: grid; grid-template-columns: minmax(0,1fr) 360px; gap: 18px; align-items: start; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+
+  .preview-wrap { display: flex; flex-direction: column; gap: 10px; }
+  /* The card is invisible in itself (getCardSize() -> 0, sets display:none on
+     connect) — it climbs the DOM for a real <hui-view-container>, then paints
+     the sky on its <hui-view-background> child and inserts its animated
+     layers just before <hui-view>. Standalone here means faking that trio. */
+  hui-view-container#stage { position: relative; display: block; aspect-ratio: 16/9;
+    border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: #000; }
+  hui-view-background { position: absolute; inset: 0; display: block; z-index: 0; }
+  hui-view { position: absolute; inset: 0; display: block; pointer-events: none; }
+  #stage .hint { position: absolute; left: 14px; bottom: 12px; z-index: 5;
+    font-size: 12.5px; color: rgba(255,255,255,.8); text-shadow: 0 1px 3px rgba(0,0,0,.6);
+    display: flex; gap: 14px; flex-wrap: wrap; }
+  #stage .hint b { font-variant-numeric: tabular-nums; }
+
+  .timebar { display: flex; flex-direction: column; gap: 10px; }
+  .sliderrow { display: flex; align-items: center; gap: 10px; }
+  .sliderrow label { width: 92px; flex: none; font-size: 13px; color: var(--muted); }
+  .sliderrow input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .sliderrow .val { width: 108px; flex: none; text-align: right; font-size: 12.5px;
+    font-variant-numeric: tabular-nums; color: var(--text); }
+  .sliderrow button { flex: none; }
+
+  .controls { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 18px; }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px;
+    display: flex; flex-direction: column; gap: 9px; }
+  legend { padding: 0 6px; font-size: 12.5px; font-weight: 650; letter-spacing: .03em;
+    text-transform: uppercase; color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row label { flex: 1; font-size: 13px; }
+  .row .n { width: 46px; flex: none; text-align: right; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  .row input[type=range] { flex: 1.4; min-width: 0; accent-color: var(--accent); }
+  .row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .row input[type=text] { flex: 1.4; min-width: 0; background: rgba(255,255,255,.05);
+    border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 4px 7px;
+    font-size: 12.5px; }
+  fieldset.off { opacity: .45; }
+  fieldset.off input:not([type=checkbox]) { pointer-events: none; }
+
+  button { background: var(--surface); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.copy { align-self: flex-start; }
+
+  pre.yaml { margin: 0; background: #0a0c10; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font: 12.5px/1.55 ui-monospace, "SF Mono", Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: #cfe0ff; }
+  .yamlhead { display: flex; align-items: center; justify-content: space-between; }
+  .copied { color: #7ee0a0; font-size: 12px; opacity: 0; transition: opacity .2s; }
+  .copied.show { opacity: 1; }
+
+  .note { color: var(--muted); font-size: 12.5px; }
+</style>
+
+<main>
+  <div class="lead">
+    <h1>Sun Cycle — every knob, live</h1>
+    <p>Karta <code>sun-cycle-bg-card</code> nie ma dziś wizualnego edytora w GUI Home Assistant
+      (brak <code>getConfigElement</code>) — to jest jego przymiarka: wszystkie opcje z
+      <code>setConfig()</code> jako suwaki, na prawdziwej karcie (ten sam plik co na panelu),
+      z gotowym YAML-em na dole do wklejenia w dashboard.</p>
+    <p class="note">Słońce na scenie steruje suwak czasu/daty/szerokości poniżej (nie prawdziwy
+      <code>sun.sun</code>) — księżyc liczy się z prawdziwej dzisiejszej daty, tak jak na karcie.</p>
+  </div>
+
+  <div class="layout">
+    <div class="preview-wrap">
+      <hui-view-container id="stage">
+        <hui-view-background></hui-view-background>
+        <hui-view></hui-view>
+        <sun-cycle-bg-card id="card"></sun-cycle-bg-card>
+        <div class="hint">
+          <span>elewacja <b id="hint-elev">—</b>°</span>
+          <span>azymut <b id="hint-az">—</b>°</span>
+          <span id="hint-phase"></span>
+        </div>
+      </hui-view-container>
+
+      <div class="card timebar">
+        <h2 style="font-size:14px;margin-bottom:2px;">Symulowana pozycja słońca</h2>
+        <div class="sliderrow">
+          <label>Godzina</label>
+          <input type="range" id="t" min="0" max="1440" value="480" step="1">
+          <span class="val" id="t-val"></span>
+          <button id="play">▶</button>
+        </div>
+        <div class="sliderrow">
+          <label>Dzień roku</label>
+          <input type="range" id="d" min="0" max="364" value="171" step="1">
+          <span class="val" id="d-val"></span>
+        </div>
+        <div class="sliderrow">
+          <label>Szerokość</label>
+          <input type="range" id="lat" min="0" max="66" value="52" step="1">
+          <span class="val" id="lat-val"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <fieldset id="fs-stars">
+        <legend>Gwiazdy (<code>stars</code>)</legend>
+        <div class="row"><input type="checkbox" id="stars-on" checked><label for="stars-on">włączone</label></div>
+        <div class="row"><label for="stars-count">count</label><input type="range" id="stars-count" min="0" max="300" value="90"><span class="n" id="stars-count-n"></span></div>
+        <div class="row"><label for="stars-drift">drift (s, 0=off)</label><input type="range" id="stars-drift" min="0" max="3600" step="30" value="1800"><span class="n" id="stars-drift-n"></span></div>
+        <div class="row"><input type="checkbox" id="stars-rotate"><label for="stars-rotate">rotate (zamiast drift)</label></div>
+        <div class="row"><label for="stars-pivot">pivot</label><input type="range" id="stars-pivot" min="0.5" max="6" step="0.1" value="2.2"><span class="n" id="stars-pivot-n"></span></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Horyzont (<code>azimuth</code>)</legend>
+        <div class="row"><label for="az0">wschód (az₀)</label><input type="range" id="az0" min="0" max="360" value="50"><span class="n" id="az0-n"></span></div>
+        <div class="row"><label for="az1">zachód (az₁)</label><input type="range" id="az1" min="0" max="360" value="310"><span class="n" id="az1-n"></span></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Promienie (<code>rays</code>)</legend>
+        <div class="row"><label for="rays-blur">blur</label><input type="range" id="rays-blur" min="0" max="60" value="28"><span class="n" id="rays-blur-n"></span></div>
+        <div class="row"><label for="rays-strength">strength</label><input type="range" id="rays-strength" min="0" max="1" step="0.05" value="0.5"><span class="n" id="rays-strength-n"></span></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Księżyc i paleta</legend>
+        <div class="row"><input type="checkbox" id="moon-on" checked><label for="moon-on"><code>moon</code></label></div>
+        <div class="row"><input type="checkbox" id="twilight"><label for="twilight"><code>twilight_palette</code> (cieplejsza)</label></div>
+      </fieldset>
+
+      <fieldset id="fs-images">
+        <legend>Własna grafika (opcjonalnie)</legend>
+        <div class="row"><label for="sun-image">sun_image URL</label></div>
+        <div class="row"><input type="text" id="sun-image" placeholder="https://…/sun.png"></div>
+        <div class="row"><label for="moon-image">moon_image URL</label></div>
+        <div class="row"><input type="text" id="moon-image" placeholder="https://…/moon.png"></div>
+        <p class="note" style="margin:2px 0 0;">Puste = rysowany dysk karty (domyślnie). Zobacz
+          osobną przymiarkę <code>tlo-obrazki</code> dla rozmiarów/rozmycia obrazków.</p>
+      </fieldset>
+
+      <div class="card" style="padding:14px 16px;">
+        <div class="yamlhead">
+          <h2 style="font-size:14px;margin:0;">YAML do wklejenia</h2>
+          <button class="copy" id="copy-btn">Kopiuj</button>
+        </div>
+        <span class="copied" id="copied-msg">skopiowane ✓</span>
+        <pre class="yaml" id="yaml-out"></pre>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+/* ---- sun-cycle-bg.js, inlined verbatim (MIT, jrx-code/ha-sun-cycle-bg) ---- */
+/* sun-cycle-bg 1.3.0 — a living day-cycle background for Home Assistant dashboards.
+ *
+ * An invisible Lovelace card that paints the view background from the real
+ * position of the sun and moon, and keeps it moving all day:
+ *
+ *   - the sky gradient shifts continuously through night, dawn, sunrise,
+ *     golden hour, noon and back — interpolated between elevation-keyed
+ *     anchors, so seasons work automatically,
+ *   - the sun travels its real diurnal arc: `sun.sun` gives both azimuth and
+ *     elevation, so it rises in the east, culminates in the south and sets in
+ *     the west, on a path tilted by (90 - latitude) exactly like the sky,
+ *   - near the horizon a soft, blurred crepuscular fan spreads from the sun
+ *     and smoothly gives way to a plain aureole as the sun climbs,
+ *   - the twilight glow stays where it belongs: a wide, flat band along the
+ *     horizon centred on the sun's azimuth, instead of an oval riding along
+ *     with the disc and sliding off the bottom edge after sunset,
+ *   - the moon runs on its own ephemeris (position AND phase), so it keeps its
+ *     own schedule instead of mirroring the sun, and is drawn as the actual
+ *     crescent/gibbous shape with the bright limb facing the sun,
+ *   - an optional star field twinkles and moves east to west; it can either
+ *     drift (cheap, default) or rotate about the celestial pole (prettier,
+ *     but the layer has to cover the whole swept disc — see `stars.rotate`).
+ *
+ * Performance contract: every animation is transform/opacity-only (runs on the
+ * compositor), one animated layer each for rays / moon / stars, repaints only
+ * when the sun moves >= 0.15 deg in elevation or >= 0.6 deg in azimuth
+ * (~ every half minute). Measured with this card on a 1280x400 RPi5 kiosk: 60 fps.
+ *
+ * Usage — add to every view you want painted (e.g. a hidden column or a
+ * shared include):
+ *
+ *   type: custom:sun-cycle-bg-card
+ *   # all options are optional:
+ *   sun_entity: sun.sun
+ *   twilight_palette: false   # true = warmer amber dusk anchors instead of mauve
+ *   azimuth: [50, 310]    # sky window mapped across the frame, degrees
+ *   rays:
+ *     blur: 28            # px; 0 disables the blur filter
+ *     strength: 0.5       # peak opacity at the horizon
+ *   moon: true            # false hides the moon entirely
+ *   stars:                # or `stars: false` to disable the built-in field
+ *     count: 90           # stars visible on screen
+ *     drift: 1800         # seconds per screen-width, 0 = static
+ *     rotate: false       # true = rotate about the pole instead of drifting
+ *
+ *   # Optional: draw the discs from your own artwork instead of the render.
+ *   # Both are independent; whatever is left out keeps the drawn version. The
+ *   # images are NOT shipped with the card — point these at your own files
+ *   # (e.g. /local/...), so the card carries no third-party artwork.
+ *   sun_image: /local/sun-cycle/sun.png
+ *   sun_image_width: 10.5   # disc diameter, % of the view width
+ *   sun_image_blur: 11.5    # % of that diameter; 0 = none. A sharp disc reads
+ *                           # as a sticker pasted on the sky.
+ *   sun_image_disc: [0.789, 0.508, 0.485]   # see below
+ *   moon_image: /local/sun-cycle/moon.png
+ *   moon_image_width: 13
+ *   moon_image_disc: [0.429, 0.5, 0.5]
+ *
+ * `*_image_disc` is [diameter / image width, cx / image width, cy / image
+ * height] — where the disc actually sits inside the file. It matters because
+ * artwork rarely fills its frame: a sun render carries rays sticking out on one
+ * side, a moon render carries a baked glow, and placing such a file by its own
+ * centre puts the disc beside its aureole. Measure it from the alpha channel.
+ * Default [1, 0.5, 0.5] = the disc fills a square image.
+ *
+ * The sun disc has no drawn counterpart — without `sun_image` the sun is the
+ * aureole and the ray fan, as before. It fades out below -3 deg elevation:
+ * the projection parks anything under the horizon on the bottom edge rather
+ * than pushing it out of frame, so an un-faded disc would sit there all night.
+ * The moon image is clipped by the terminator, so the phase still shows and the
+ * artwork serves as the texture of the lit part. Both discs are graded to the
+ * sky palette (the sun reddens and dims towards the horizon, the moon pales at
+ * dusk) so they do not read as pasted on.
+ *
+ * If a `#star-twinkle-layer` element from a different star card is present,
+ * its opacity is driven too (fades at dawn, returns at dusk).
+ */
+(() => {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerpA = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+  const smoothstep = (t) => t * t * (3 - 2 * t);
+
+  // --- palette: elevation-keyed anchors -----------------------------------
+  // e: sun elevation [deg]; top/mid/bot: sky gradient RGB; halo: sun RGBA;
+  // stars: star-field opacity.
+  const STOPS = [
+    { e: -18, top: [11, 16, 32], mid: [10, 14, 24], bot: [7, 10, 18], halo: [190, 205, 235, 0], stars: 1 },
+    { e: -9, top: [17, 24, 48], mid: [14, 19, 38], bot: [10, 13, 24], halo: [220, 160, 150, 0.22], stars: 0.65 },
+    { e: -4, top: [28, 36, 64], mid: [35, 42, 72], bot: [51, 44, 78], halo: [235, 150, 130, 0.45], stars: 0.2 },
+    { e: 0, top: [43, 63, 102], mid: [49, 72, 111], bot: [39, 64, 100], halo: [255, 170, 95, 0.58], stars: 0 },
+    { e: 7, top: [74, 118, 166], mid: [63, 107, 157], bot: [43, 79, 121], halo: [255, 205, 130, 0.52], stars: 0 },
+    { e: 22, top: [111, 166, 212], mid: [72, 121, 159], bot: [38, 73, 111], halo: [255, 235, 180, 0.55], stars: 0 },
+    { e: 52, top: [127, 178, 220], mid: [76, 126, 173], bot: [38, 73, 111], halo: [255, 245, 215, 0.6], stars: 0 },
+  ];
+  // Opt-in warmer dusk: the default anchors drift into mauve around -4 deg,
+  // which reads grey once the glow spreads along the horizon.
+  const WARM_DUSK = { '-9': [235, 120, 86, 0.26], '-4': [252, 138, 84, 0.50], '0': [255, 168, 88, 0.60] };
+  function paletteFor(elev, warmDusk) {
+    const TABLE = warmDusk
+      ? STOPS.map((s) => (WARM_DUSK[String(s.e)] ? { ...s, halo: WARM_DUSK[String(s.e)] } : s))
+      : STOPS;
+    return paletteFrom(TABLE, elev);
+  }
+  function paletteFrom(STOPS, elev) {
+    if (elev <= STOPS[0].e) return STOPS[0];
+    if (elev >= STOPS[STOPS.length - 1].e) return STOPS[STOPS.length - 1];
+    let i = 0;
+    while (STOPS[i + 1].e < elev) i++;
+    const a = STOPS[i], b = STOPS[i + 1], t = (elev - a.e) / (b.e - a.e);
+    return {
+      top: lerpA(a.top, b.top, t), mid: lerpA(a.mid, b.mid, t), bot: lerpA(a.bot, b.bot, t),
+      halo: lerpA(a.halo, b.halo, t), stars: lerp(a.stars, b.stars, t),
+    };
+  }
+  const rgb = (c) => `rgb(${c.slice(0, 3).map(Math.round).join(',')})`;
+  const rgba = (c, mul = 1) =>
+    `rgba(${c.slice(0, 3).map(Math.round).join(',')},${(c[3] * mul).toFixed(3)})`;
+
+  // --- astronomy ----------------------------------------------------------
+  // Low-precision series, accurate to well under a degree: verified against
+  // Home Assistant's own (astral) sun values and against textbook geometry
+  // (new moon 1.6 deg from the sun, full moon 179.6 deg opposite).
+  function julian(date) {
+    let y = date.getUTCFullYear(), m = date.getUTCMonth() + 1;
+    const d = date.getUTCDate() + (date.getUTCHours() + date.getUTCMinutes() / 60 +
+      date.getUTCSeconds() / 3600) / 24;
+    if (m <= 2) { y -= 1; m += 12; }
+    const A = Math.floor(y / 100), B = 2 - A + Math.floor(A / 4);
+    return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5;
+  }
+  const gmst = (J) => (280.46061837 + 360.98564736629 * (J - 2451545) +
+    0.000387933 * Math.pow((J - 2451545) / 36525, 2)) % 360;
+  function altaz(ra, dec, J, lat, lon) {
+    const H = ((gmst(J) + lon - ra) % 360) * D2R, dr = dec * D2R, pr = lat * D2R;
+    const alt = Math.asin(Math.sin(dr) * Math.sin(pr) + Math.cos(dr) * Math.cos(pr) * Math.cos(H));
+    const az = Math.atan2(-Math.sin(H) * Math.cos(dr),
+      Math.cos(pr) * Math.sin(dr) - Math.sin(pr) * Math.cos(dr) * Math.cos(H));
+    return { alt: alt * R2D, az: ((az * R2D) % 360 + 360) % 360 };
+  }
+  function sunEq(J) {
+    const n = J - 2451545;
+    const L = (280.460 + 0.9856474 * n) % 360;
+    const g = ((357.528 + 0.9856003 * n) % 360) * D2R;
+    const lam = ((L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360) * D2R;
+    const eps = 23.439 * D2R;
+    return {
+      ra: ((Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)) * R2D) % 360 + 360) % 360,
+      dec: Math.asin(Math.sin(eps) * Math.sin(lam)) * R2D,
+      lam: lam * R2D,
+    };
+  }
+  function moonEq(J) {
+    const T = (J - 2451545) / 36525, s = (x) => Math.sin(x * D2R);
+    const Lp = (218.316 + 481267.8813 * T) % 360;   // mean longitude
+    const M = (357.529 + 35999.0503 * T) % 360;     // sun mean anomaly
+    const Mp = (134.963 + 477198.8676 * T) % 360;   // moon mean anomaly
+    const D = (297.850 + 445267.1115 * T) % 360;    // mean elongation
+    const F = (93.272 + 483202.0175 * T) % 360;     // argument of latitude
+    const lam = (Lp + 6.289 * s(Mp) + 1.274 * s(2 * D - Mp) + 0.658 * s(2 * D)
+      + 0.214 * s(2 * Mp) - 0.186 * s(M) - 0.114 * s(2 * F) + 0.059 * s(2 * D - 2 * Mp)
+      + 0.057 * s(2 * D - M - Mp) + 0.053 * s(2 * D + Mp) + 0.046 * s(2 * D - M)
+      - 0.041 * s(M - Mp) - 0.035 * s(D) - 0.031 * s(M + Mp)) % 360;
+    const beta = 5.128 * s(F) + 0.281 * s(Mp + F) - 0.278 * s(F - Mp)
+      + 0.176 * s(2 * D - F) - 0.075 * s(2 * F - Mp) - 0.041 * s(Mp - 2 * F);
+    const eps = 23.439 * D2R, lr = lam * D2R, br = beta * D2R;
+    return {
+      ra: ((Math.atan2(Math.sin(lr) * Math.cos(eps) - Math.tan(br) * Math.sin(eps),
+        Math.cos(lr)) * R2D) % 360 + 360) % 360,
+      dec: Math.asin(Math.sin(br) * Math.cos(eps) + Math.cos(br) * Math.sin(eps) * Math.sin(lr)) * R2D,
+      lam: (lam + 360) % 360,
+    };
+  }
+
+  // --- static CSS (injected once per shadow root) -------------------------
+  const STYLE_CLASS = 'sun-cycle-style';
+  const CSS =
+    '@keyframes sun-ray-sway{0%{transform:rotate(-3deg)}50%{transform:rotate(2.5deg)}100%{transform:rotate(-3deg)}}' +
+    '.sun-cycle-clip{position:absolute;inset:0;overflow:hidden;pointer-events:none;}' +
+    '.sun-cycle-ray{position:absolute;inset:-45%;animation:sun-ray-sway 42s ease-in-out infinite;' +
+    'transition:opacity 3s linear;will-change:transform,opacity;}' +
+    // The sun disc exists only when `sun_image` is set; it carries a blur
+    // filter, so no transform animation rides on it (re-filtering every frame
+    // is exactly what the performance contract is there to avoid).
+    '.sun-cycle-sun{position:absolute;pointer-events:none;transition:opacity 2s linear;' +
+    'will-change:opacity;}' +
+    '.sun-cycle-sun>img{display:block;width:100%;height:auto;}' +
+    '.sun-cycle-moon{position:absolute;width:15%;max-width:190px;aspect-ratio:1;' +
+    'transform:translate(-50%,-50%);pointer-events:none;transition:opacity 2s linear;' +
+    'will-change:opacity;}' +
+    '.sun-cycle-moon>svg{display:block;width:100%;height:100%;overflow:visible;' +
+    'animation:moon-shimmer 7s ease-in-out infinite;will-change:transform,opacity;}' +
+    '@keyframes moon-shimmer{0%,100%{transform:scale(1);opacity:.86}50%{transform:scale(1.04);opacity:1}}' +
+    '.sun-cycle-stars{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
+    'transition:opacity 2s linear;}' +
+    '.sun-cycle-stars .scs-drift{position:absolute;top:0;left:0;width:200%;height:100%;}' +
+    '.sun-cycle-stars .scs-half{position:absolute;top:0;width:50%;height:100%;}' +
+    // east -> west: the strip travels rightwards, matching the real sky
+    '@keyframes scs-drift{from{transform:translateX(-50%)}to{transform:translateX(0)}}' +
+    '@keyframes scs-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+
+  /* Conic gradient with a smooth cosine profile — soft-edged rays without
+     relying on a filter. `bands` lobes, `softness` < 1 widens them. */
+  function rayGradient(x, y, bands, softness, peak) {
+    const steps = bands * 10;
+    const stops = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const wave = Math.pow(Math.max(0, Math.cos(t * bands * 2 * Math.PI)), softness);
+      stops.push(`rgba(255,238,205,${(wave * peak).toFixed(3)}) ${(t * 360).toFixed(1)}deg`);
+    }
+    // Odd lobe count and a 23 deg offset: an even count centred on 0 deg lays the
+    // lobes out along the axes and reads as a cross, not as a fan.
+    return `conic-gradient(from 23deg at ${x.toFixed(1)}% ${y.toFixed(1)}%, ${stops.join(',')})`;
+  }
+
+  /* Where the disc actually sits inside a supplied image, as fractions:
+     [diameter / width, cx / width, cy / height]. Artwork rarely fills its
+     frame — a sun render has rays sticking out on one side, a moon render has
+     a baked glow — and placing such a file by its own centre puts the disc
+     beside its aureole. */
+  function discSpec(v) {
+    const a = Array.isArray(v) ? v : [];
+    const n = (x, def) => (isFinite(x) && Number(x) > 0 ? Number(x) : def);
+    return { dia: n(a[0], 1), cx: isFinite(a[1]) ? Number(a[1]) : 0.5,
+             cy: isFinite(a[2]) ? Number(a[2]) : 0.5 };
+  }
+
+  /* Moon drawn as the real phase: a lit region bounded by the terminator
+     ellipse, rotated so the bright limb faces the sun on screen. With `img`
+     the same terminator becomes a clip path and the artwork is the lit
+     texture — the mask turns towards the sun while the image counter-rotates,
+     so the maria stay upright. `ar` is the image's height/width. */
+  function moonSVG(img, disc, ar) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '-2.6 -2.6 5.2 5.2');
+    svg.dataset.mode = img ? 'image' : 'drawn';
+    const defs = document.createElementNS(ns, 'defs');
+    const grad = document.createElementNS(ns, 'radialGradient');
+    grad.setAttribute('id', 'scb-moon-glow');
+    [['0%', 'rgba(226,238,255,0.40)'], ['38%', 'rgba(210,226,252,0.13)'],
+     ['100%', 'rgba(198,215,242,0)']].forEach(([o, c]) => {
+      const st = document.createElementNS(ns, 'stop');
+      st.setAttribute('offset', o); st.setAttribute('stop-color', c);
+      grad.appendChild(st);
+    });
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+    const glow = document.createElementNS(ns, 'circle');
+    glow.setAttribute('r', '2.6');
+    glow.setAttribute('fill', 'url(#scb-moon-glow)');
+    svg.appendChild(glow);
+    const dark = document.createElementNS(ns, 'circle');
+    dark.setAttribute('r', '1');
+    dark.setAttribute('fill', 'rgba(126,142,175,0.16)');
+    svg.appendChild(dark);
+    const lit = document.createElementNS(ns, 'path');
+    lit.setAttribute('class', 'scb-lit');
+    if (!img) {
+      lit.setAttribute('fill', '#f4f8ff');
+      svg.appendChild(lit);
+      return svg;
+    }
+    // The terminator becomes a clip path instead of a filled shape.
+    const clip = document.createElementNS(ns, 'clipPath');
+    clip.setAttribute('id', 'scb-moon-clip');
+    clip.appendChild(lit);
+    defs.appendChild(clip);
+    // Map the file onto the unit circle: the disc, not the frame, has to land
+    // on r = 1, and the disc is generally off-centre in the file.
+    const w = 2 / disc.dia, h = w * ar;
+    const im = document.createElementNS(ns, 'image');
+    im.setAttribute('href', img);
+    im.setAttribute('x', (-w * disc.cx).toFixed(4));
+    im.setAttribute('y', (-h * disc.cy).toFixed(4));
+    im.setAttribute('width', w.toFixed(4));
+    im.setAttribute('height', h.toFixed(4));
+    const spin = document.createElementNS(ns, 'g');   // turns towards the sun
+    spin.setAttribute('class', 'scb-spin');
+    const hold = document.createElementNS(ns, 'g');   // keeps the maria upright
+    hold.setAttribute('class', 'scb-hold');
+    hold.appendChild(im);
+    const clipped = document.createElementNS(ns, 'g');
+    clipped.setAttribute('clip-path', 'url(#scb-moon-clip)');
+    clipped.appendChild(hold);
+    spin.appendChild(clipped);
+    svg.appendChild(spin);
+    return svg;
+  }
+  function litPath(k) {
+    // k = illuminated fraction, 0 = new, 1 = full. Semicircle plus the
+    // terminator half-ellipse; the ellipse flips side at quarter phase.
+    const a = Math.abs(1 - 2 * k).toFixed(4);
+    const sweep = k > 0.5 ? 1 : 0;
+    return `M 0,-1 A 1,1 0 0 1 0,1 A ${a},1 0 0 ${sweep} 0,-1 Z`;
+  }
+
+  // --- star field ---------------------------------------------------------
+  const STAR_GROUPS = [
+    { dur: 2.7, lo: 0.05, hi: 1.0 },
+    { dur: 3.9, lo: 0.1, hi: 0.95 },
+    { dur: 5.3, lo: 0.05, hi: 1.0 },
+    { dur: 6.7, lo: 0.15, hi: 0.9 },
+    { dur: 8.1, lo: 0.05, hi: 0.95 },
+  ];
+  function starCSS() {
+    let css =
+      '.sun-cycle-stars .scs{position:absolute;border-radius:50%;' +
+      'background:#eaf3ff;width:3px;height:3px;will-change:opacity;' +
+      'box-shadow:0 0 6px 1px rgba(200,225,255,.9);}';
+    STAR_GROUPS.forEach((g, i) => {
+      css +=
+        '@keyframes scs' + i + '{0%,100%{opacity:' + g.lo + '}50%{opacity:' + g.hi + '}}' +
+        '.sun-cycle-stars .scs' + i + '{animation:scs' + i + ' ' + g.dur +
+        's ease-in-out infinite;animation-delay:-' + (g.dur * Math.random()).toFixed(1) + 's;}';
+    });
+    return css;
+  }
+  function shadowsFrom(points, sx, sy) {
+    return points.map(([x, y]) =>
+      (x - sx).toFixed(0) + 'px ' + (y - sy).toFixed(0) + 'px ' +
+      (Math.random() * 4 + 2).toFixed(1) + 'px ' +
+      (Math.random() * 1.8).toFixed(1) + 'px rgba(215,235,255,1)').join(',');
+  }
+
+  /* Drifting field: two identical halves sliding east to west. */
+  function buildStarsDrift(count, driftSec) {
+    const layer = document.createElement('div');
+    layer.className = 'sun-cycle-stars';
+    const W = window.innerWidth, H = window.innerHeight;
+    const perGroup = Math.ceil(count / STAR_GROUPS.length);
+    let css = starCSS();
+    if (driftSec > 0) {
+      css += '.sun-cycle-stars .scs-drift{animation:scs-drift ' + driftSec +
+        's linear infinite;will-change:transform;}';
+    }
+    const style = document.createElement('style');
+    style.textContent = css;
+    layer.appendChild(style);
+    const halfA = document.createElement('div');
+    halfA.className = 'scs-half';
+    halfA.style.left = '0';
+    STAR_GROUPS.forEach((g, i) => {
+      const seed = document.createElement('div');
+      seed.className = 'scs scs' + i;
+      const sx = Math.random() * W, sy = Math.random() * H;
+      seed.style.left = sx.toFixed(0) + 'px';
+      seed.style.top = sy.toFixed(0) + 'px';
+      const pts = [];
+      for (let j = 1; j < perGroup; j++) pts.push([Math.random() * W, Math.random() * H]);
+      seed.style.boxShadow = shadowsFrom(pts, sx, sy);
+      halfA.appendChild(seed);
+    });
+    const halfB = halfA.cloneNode(true);
+    halfB.style.left = '50%';
+    const drift = document.createElement('div');
+    drift.className = 'scs-drift';
+    drift.appendChild(halfA);
+    drift.appendChild(halfB);
+    layer.appendChild(drift);
+    return layer;
+  }
+
+  /* Rotating field: stars laid out in the annulus that the frame sweeps out
+     around the celestial pole, so the frame stays covered at every angle.
+     That annulus is several times the frame area — hence the star count is
+     scaled up to keep the on-screen density. Costs one big painted layer;
+     recommended for panel-sized views, not for full 4K dashboards. */
+  function buildStarsRotate(count, pivotY) {
+    const layer = document.createElement('div');
+    layer.className = 'sun-cycle-stars';
+    const W = window.innerWidth, H = window.innerHeight;
+    const px = W / 2, py = H * pivotY;                       // pole, below the frame
+    const rMin = Math.max(1, (pivotY - 1) * H);
+    const rMax = Math.hypot(W / 2, py);
+    const annulus = Math.PI * (rMax * rMax - rMin * rMin);
+    const total = Math.min(4000, Math.round(count * annulus / (W * H)));
+    const style = document.createElement('style');
+    style.textContent = starCSS() +
+      '.sun-cycle-stars .scs-spin{position:absolute;left:50%;top:0;' +
+      'animation:scs-spin 86164s linear infinite;will-change:transform;}';
+    layer.appendChild(style);
+    const spin = document.createElement('div');
+    spin.className = 'scs-spin';
+    spin.style.width = spin.style.height = '0';
+    spin.style.top = py.toFixed(0) + 'px';                   // rotate about the pole
+    const perGroup = Math.ceil(total / STAR_GROUPS.length);
+    STAR_GROUPS.forEach((g, i) => {
+      const seed = document.createElement('div');
+      seed.className = 'scs scs' + i;
+      const pts = [];
+      for (let j = 0; j < perGroup; j++) {
+        const a = Math.random() * 2 * Math.PI;
+        const r = Math.sqrt(rMin * rMin + Math.random() * (rMax * rMax - rMin * rMin));
+        pts.push([Math.sin(a) * r, -Math.cos(a) * r]);       // relative to the pole
+      }
+      const [sx, sy] = pts[0];
+      seed.style.left = sx.toFixed(0) + 'px';
+      seed.style.top = sy.toFixed(0) + 'px';
+      seed.style.boxShadow = shadowsFrom(pts.slice(1), sx, sy);
+      spin.appendChild(seed);
+    });
+    layer.appendChild(spin);
+    return layer;
+  }
+
+  class SunCycleBgCard extends HTMLElement {
+    setConfig(config) {
+      this._cfg = config || {};
+      const s = this._cfg.stars;
+      this._starCfg = s === false ? null : {
+        count: (s && s.count) || 90,
+        drift: s && s.drift !== undefined ? s.drift : 1800,
+        rotate: !!(s && s.rotate),
+        pivot: (s && s.pivot) || 2.2,
+      };
+      this._sunEntity = this._cfg.sun_entity || 'sun.sun';
+      const az = this._cfg.azimuth;
+      this._az0 = Array.isArray(az) ? az[0] : 50;
+      this._az1 = Array.isArray(az) ? az[1] : 310;
+      const r = this._cfg.rays;
+      this._rayBlur = r && r.blur !== undefined ? r.blur : 28;
+      this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
+      this._showMoon = this._cfg.moon !== false;
+      this._warmDusk = this._cfg.twilight_palette === true;
+
+      // --- optional artwork for the two discs ----------------------------
+      const num = (v, def) => (isFinite(v) ? Number(v) : def);
+      this._sunImg = typeof this._cfg.sun_image === 'string' ? this._cfg.sun_image : null;
+      this._sunImgW = num(this._cfg.sun_image_width, 10.5);
+      this._sunImgBlur = num(this._cfg.sun_image_blur, 11.5);
+      this._sunDisc = discSpec(this._cfg.sun_image_disc);
+      this._moonImg = typeof this._cfg.moon_image === 'string' ? this._cfg.moon_image : null;
+      this._moonImgW = num(this._cfg.moon_image_width, 0);
+      this._moonDisc = discSpec(this._cfg.moon_image_disc);
+      // The moon SVG needs the file's aspect ratio to place the <image>, and
+      // that is only known once the file is decoded. Until then the drawn moon
+      // stays up; the repaint on load swaps it in.
+      this._moonAR = null;
+      if (this._moonImg) {
+        const probe = new Image();
+        probe.onload = () => {
+          if (probe.naturalWidth > 0) {
+            this._moonAR = probe.naturalHeight / probe.naturalWidth;
+            this._apply(true);
+          }
+        };
+        probe.src = this._moonImg;
+      }
+    }
+
+    set hass(h) {
+      const sun = h.states && h.states[this._sunEntity];
+      if (!sun) return;
+      const e = Number(sun.attributes.elevation);
+      if (!isFinite(e)) return;
+      const a = Number(sun.attributes.azimuth);
+      this._elev = e;
+      this._azim = isFinite(a) ? a : null;
+      const cfg = h.config || {};
+      this._lat = cfg.latitude;
+      this._lon = cfg.longitude;
+      const moved = this._painted === undefined ||
+        Math.abs(e - this._painted.e) >= 0.15 ||
+        (this._azim !== null && Math.abs(a - this._painted.a) >= 0.6);
+      if (moved) this._apply();
+    }
+
+    connectedCallback() {
+      this.style.display = 'none';
+      // climb to hui-view-container across shadow boundaries
+      let el = this;
+      while (el && (el.tagName || '').toLowerCase() !== 'hui-view-container') {
+        el = el.parentElement || (el.getRootNode && el.getRootNode().host);
+      }
+      this._container = el || null;
+      this._apply();
+      // other background cards may build their layers after us
+      setTimeout(() => this._apply(true), 600);
+      setTimeout(() => this._apply(true), 2000);
+    }
+
+    _before(c, node) {
+      const hv = c.querySelector('hui-view');
+      if (hv) c.insertBefore(node, hv); else c.appendChild(node);
+    }
+
+    /* Sky window -> frame. Azimuth spans the width, elevation the height,
+       with the horizon parked near the bottom edge. */
+    _project(alt, az) {
+      return {
+        x: clamp((az - this._az0) / (this._az1 - this._az0), -0.05, 1.05) * 100,
+        y: 92 - clamp((alt + 6) / 60, -0.1, 1) * 86,
+      };
+    }
+
+    _apply(force) {
+      const c = this._container, e = this._elev;
+      if (!c || !c.isConnected || e === undefined) return;
+      const p = paletteFor(e, this._warmDusk);
+
+      // --- sun position: real arc when azimuth is available ---------------
+      const sunPos = this._azim !== null ? this._project(e, this._azim)
+                                         : { x: 96, y: 92 - clamp((e + 6) / 60, -0.1, 1) * 86 };
+
+      // --- twilight glow ---------------------------------------------------
+      // The scattered light of dusk belongs to the horizon, not to the disc:
+      // a wide, flat band centred on the sun's azimuth at the bottom edge. It
+      // widens as the sun sinks (light scatters along the whole horizon) and
+      // fades out by roughly -15 deg, before its centre can drift off-frame.
+      // The disc keeps its own aureole, which grows back to the full daytime
+      // 38% x 62% above ~14 deg — so full daylight looks exactly as before.
+      const u = clamp(1 - (e + 8) / 20, 0, 1);
+      const bandW = 70 + 120 * u, bandH = 26 + 16 * u;
+      const bandA = smoothstep(clamp(1 - Math.abs(e + 1) / 14, 0, 1));
+      const discA = smoothstep(clamp((e + 2) / 8, 0, 1));
+      const day = smoothstep(clamp((e - 2) / 12, 0, 1));
+      const dw = lerp(26, 38, day), dh = lerp(46, 62, day);
+      const sx = sunPos.x.toFixed(1), sy = sunPos.y.toFixed(1);
+
+      const bg = c.querySelector('hui-view-background');
+      if (bg) bg.style.background =
+        `radial-gradient(${bandW.toFixed(0)}% ${bandH.toFixed(0)}% at ${sx}% 100%, ` +
+        `${rgba(p.halo, 0.85 * bandA)} 0%, ${rgba(p.halo, 0.32 * bandA)} 38%, ` +
+        `${rgba(p.halo, 0.07 * bandA)} 70%, transparent 100%),` +
+        `radial-gradient(${dw.toFixed(0)}% ${dh.toFixed(0)}% at ${sx}% ${sy}%, ` +
+        `${rgba(p.halo, discA)} 0%, ` +
+        `${rgba(p.halo, lerp(0.35, 0.42, day) * discA)} ${(28 * lerp(0.74, 1, day)).toFixed(0)}%, ` +
+        `${rgba(p.halo, 0.12 * discA * day)} 62%, transparent 100%),` +
+        `linear-gradient(200deg, ${rgb(p.top)} 0%, ${rgb(p.mid)} 48%, ${rgb(p.bot)} 100%)`;
+
+      const root = c.getRootNode();
+      // ShadowRoot takes the <style> directly; a plain Document needs <head>
+      const styleHost = root.head || root;
+      if (root.querySelector && !root.querySelector('.' + STYLE_CLASS)) {
+        const st = document.createElement('style');
+        st.className = STYLE_CLASS;
+        st.textContent = CSS;
+        styleHost.appendChild(st);
+      }
+
+      // --- crepuscular fan, fading into a plain aureole by day ------------
+      let clip = c.querySelector('.sun-cycle-clip');
+      if (!clip) {
+        clip = document.createElement('div');
+        clip.className = 'sun-cycle-clip';
+        const r = document.createElement('div');
+        r.className = 'sun-cycle-ray';
+        clip.appendChild(r);
+        this._before(c, clip);
+      }
+      const ray = clip.firstElementChild;
+      // the ray layer is inset by -45%, so the sun sits at a different
+      // fraction of it than of the frame
+      const rx = (sunPos.x + 45) / 1.9, ry = (sunPos.y + 45) / 1.9;
+      // full fan at the horizon, gone by mid-morning (smoothstep) and gone
+      // again once the sun is well below the horizon (nothing left to scatter)
+      const horizon = smoothstep(clamp(1 - Math.abs(e) / 22, 0, 1)) *
+        smoothstep(clamp((e + 6) / 6, 0, 1));
+      // A fan faded to nothing is not free: the element keeps its sway
+      // animation, `will-change: transform` and a blur filter, so the
+      // compositor holds a full-viewport layer for it all night — and promotes
+      // everything painted above it to its own layer for overlap. Measured at
+      // night on a 1920x1080 panel: 44 MB for the invisible fan alone. Take it
+      // out of the tree instead.
+      const rayVisible = horizon > 0.01;
+      ray.style.display = rayVisible ? '' : 'none';
+      if (!rayVisible) {
+        ray.style.filter = '';
+      } else {
+        ray.style.opacity = (horizon * this._rayPeak).toFixed(3);
+        ray.style.transformOrigin = `${rx.toFixed(1)}% ${ry.toFixed(1)}%`;
+        ray.style.filter = this._rayBlur > 0 ? `blur(${this._rayBlur}px)` : '';
+        ray.style.background = rayGradient(rx, ry, 5, 0.5, 0.5);
+      }
+
+      // --- sun disc, when artwork is supplied ------------------------------
+      if (this._sunImg) {
+        let disc = c.querySelector('.sun-cycle-sun');
+        if (!disc) {
+          disc = document.createElement('div');
+          disc.className = 'sun-cycle-sun';
+          const im = document.createElement('img');
+          im.src = this._sunImg;
+          im.alt = '';
+          disc.appendChild(im);
+          this._before(c, disc);
+        }
+        const d = this._sunDisc;
+        // The element is sized by the *disc*, so the whole file is wider by
+        // 1 / dia; the offsets put the disc centre, not the file centre, on
+        // the projected position.
+        disc.style.width = (this._sunImgW / d.dia).toFixed(3) + '%';
+        disc.style.left = sunPos.x.toFixed(1) + '%';
+        disc.style.top = sunPos.y.toFixed(1) + '%';
+        disc.style.transform =
+          `translate(${(-d.cx * 100).toFixed(3)}%, ${(-d.cy * 100).toFixed(3)}%)`;
+        // Below -3 deg the projection has nowhere left to put the sun, so it
+        // would sit on the bottom edge glowing all night. Fade it instead.
+        disc.style.opacity = smoothstep(clamp((e + 3) / 6, 0, 1)).toFixed(3);
+        // Blur is a share of the disc diameter, never a pixel figure: the same
+        // card runs on a 430 px card and a 1920 px kiosk view.
+        const px = (c.clientWidth || 0) * this._sunImgW / 100 * this._sunImgBlur / 100;
+        disc.style.filter =
+          (px > 0.05 ? `blur(${px.toFixed(2)}px) ` : '') +
+          `brightness(${lerp(0.86, 1.06, day).toFixed(3)}) ` +
+          `saturate(${lerp(1.3, 0.95, day).toFixed(3)}) ` +
+          `hue-rotate(${lerp(-13, 0, day).toFixed(1)}deg)`;
+      }
+
+      // --- moon: own position and phase -----------------------------------
+      if (this._showMoon && isFinite(this._lat) && isFinite(this._lon)) {
+        const J = julian(new Date());
+        const se = sunEq(J), me = moonEq(J);
+        const mp = altaz(me.ra, me.dec, J, this._lat, this._lon);
+        const elong = ((me.lam - se.lam) % 360 + 360) % 360;
+        const k = (1 - Math.cos(elong * D2R)) / 2;            // illuminated fraction
+        const pos = this._project(mp.alt, mp.az);
+        // visible when the sky is dark enough and the moon is up
+        const alpha = clamp((-e - 1) / 8, 0, 1) * clamp((mp.alt + 2) / 8, 0, 1);
+
+        // Artwork can only be used once its aspect ratio is known; until the
+        // probe resolves, and forever if it fails, the drawn moon stands in.
+        const useImg = !!(this._moonImg && this._moonAR);
+        const tryb = useImg ? 'image' : 'drawn';
+        let moon = c.querySelector('.sun-cycle-moon');
+        if (!moon) {
+          moon = document.createElement('div');
+          moon.className = 'sun-cycle-moon';
+          this._before(c, moon);
+        }
+        const svg = moon.firstElementChild;
+        if (!svg || svg.dataset.mode !== tryb) {
+          moon.textContent = '';
+          moon.appendChild(moonSVG(useImg ? this._moonImg : null, this._moonDisc, this._moonAR));
+        }
+        if (this._moonImgW > 0) {
+          moon.style.width = this._moonImgW + '%';
+          moon.style.maxWidth = 'none';       // the 190 px cap is for the drawn disc
+        }
+        moon.style.left = pos.x.toFixed(1) + '%';
+        moon.style.top = pos.y.toFixed(1) + '%';
+        moon.style.opacity = alpha.toFixed(2);
+        // Bright limb points at the sun in the same projection. The lit region
+        // is drawn facing +x, and SVG rotate() turns clockwise in the same
+        // y-down frame atan2 measures in, so the angle maps directly.
+        const ang = Math.atan2(sunPos.y - pos.y, sunPos.x - pos.x) * R2D;
+        const lit = moon.querySelector('.scb-lit');
+        if (lit) lit.setAttribute('d', litPath(k));
+        if (useImg) {
+          const spin = moon.querySelector('.scb-spin');
+          const hold = moon.querySelector('.scb-hold');
+          if (spin) spin.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+          if (hold) hold.setAttribute('transform', `rotate(${(-ang).toFixed(1)})`);
+          // Pale at dusk, full brightness deep in the night — otherwise a photo
+          // of a full moon reads as a lamp glued to a still-blue sky.
+          const noc = clamp((-e - 2) / 10, 0, 1);
+          moon.style.filter = `brightness(${lerp(0.82, 1.04, noc).toFixed(3)}) ` +
+            `saturate(${lerp(0.7, 1, noc).toFixed(3)})`;
+        } else if (lit) {
+          lit.setAttribute('transform', `rotate(${ang.toFixed(1)})`);
+        }
+      }
+
+      // --- star field ------------------------------------------------------
+      if (this._starCfg) {
+        let stars = c.querySelector('.sun-cycle-stars');
+        if (!stars) {
+          stars = this._starCfg.rotate
+            ? buildStarsRotate(this._starCfg.count, this._starCfg.pivot)
+            : buildStarsDrift(this._starCfg.count, this._starCfg.drift);
+          this._before(c, stars);
+        }
+        stars.style.opacity = p.stars.toFixed(2);
+      }
+      // external star layer (e.g. a separate star-twinkle card): drive opacity
+      const ext = c.querySelector('#star-twinkle-layer');
+      if (ext) {
+        ext.style.opacity = p.stars.toFixed(2);
+        ext.style.transition = 'opacity 2s linear';
+      }
+
+      if (!force) this._painted = { e, a: this._azim === null ? 0 : this._azim };
+    }
+
+    // No destructive cleanup: layers are deduped on (re)create and die with
+    // their container. Removing them here races view-to-view navigation.
+    getCardSize() { return 0; }
+  }
+  customElements.define('sun-cycle-bg-card', SunCycleBgCard);
+
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: 'sun-cycle-bg-card',
+    name: 'Sun Cycle Background',
+    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, and a star field — all driven by sun.sun.',
+  });
+})();
+
+</script>
+
+<script type="module">
+(function () {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  function julian(dt) {
+    let y = dt.getUTCFullYear(), m = dt.getUTCMonth() + 1;
+    const d = dt.getUTCDate() + (dt.getUTCHours() + dt.getUTCMinutes() / 60) / 24;
+    if (m <= 2) { y -= 1; m += 12; }
+    const A = Math.floor(y / 100), B = 2 - A + Math.floor(A / 4);
+    return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5;
+  }
+  const gmst = (J) => (280.46061837 + 360.98564736629 * (J - 2451545)) % 360;
+  function altaz(ra, dec, J, lat, lon) {
+    const H = ((gmst(J) + lon - ra) % 360) * D2R, dr = dec * D2R, pr = lat * D2R;
+    const alt = Math.asin(Math.sin(dr) * Math.sin(pr) + Math.cos(dr) * Math.cos(pr) * Math.cos(H));
+    const az = Math.atan2(-Math.sin(H) * Math.cos(dr),
+      Math.cos(pr) * Math.sin(dr) - Math.sin(pr) * Math.cos(dr) * Math.cos(H));
+    return { alt: alt * R2D, az: ((az * R2D) % 360 + 360) % 360 };
+  }
+  function sunEq(J) {
+    const n = J - 2451545, L = (280.460 + 0.9856474 * n) % 360;
+    const g = ((357.528 + 0.9856003 * n) % 360) * D2R;
+    const lam = ((L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360) * D2R, eps = 23.439 * D2R;
+    return {
+      ra: ((Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam)) * R2D) % 360 + 360) % 360,
+      dec: Math.asin(Math.sin(eps) * Math.sin(lam)) * R2D,
+    };
+  }
+
+  const card = document.getElementById('card');
+  const $ = (id) => document.getElementById(id);
+
+  function readConfig() {
+    const cfg = {};
+    if ($('stars-on').checked) {
+      cfg.stars = {
+        count: Number($('stars-count').value),
+        drift: $('stars-rotate').checked ? undefined : Number($('stars-drift').value),
+        rotate: $('stars-rotate').checked,
+        pivot: Number($('stars-pivot').value),
+      };
+      if (cfg.stars.drift === undefined) delete cfg.stars.drift;
+    } else {
+      cfg.stars = false;
+    }
+    cfg.azimuth = [Number($('az0').value), Number($('az1').value)];
+    cfg.rays = { blur: Number($('rays-blur').value), strength: Number($('rays-strength').value) };
+    if (!$('moon-on').checked) cfg.moon = false;
+    if ($('twilight').checked) cfg.twilight_palette = true;
+    const si = $('sun-image').value.trim();
+    const mi = $('moon-image').value.trim();
+    if (si) cfg.sun_image = si;
+    if (mi) cfg.moon_image = mi;
+    return cfg;
+  }
+
+  function toYaml(cfg) {
+    const lines = ['type: custom:sun-cycle-bg-card'];
+    const dump = (v, indent) => {
+      if (v === false) return 'false';
+      if (v === true) return 'true';
+      if (typeof v === 'number') return String(v);
+      if (typeof v === 'string') return `"${v}"`;
+      if (Array.isArray(v)) return `[${v.join(', ')}]`;
+      return v;
+    };
+    if (cfg.stars === false) {
+      lines.push('stars: false');
+    } else {
+      lines.push('stars:');
+      lines.push(`  count: ${cfg.stars.count}`);
+      if (cfg.stars.rotate) lines.push(`  rotate: true`);
+      else lines.push(`  drift: ${cfg.stars.drift}`);
+      lines.push(`  pivot: ${cfg.stars.pivot}`);
+    }
+    lines.push(`azimuth: ${dump(cfg.azimuth)}`);
+    lines.push('rays:');
+    lines.push(`  blur: ${cfg.rays.blur}`);
+    lines.push(`  strength: ${cfg.rays.strength}`);
+    if (cfg.moon === false) lines.push('moon: false');
+    if (cfg.twilight_palette) lines.push('twilight_palette: true');
+    if (cfg.sun_image) lines.push(`sun_image: "${cfg.sun_image}"`);
+    if (cfg.moon_image) lines.push(`moon_image: "${cfg.moon_image}"`);
+    return lines.join('\n');
+  }
+
+  function updateReadouts() {
+    $('stars-count-n').textContent = $('stars-count').value;
+    $('stars-drift-n').textContent = $('stars-rotate').checked ? '—' : $('stars-drift').value;
+    $('stars-pivot-n').textContent = Number($('stars-pivot').value).toFixed(1);
+    $('az0-n').textContent = $('az0').value + '°';
+    $('az1-n').textContent = $('az1').value + '°';
+    $('rays-blur-n').textContent = $('rays-blur').value + 'px';
+    $('rays-strength-n').textContent = Number($('rays-strength').value).toFixed(2);
+    $('fs-stars').classList.toggle('off', !$('stars-on').checked);
+
+    const t = Number($('t').value), d = Number($('d').value), lat = Number($('lat').value);
+    const hh = Math.floor(t / 60), mm = t % 60;
+    $('t-val').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    $('d-val').textContent = `dzień ${d}`;
+    $('lat-val').textContent = `${lat}°N`;
+  }
+
+  function applyAll(force) {
+    updateReadouts();
+    const cfg = readConfig();
+    card.setConfig(cfg);
+    $('yaml-out').textContent = toYaml(cfg);
+
+    const t = Number($('t').value), d = Number($('d').value), lat = Number($('lat').value);
+    const base = new Date(Date.UTC(2026, 5, 21));
+    const dt = new Date(base.getTime() + d * 86400000 + t * 60000);
+    const J = julian(dt);
+    const eq = sunEq(J);
+    const pos = altaz(eq.ra, eq.dec, J, lat, 21);
+    $('hint-elev').textContent = pos.alt.toFixed(1);
+    $('hint-az').textContent = pos.az.toFixed(1);
+
+    card.hass = {
+      states: { 'sun.sun': { attributes: { elevation: pos.alt, azimuth: pos.az } } },
+      config: { latitude: lat, longitude: 21 },
+    };
+    if (typeof card._apply === 'function') card._apply(true);
+  }
+
+  document.querySelectorAll('input').forEach((el) => {
+    el.addEventListener('input', () => applyAll());
+  });
+
+  let playing = false, playTimer = null;
+  $('play').addEventListener('click', () => {
+    playing = !playing;
+    $('play').textContent = playing ? '⏸' : '▶';
+    if (playing) {
+      playTimer = setInterval(() => {
+        let t = Number($('t').value) + 4;
+        if (t > 1440) t = 0;
+        $('t').value = t;
+        applyAll();
+      }, 40);
+    } else {
+      clearInterval(playTimer);
+    }
+  });
+
+  $('copy-btn').addEventListener('click', async () => {
+    await navigator.clipboard.writeText($('yaml-out').textContent);
+    const msg = $('copied-msg');
+    msg.classList.add('show');
+    setTimeout(() => msg.classList.remove('show'), 1400);
+  });
+
+  applyAll();
+})();
+</script>
