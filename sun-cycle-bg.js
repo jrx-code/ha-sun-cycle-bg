@@ -496,10 +496,53 @@
       };
     }
 
+    // --- ink polarity -----------------------------------------------------
+    // The card already owns the only number that says how bright the view is
+    // about to be, so it also publishes the ink colour the cards should use.
+    // Custom properties inherit through shadow DOM, so one setter on the root
+    // reaches every button-card on every view without touching their code.
+    //
+    // Threshold measured, not chosen: interpolating the STOPS table above and
+    // scoring WCAG 2.1 against the brightest stop, the light second plane
+    // (#9A9384) crosses 4.5 at about +5 deg of elevation. Hysteresis of one
+    // degree either side keeps it from flapping while the sun sits on the
+    // boundary.
+    _inkVars(e) {
+      const byl = this._inkDark === true;
+      const teraz = byl ? e > 4 : e >= 6;
+      const root = document.documentElement;
+      if (this._inkDark === teraz) return;
+      this._inkDark = teraz;
+      const zestaw = teraz
+        ? { tusz: '#141A22', tuszRgb: '20,26,34',
+            tusz2: '#3A3E46', tusz2Rgb: '58,62,70',
+            akcent: '#6B2418', akcentRgb: '107,36,24',
+            // Kolory znaczace nie ida za tuszem, bo niosa sens, a nie tylko
+            // czytelnosc. Warianty dzienne wybrane pomiarem: przyciemnione
+            // tak, zeby najgorszy punkt pod kolumnami dal maksimum tego, co
+            // na tym tle w ogole osiagalne (bursztyn 1.03 -> 2.24,
+            // zielen 1.08 -> 2.13).
+            bursztyn: '#b8791a', zielen: '#2f9d5b' }
+        : { tusz: '#EFE7D9', tuszRgb: '239,231,217',
+            tusz2: '#9A9384', tusz2Rgb: '154,147,132',
+            akcent: '#B14A30', akcentRgb: '177,74,48',
+            bursztyn: '#fbbf24', zielen: '#4ade80' };
+      root.style.setProperty('--jrx-tusz', zestaw.tusz);
+      root.style.setProperty('--jrx-tusz-rgb', zestaw.tuszRgb);
+      root.style.setProperty('--jrx-tusz2', zestaw.tusz2);
+      root.style.setProperty('--jrx-tusz2-rgb', zestaw.tusz2Rgb);
+      root.style.setProperty('--jrx-akcent', zestaw.akcent);
+      root.style.setProperty('--jrx-akcent-rgb', zestaw.akcentRgb);
+      root.style.setProperty('--jrx-bursztyn', zestaw.bursztyn);
+      root.style.setProperty('--jrx-zielen', zestaw.zielen);
+      root.setAttribute('data-jrx-pismo', teraz ? 'ciemne' : 'jasne');
+    }
+
     _apply(force) {
       const c = this._container, e = this._elev;
       if (!c || !c.isConnected || e === undefined) return;
       const p = paletteFor(e, this._warmDusk);
+      this._inkVars(e);
 
       // --- sun position: real arc when azimuth is available ---------------
       const sunPos = this._azim !== null ? this._project(e, this._azim)
