@@ -112,6 +112,23 @@ stars:                  # `stars: false` disables the built-in field
   count: 90             # stars visible on screen
   drift: 1800           # seconds per screen-width of drift, 0 = static
   rotate: false         # true = rotate about the celestial pole instead
+  sizes: flat           # mixed = three diameters, a crude magnitude ladder
+  size: 1               # scales the star dot (0.25–2)
+  glow: 1               # scales the blur around it (0–2); 0 = hard pixels
+  twinkle: 1            # amplitude (0–1.4); 0 = steady
+  flares:               # a few stars that flash bright now and then
+    count: 0
+    every: 26           # seconds per cycle (each star ±25 %)
+    strength: 1         # 0–1
+    spikes: true        # diffraction spikes on the flash
+  meteors:              # sporadic streaks on a Poisson interval
+    rate: 0             # per hour; 0 = off
+    length: 190         # px
+    speed: 1.1          # seconds per streak
+    angle: 24           # degrees below horizontal (random ±8)
+    radiant: null       # [x%, y%] = a shower, every streak runs from there
+    pair: 0             # chance (0–1) of a second streak right after
+  iss: false            # true = the real ISS from sensor.iss_visual_pass_0..4
 
 # Optional artwork for the two discs — see below. Left out, both stay drawn.
 sun_image: null         # e.g. /local/sun-cycle/sun.png
@@ -180,6 +197,57 @@ set up.
 If your dashboard already has its own star layer with the element id
 `star-twinkle-layer`, its opacity is driven too (fades at dawn, returns at
 dusk) — set `stars: false` to avoid doubling the field.
+
+## Flares, meteors and the ISS
+
+Everything beyond the plain field is off by default, so a config written for
+an older version draws exactly what it drew. The field itself is five groups
+of stars, each one painted once as a multi-point `box-shadow` with only the
+group's opacity animating — cheap, but it means one opacity drives a whole
+group, so the three things below are real elements of their own:
+
+- **`sizes: mixed`** splits the count into three diameters (2 / 3 / 4 px,
+  scaled by `size`), so the field reads as magnitudes rather than a uniform
+  sprinkle. `size` and `glow` are separate knobs: a 3 px dot under 2–6 px of
+  blur is what the eye reads as a 9 px blob. `size: 0.5, glow: 0.05` gives
+  pin-pricks; `glow: 0` gives hard pixels (fine on a dense tablet screen,
+  gone on a projector).
+- **`flares`** — a few stars that flash bright for a moment every `every`
+  seconds (±25 % per star, so they never flash together), with or without
+  diffraction `spikes`. Each is one element with its own keyframes.
+- **`meteors`** — streaks spawned on a Poisson interval at `rate` per hour,
+  each one element animated with the Web Animations API (transform + opacity)
+  and removed when it finishes. Without `radiant` they fall at `angle` from
+  anywhere; with `radiant: [x%, y%]` every streak runs away from that point,
+  as a shower does. `pair` is the chance of a second streak right behind.
+- **`iss`** — the station is not a star: it does not twinkle, moves at a
+  steady pace and fades where it flies into the Earth's shadow. With the
+  [Satellite Tracker (N2YO)](https://github.com/djtimca/hasatellitetracker)
+  integration publishing `sensor.iss_visual_pass_0..4` (start/end unix, max
+  elevation, start and end compass point), `iss: true` flies each pass at its
+  real hour, along its real arc, for its real duration — projected the same
+  way the sun and moon are, so it moves *through* the same sky. A view opened
+  mid-pass joins the station in flight. "Visual pass" already means a sunlit
+  station over a dark observer, and the layer's opacity is driven by the sun
+  anyway, so nothing has to be gated by day and night on top of that.
+
+  ```yaml
+  iss:
+    entities: sensor.iss_visual_pass_   # prefix; + 0 … count-1
+    count: 5
+    trail: 60        # px of trail behind the station, 0 = none
+    label: true      # "ISS" caption next to it
+    every: 0         # > 0 = demo passes every N seconds on the fallback arc
+    duration: 330    # fallback arc (no sensors): seconds, azimuth from → to,
+    az: [200, 95]    # peak altitude
+    max_alt: 41
+  ```
+
+Timers only decide *when* a meteor or a pass starts; nothing animates in JS,
+and both stop re-arming once the layer has left the document. A page that
+wants to drive the layer itself (a tuning page) gets
+`window.sunCycleBg.buildStars(cfg, W, H, proj)` and `readStarConfig(cfg)`;
+the layer carries `scsMeteor()`, `scsIss()` and `scsStop()`.
 
 ## Tuning the palette
 

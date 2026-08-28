@@ -93,6 +93,69 @@ const OBRAZKI = {
   moon_image_disc: [0.42870, 0.5, 0.5],
 };
 out.push(['OBRAZKI dzien  elev=+49', scene(49, 180, OBRAZKI)]);
+
+// 1.4.0: the star layer carries sizes, flares, meteors and the ISS. Read the
+// layer itself here — the scene reader above only counts the dots.
+function gwiazdy(cont) {
+  const layer = cont.querySelector('.sun-cycle-stars');
+  if (!layer) return { layer: false };
+  const css = layer.querySelector('style').textContent;
+  const iss = layer.querySelector('.scs-iss');
+  return {
+    layer: true,
+    inst: layer.className.replace('sun-cycle-stars ', ''),
+    // stars are the farthest thing: right above the painted backdrop
+    afterBackdrop: layer.previousElementSibling &&
+      layer.previousElementSibling.tagName === 'HUI-VIEW-BACKGROUND',
+    opacity: +layer.style.opacity,
+    dots: layer.querySelectorAll('.scs').length,
+    dotSizes: [...new Set([...layer.querySelectorAll('.scs')].map(d => d.style.width))].sort(),
+    flares: layer.querySelectorAll('.scs-flare').length,
+    flareKeyframes: (css.match(/@keyframes [\w-]+-fl\d+/g) || []).length,
+    twinkleLow: (css.match(/-tw0\{0%,100%\{opacity:([\d.]+)\}/) || [])[1],
+    drift: /-drift\{from/.test(css),
+    spin: !!layer.querySelector('.scs-spin'),
+    meteors: layer.querySelectorAll('.scs-meteor').length,
+    iss: !!iss,
+    issLabel: iss ? (iss.querySelector('span') || {}).textContent : null,
+    issTrail: iss ? (iss.querySelector('i') || {}).style && iss.querySelector('i').style.width : null,
+  };
+}
+// FROZEN is 23:43 UTC — a pass that started a minute ago and runs five more
+// exercises "join in flight"; the ones after it are the queue.
+const T = Math.floor(FROZEN.getTime() / 1000);
+const przelot = (start, end, od, do_, alt) => ({ attributes: {
+  pass_start_unix: start, pass_end_unix: end, max_elevation: alt,
+  start_compass: od, end_compass: do_ } });
+const ISS_STATES = {
+  'sensor.iss_visual_pass_0': przelot(T - 60, T + 300, 'SW', 'E', 41),
+  'sensor.iss_visual_pass_1': przelot(T + 5400, T + 5800, 'W', 'NE', 22),
+};
+const PELNE = {
+  stars: {
+    count: 160, sizes: 'mixed', size: 0.5, glow: 0.05, twinkle: 0.45, drift: 0,
+    flares: { count: 5, every: 18, strength: 1, spikes: false },
+    meteors: { rate: 28, length: 110, speed: 1.1, radiant: [78, 12], pair: 0.35 },
+    iss: { entities: 'sensor.iss_visual_pass_', count: 5, trail: 60, label: true },
+  },
+};
+{
+  const cont = buduj(-16.18, 321.56, PELNE);
+  const card = cont.querySelector('sun-cycle-bg-card');
+  card.hass = {
+    states: Object.assign({ 'sun.sun': { attributes: { elevation: -16.18, azimuth: 321.56 } } }, ISS_STATES),
+    config: { latitude: 53.5, longitude: 14.5 },
+  };
+  const layer = cont.querySelector('.sun-cycle-stars');
+  layer.scsMeteor();                              // on demand, like a tuning page
+  out.push(['GWIAZDY pelne  noc', gwiazdy(cont)]);
+  layer.scsStop();
+}
+out.push(['GWIAZDY domyslne  noc', gwiazdy(buduj(-16.18, 321.56, { stars: {} }))]);
+out.push(['GWIAZDY domyslne  dzien', gwiazdy(buduj(49, 180, { stars: {} }))]);
+out.push(['GWIAZDY rotate', gwiazdy(buduj(-16.18, 321.56, { stars: { rotate: true, count: 60 } }))]);
+out.push(['GWIAZDY wylaczone', gwiazdy(buduj(-16.18, 321.56, { stars: false }))]);
+out.push(['GWIAZDY readStarConfig({})', window.sunCycleBg.readStarConfig({})]);
 const contNoc = buduj(-16.18, 321.56, OBRAZKI);
 out.push(['OBRAZKI noc  przed wczytaniem pliku', czytaj(contNoc, -16.18, 321.56)]);
 setTimeout(() => {

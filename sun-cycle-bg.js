@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.3.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.4.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -19,12 +19,19 @@
  *     crescent/gibbous shape with the bright limb facing the sun,
  *   - an optional star field twinkles and moves east to west; it can either
  *     drift (cheap, default) or rotate about the celestial pole (prettier,
- *     but the layer has to cover the whole swept disc — see `stars.rotate`).
+ *     but the layer has to cover the whole swept disc — see `stars.rotate`),
+ *   - on top of the field, all off by default: three star sizes instead of
+ *     one, a few flare stars that flash now and then, sporadic meteors (or a
+ *     shower from a radiant), and the ISS crossing the sky along its real
+ *     pass when the Satellite Tracker (N2YO) integration publishes one.
  *
  * Performance contract: every animation is transform/opacity-only (runs on the
  * compositor), one animated layer each for rays / moon / stars, repaints only
  * when the sun moves >= 0.15 deg in elevation or >= 0.6 deg in azimuth
- * (~ every half minute). Measured with this card on a 1280x400 RPi5 kiosk: 60 fps.
+ * (~ every half minute). Meteors and the ISS add at most one short-lived
+ * element each, animated with the Web Animations API on transform/opacity; a
+ * JS timer only decides *when* to spawn one, it never animates. Measured with
+ * this card on a 1280x400 RPi5 kiosk: 60 fps.
  *
  * Usage — add to every view you want painted (e.g. a hidden column or a
  * shared include):
@@ -42,6 +49,33 @@
  *     count: 90           # stars visible on screen
  *     drift: 1800         # seconds per screen-width, 0 = static
  *     rotate: false       # true = rotate about the pole instead of drifting
+ *     sizes: flat         # mixed = three diameters, a crude magnitude ladder
+ *     size: 1             # scales the star dot (0.25-2)
+ *     glow: 1             # scales the blur around it (0-2); 0 = hard pixels
+ *     twinkle: 1          # amplitude (0-1.4); 0 = steady
+ *     flares:             # a few named stars that flash bright now and then
+ *       count: 0
+ *       every: 26         # seconds per cycle (each star +-25 %)
+ *       strength: 1       # 0-1
+ *       spikes: true      # diffraction spikes on the flash
+ *     meteors:            # sporadic streaks on a Poisson interval
+ *       rate: 0           # per hour; 0 = off
+ *       length: 190       # px
+ *       speed: 1.1        # seconds per streak
+ *       angle: 24         # degrees below horizontal (random +-8)
+ *       radiant: null     # [x%, y%] = a shower, every streak runs from there
+ *       pair: 0           # chance (0-1) of a second streak right after
+ *     iss: false          # true = real passes from sensor.iss_visual_pass_0..4
+ *                         # (Satellite Tracker / N2YO), or:
+ *     # iss:
+ *     #   entities: sensor.iss_visual_pass_   # prefix, + 0..count-1
+ *     #   count: 5
+ *     #   trail: 60       # px of trail behind the station, 0 = none
+ *     #   label: false    # "ISS" caption next to it
+ *     #   every: 0        # s between demo passes on the fallback arc, 0 = off
+ *     #   duration: 330   # fallback arc: seconds, azimuth from -> to, peak
+ *     #   az: [200, 95]
+ *     #   max_alt: 41
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
  *   # Both are independent; whatever is left out keeps the drawn version. The
@@ -192,13 +226,10 @@
     '.sun-cycle-moon>svg{display:block;width:100%;height:100%;overflow:visible;' +
     'animation:moon-shimmer 7s ease-in-out infinite;will-change:transform,opacity;}' +
     '@keyframes moon-shimmer{0%,100%{transform:scale(1);opacity:.86}50%{transform:scale(1.04);opacity:1}}' +
+    // the star layer's own rules (drift, spin, twinkle, flares, meteors, ISS)
+    // travel inside the layer, scoped to a per-instance class — see starCSS()
     '.sun-cycle-stars{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
-    'transition:opacity 2s linear;}' +
-    '.sun-cycle-stars .scs-drift{position:absolute;top:0;left:0;width:200%;height:100%;}' +
-    '.sun-cycle-stars .scs-half{position:absolute;top:0;width:50%;height:100%;}' +
-    // east -> west: the strip travels rightwards, matching the real sky
-    '@keyframes scs-drift{from{transform:translateX(-50%)}to{transform:translateX(0)}}' +
-    '@keyframes scs-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+    'transition:opacity 2s linear;}';
 
   /* Conic gradient with a smooth cosine profile — soft-edged rays without
      relying on a filter. `bands` lobes, `softness` < 1 widens them. */
@@ -298,6 +329,12 @@
   }
 
   // --- star field ---------------------------------------------------------
+  // Five groups, each one seed dot plus a multi-point box-shadow painted once;
+  // only the group's opacity animates, with literal keyframe values, so the
+  // twinkle runs on the compositor. Flares, meteors and the ISS are the three
+  // things a shared box-shadow cannot do (one opacity drives the whole group),
+  // so each of them is a real element of its own — still transform/opacity
+  // only, and short-lived where it can be.
   const STAR_GROUPS = [
     { dur: 2.7, lo: 0.05, hi: 1.0 },
     { dur: 3.9, lo: 0.1, hi: 0.95 },
@@ -305,62 +342,165 @@
     { dur: 6.7, lo: 0.15, hi: 0.9 },
     { dur: 8.1, lo: 0.05, hi: 0.95 },
   ];
-  function starCSS() {
-    let css =
-      '.sun-cycle-stars .scs{position:absolute;border-radius:50%;' +
-      'background:#eaf3ff;width:3px;height:3px;will-change:opacity;' +
-      'box-shadow:0 0 6px 1px rgba(200,225,255,.9);}';
-    STAR_GROUPS.forEach((g, i) => {
-      css +=
-        '@keyframes scs' + i + '{0%,100%{opacity:' + g.lo + '}50%{opacity:' + g.hi + '}}' +
-        '.sun-cycle-stars .scs' + i + '{animation:scs' + i + ' ' + g.dur +
-        's ease-in-out infinite;animation-delay:-' + (g.dur * Math.random()).toFixed(1) + 's;}';
-    });
-    return css;
-  }
-  function shadowsFrom(points, sx, sy) {
-    return points.map(([x, y]) =>
-      (x - sx).toFixed(0) + 'px ' + (y - sy).toFixed(0) + 'px ' +
-      (Math.random() * 4 + 2).toFixed(1) + 'px ' +
-      (Math.random() * 1.8).toFixed(1) + 'px rgba(215,235,255,1)').join(',');
+  // [diameter px, share of the count] — "mixed" is a crude magnitude ladder.
+  const STAR_SIZES = {
+    flat: [[3, 1]],
+    mixed: [[2, 0.58], [3, 0.30], [4, 0.12]],
+  };
+  const COMPASS = {                                 // compass point -> azimuth
+    N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+    S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
+  };
+  let STAR_SEQ = 0;
+  const numOr = (v, d) => (v === undefined || v === null || v === '' || isNaN(v) ? d : Number(v));
+
+  /* `stars:` block -> full config with defaults. Everything new is off by
+     default, so a config written for an older version draws what it drew. */
+  function readStarConfig(c) {
+    c = c || {};
+    const f = c.flares || {}, m = c.meteors || {}, i = c.iss;
+    return {
+      count: numOr(c.count, 90),
+      drift: numOr(c.drift, 1800),                  // s per screen-width, 0 = static
+      rotate: !!c.rotate,
+      pivot: numOr(c.pivot, 2.2),
+      sizes: c.sizes === 'mixed' ? 'mixed' : 'flat',
+      size: clamp(numOr(c.size, 1), 0.25, 2),       // scales every star diameter
+      glow: clamp(numOr(c.glow, 1), 0, 2),          // scales the blur around it
+      twinkle: clamp(numOr(c.twinkle, 1), 0, 1.4),  // amplitude, 0 = steady
+      flares: {
+        count: Math.round(numOr(f.count, 0)),
+        every: numOr(f.every, 26),                  // s per cycle (±25 %)
+        strength: clamp(numOr(f.strength, 1), 0, 1),
+        spikes: f.spikes !== false,
+      },
+      meteors: {
+        rate: numOr(m.rate, 0),                     // per hour, 0 = off
+        length: numOr(m.length, 190),               // px
+        speed: numOr(m.speed, 1.1),                 // s per streak
+        angle: numOr(m.angle, 24),                  // deg below horizontal
+        radiant: Array.isArray(m.radiant) ? m.radiant : null,   // [%x, %y] = a shower
+        pair: clamp(numOr(m.pair, 0), 0, 1),        // chance of a second streak
+      },
+      iss: i
+        ? {
+            // `entities` = the Satellite Tracker (N2YO) sensors; with them the
+            // pass is the real one, at its real hour. duration / az / max_alt
+            // are the fallback arc for a page with no Home Assistant behind it
+            // (a tuning page), or for `every` > 0.
+            entities: i === true ? 'sensor.iss_visual_pass_'
+                                 : (typeof i.entities === 'string' ? i.entities : null),
+            count: Math.round(numOr(i === true ? 5 : i.count, 5)),
+            duration: numOr(i.duration, 330),
+            az: Array.isArray(i.az) ? i.az : [200, 95],
+            alt: numOr(i.max_alt, 41),
+            trail: numOr(i.trail, 0),
+            label: !!(i === true ? false : i.label),
+            every: numOr(i.every, 0),               // s between repeats, 0 = on demand
+          }
+        : null,
+    };
   }
 
-  /* Drifting field: two identical halves sliding east to west. */
-  function buildStarsDrift(count, driftSec) {
-    const layer = document.createElement('div');
-    layer.className = 'sun-cycle-stars';
-    const W = window.innerWidth, H = window.innerHeight;
-    const perGroup = Math.ceil(count / STAR_GROUPS.length);
-    let css = starCSS();
-    if (driftSec > 0) {
-      css += '.sun-cycle-stars .scs-drift{animation:scs-drift ' + driftSec +
+  /* Per-layer CSS. Every keyframe name carries the layer's own suffix, so two
+     layers on one page (a tuning page mounts a dozen) cannot overwrite each
+     other's twinkle. */
+  function starCSS(cfg, sel) {
+    const amp = cfg.twinkle;
+    let css =
+      sel + ' .scs{position:absolute;border-radius:50%;background:#eaf3ff;will-change:opacity;}' +
+      sel + ' .scs-drift{position:absolute;top:0;left:0;width:200%;height:100%;}' +
+      sel + ' .scs-half{position:absolute;top:0;width:50%;height:100%;}';
+    if (cfg.drift > 0 && !cfg.rotate) {
+      css += '@keyframes ' + sel.slice(1) + '-drift{from{transform:translateX(-50%)}to{transform:translateX(0)}}' +
+        sel + ' .scs-drift{animation:' + sel.slice(1) + '-drift ' + cfg.drift +
         's linear infinite;will-change:transform;}';
     }
-    const style = document.createElement('style');
-    style.textContent = css;
-    layer.appendChild(style);
-    const halfA = document.createElement('div');
-    halfA.className = 'scs-half';
-    halfA.style.left = '0';
+    if (cfg.rotate) {
+      css += '@keyframes ' + sel.slice(1) + '-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}' +
+        sel + ' .scs-spin{position:absolute;left:50%;top:0;' +
+        'animation:' + sel.slice(1) + '-spin 86164s linear infinite;will-change:transform;}';
+    }
     STAR_GROUPS.forEach((g, i) => {
-      const seed = document.createElement('div');
-      seed.className = 'scs scs' + i;
-      const sx = Math.random() * W, sy = Math.random() * H;
-      seed.style.left = sx.toFixed(0) + 'px';
-      seed.style.top = sy.toFixed(0) + 'px';
-      const pts = [];
-      for (let j = 1; j < perGroup; j++) pts.push([Math.random() * W, Math.random() * H]);
-      seed.style.boxShadow = shadowsFrom(pts, sx, sy);
-      halfA.appendChild(seed);
+      // amplitude scales the swing around the bright end: twinkle 0 = steady
+      const lo = clamp(g.hi - (g.hi - g.lo) * amp, 0, 1).toFixed(3);
+      const nam = sel.slice(1) + '-tw' + i;
+      css +=
+        '@keyframes ' + nam + '{0%,100%{opacity:' + lo + '}50%{opacity:' + g.hi + '}}' +
+        sel + ' .scs' + i + '{animation:' + nam + ' ' + g.dur +
+        's ease-in-out infinite;animation-delay:-' + (g.dur * Math.random()).toFixed(1) + 's;}';
     });
-    const halfB = halfA.cloneNode(true);
-    halfB.style.left = '50%';
-    const drift = document.createElement('div');
-    drift.className = 'scs-drift';
-    drift.appendChild(halfA);
-    drift.appendChild(halfB);
-    layer.appendChild(drift);
-    return layer;
+    if (cfg.flares.count > 0) {
+      const d = (4 * cfg.size).toFixed(2);
+      css +=
+        sel + ' .scs-flare{position:absolute;width:' + d + 'px;height:' + d + 'px;border-radius:50%;' +
+        'background:#ffffff;will-change:opacity,transform;}' +
+        sel + ' .scs-flare::before,' + sel + ' .scs-flare::after{content:"";position:absolute;' +
+        'left:50%;top:50%;background:linear-gradient(90deg,transparent,rgba(226,240,255,.95),transparent);' +
+        'height:1.5px;width:' + (34 * cfg.size).toFixed(0) + 'px;transform:translate(-50%,-50%);border-radius:2px;}' +
+        sel + ' .scs-flare::after{transform:translate(-50%,-50%) rotate(90deg);}' +
+        sel + ' .scs-flare.no-spikes::before,' + sel + ' .scs-flare.no-spikes::after{display:none;}';
+    }
+    // always defined: a meteor can also be fired on demand at rate 0
+    css +=
+      sel + ' .scs-meteor{position:absolute;height:2px;border-radius:2px;' +
+      'transform-origin:0 50%;will-change:transform,opacity;' +
+      'background:linear-gradient(90deg,rgba(200,225,255,0) 0%,rgba(206,230,255,.55) 55%,' +
+      'rgba(255,255,255,.98) 100%);box-shadow:0 0 8px 1px rgba(190,220,255,.55);}' +
+      sel + ' .scs-meteor b{position:absolute;right:-2px;top:-2px;width:6px;height:6px;' +
+      'border-radius:50%;background:#fff;box-shadow:0 0 10px 3px rgba(210,232,255,.9);}' +
+      sel + ' .scs-iss{position:absolute;left:0;top:0;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;' +
+      'border-radius:50%;background:#fdf6e6;box-shadow:0 0 9px 2px rgba(255,244,214,.85);' +
+      'will-change:transform,opacity;}' +
+      sel + ' .scs-iss i{position:absolute;right:3px;top:50%;height:2px;border-radius:2px;' +
+      'transform:translateY(-50%);background:linear-gradient(90deg,rgba(255,244,214,0),rgba(255,244,214,.5));}' +
+      sel + ' .scs-iss span{position:absolute;left:9px;top:-6px;font:600 10px/1 system-ui,sans-serif;' +
+      'letter-spacing:.14em;color:rgba(255,246,224,.85);text-shadow:0 1px 3px rgba(0,0,0,.6);}';
+    return css;
+  }
+
+  /* One group of stars: the seed dot carries every sibling as a box-shadow
+     point. The dot is the star; the blur around it is what makes a 3 px dot
+     read as a 9 px blob — `size` scales one, `glow` the other. */
+  function starDot(cfg, i, px, n, pts) {
+    const dot = document.createElement('div');
+    dot.className = 'scs scs' + i;
+    const d = (px * cfg.size).toFixed(2);
+    dot.style.width = dot.style.height = d + 'px';
+    const [sx, sy] = pts[0];
+    dot.style.left = sx.toFixed(0) + 'px';
+    dot.style.top = sy.toFixed(0) + 'px';
+    const shadows = [];
+    for (let j = 1; j < n; j++) {
+      const blur = ((Math.random() * 4 + 2) * cfg.glow).toFixed(2);
+      const spread = (Math.random() * 1.8 * cfg.glow * cfg.size).toFixed(2);
+      shadows.push((pts[j][0] - sx).toFixed(0) + 'px ' + (pts[j][1] - sy).toFixed(0) + 'px ' +
+        blur + 'px ' + spread + 'px rgba(215,235,255,1)');
+    }
+    // the seed has no shadow of its own — give it one to match its siblings,
+    // otherwise one star per group is crisp and the rest are soft
+    if (cfg.glow > 0) {
+      shadows.unshift('0 0 ' + (4 * cfg.glow).toFixed(2) + 'px ' +
+        (0.8 * cfg.glow * cfg.size).toFixed(2) + 'px rgba(215,235,255,1)');
+    }
+    if (shadows.length) dot.style.boxShadow = shadows.join(',');
+    return dot;
+  }
+
+  /* Drifting field: two identical halves sliding east to west (or static). */
+  function buildStarsDrift(cfg, W, H) {
+    const half = document.createElement('div');
+    half.className = 'scs-half';
+    half.style.left = '0';
+    STAR_SIZES[cfg.sizes].forEach(([px, share]) => {
+      const n = Math.max(1, Math.round((cfg.count / STAR_GROUPS.length) * share));
+      STAR_GROUPS.forEach((g, i) => {
+        const pts = [];
+        for (let j = 0; j < n; j++) pts.push([Math.random() * W, Math.random() * H]);
+        half.appendChild(starDot(cfg, i, px, n, pts));
+      });
+    });
+    return half;
   }
 
   /* Rotating field: stars laid out in the annulus that the frame sweeps out
@@ -368,41 +508,256 @@
      That annulus is several times the frame area — hence the star count is
      scaled up to keep the on-screen density. Costs one big painted layer;
      recommended for panel-sized views, not for full 4K dashboards. */
-  function buildStarsRotate(count, pivotY) {
-    const layer = document.createElement('div');
-    layer.className = 'sun-cycle-stars';
-    const W = window.innerWidth, H = window.innerHeight;
-    const px = W / 2, py = H * pivotY;                       // pole, below the frame
-    const rMin = Math.max(1, (pivotY - 1) * H);
+  function buildStarsRotate(cfg, W, H) {
+    const py = H * cfg.pivot;                                // pole, below the frame
+    const rMin = Math.max(1, (cfg.pivot - 1) * H);
     const rMax = Math.hypot(W / 2, py);
     const annulus = Math.PI * (rMax * rMax - rMin * rMin);
-    const total = Math.min(4000, Math.round(count * annulus / (W * H)));
-    const style = document.createElement('style');
-    style.textContent = starCSS() +
-      '.sun-cycle-stars .scs-spin{position:absolute;left:50%;top:0;' +
-      'animation:scs-spin 86164s linear infinite;will-change:transform;}';
-    layer.appendChild(style);
+    const total = Math.min(4000, Math.round(cfg.count * annulus / (W * H)));
     const spin = document.createElement('div');
     spin.className = 'scs-spin';
     spin.style.width = spin.style.height = '0';
     spin.style.top = py.toFixed(0) + 'px';                   // rotate about the pole
-    const perGroup = Math.ceil(total / STAR_GROUPS.length);
-    STAR_GROUPS.forEach((g, i) => {
-      const seed = document.createElement('div');
-      seed.className = 'scs scs' + i;
-      const pts = [];
-      for (let j = 0; j < perGroup; j++) {
-        const a = Math.random() * 2 * Math.PI;
-        const r = Math.sqrt(rMin * rMin + Math.random() * (rMax * rMax - rMin * rMin));
-        pts.push([Math.sin(a) * r, -Math.cos(a) * r]);       // relative to the pole
-      }
-      const [sx, sy] = pts[0];
-      seed.style.left = sx.toFixed(0) + 'px';
-      seed.style.top = sy.toFixed(0) + 'px';
-      seed.style.boxShadow = shadowsFrom(pts.slice(1), sx, sy);
-      spin.appendChild(seed);
+    STAR_SIZES[cfg.sizes].forEach(([px, share]) => {
+      const n = Math.max(1, Math.round((total / STAR_GROUPS.length) * share));
+      STAR_GROUPS.forEach((g, i) => {
+        const pts = [];
+        for (let j = 0; j < n; j++) {
+          const a = Math.random() * 2 * Math.PI;
+          const r = Math.sqrt(rMin * rMin + Math.random() * (rMax * rMax - rMin * rMin));
+          pts.push([Math.sin(a) * r, -Math.cos(a) * r]);     // relative to the pole
+        }
+        spin.appendChild(starDot(cfg, i, px, n, pts));
+      });
     });
-    layer.appendChild(spin);
+    return spin;
+  }
+
+  /* Flare stars: their own element and their own keyframes, because a flash
+     that lights one star cannot come out of a shared box-shadow. Each one is
+     dark for most of its cycle and bright for a moment. */
+  function addFlares(half, cfg, W, H, sel, style, seed0) {
+    const f = cfg.flares;
+    for (let k = 0; k < f.count; k++) {
+      const el = document.createElement('div');
+      el.className = 'scs-flare' + (f.spikes ? '' : ' no-spikes');
+      el.style.left = (Math.random() * W).toFixed(0) + 'px';
+      el.style.top = (Math.random() * H * 0.8).toFixed(0) + 'px';
+      const nam = sel.slice(1) + '-fl' + (seed0 + k);
+      const dur = f.every * (0.75 + Math.random() * 0.5);
+      const dim = (0.10 + 0.10 * (1 - f.strength)).toFixed(2);
+      const peak = (0.55 + 0.45 * f.strength).toFixed(2);
+      const grow = (1 + 1.4 * f.strength).toFixed(2);
+      // a 6 % window of the cycle carries the whole flash: rise, peak, decay
+      style.textContent +=
+        '@keyframes ' + nam + '{' +
+        '0%,92%{opacity:' + dim + ';transform:scale(.8)}' +
+        '95.5%{opacity:' + peak + ';transform:scale(' + grow + ')}' +
+        '97%{opacity:' + (peak * 0.7).toFixed(2) + ';transform:scale(' + (grow * 0.85).toFixed(2) + ')}' +
+        '100%{opacity:' + dim + ';transform:scale(.8)}}' +
+        sel + ' .scs-flare.fl' + (seed0 + k) + '{animation:' + nam + ' ' + dur.toFixed(1) +
+        's ease-in-out infinite;animation-delay:-' + (dur * Math.random()).toFixed(1) + 's;}';
+      el.classList.add('fl' + (seed0 + k));
+      half.appendChild(el);
+    }
+  }
+
+  /* A meteor: one element, one Web Animation (transform + opacity), removed
+     when it finishes. With `radiant` every streak runs away from that point,
+     as a shower does; without it they fall at `angle` from anywhere. */
+  function meteor(layer, cfg, W, H) {
+    const m = cfg.meteors;
+    const el = document.createElement('div');
+    el.className = 'scs-meteor';
+    const len = m.length * (0.7 + Math.random() * 0.6);
+    el.style.width = len.toFixed(0) + 'px';
+    el.appendChild(document.createElement('b'));
+    let x, y, angle;
+    if (m.radiant) {
+      const rx = m.radiant[0] / 100 * W, ry = m.radiant[1] / 100 * H;
+      angle = Math.atan2(Math.random() * H * 0.9 - ry, Math.random() * W - rx) * R2D;
+      const near = 40 + Math.random() * 120;         // start just off the radiant
+      x = rx + Math.cos(angle * D2R) * near;
+      y = ry + Math.sin(angle * D2R) * near;
+    } else {
+      angle = m.angle + (Math.random() * 16 - 8);
+      x = Math.random() * W * 0.75 - W * 0.05;
+      y = Math.random() * H * 0.55;
+    }
+    el.style.left = x.toFixed(0) + 'px';
+    el.style.top = y.toFixed(0) + 'px';
+    const travel = (W + len) * (0.35 + Math.random() * 0.3);
+    const base = 'rotate(' + angle.toFixed(1) + 'deg)';
+    layer.appendChild(el);
+    const anim = el.animate(
+      [
+        { transform: base + ' translateX(' + (-len).toFixed(0) + 'px) scaleX(.25)', opacity: 0 },
+        { opacity: 1, offset: 0.18 },
+        { opacity: 1, offset: 0.62 },
+        { transform: base + ' translateX(' + travel.toFixed(0) + 'px) scaleX(1)', opacity: 0 },
+      ],
+      { duration: m.speed * 1000 * (0.8 + Math.random() * 0.4), easing: 'cubic-bezier(.3,.65,.45,1)' }
+    );
+    anim.onfinish = () => el.remove();
+    if (Math.random() < m.pair) setTimeout(() => { if (layer.isConnected) meteor(layer, cfg, W, H); },
+      250 + Math.random() * 600);
+  }
+
+  /* The station is not a star: it does not twinkle, it moves at a steady pace
+     and fades where it flies into the Earth's shadow. `proj(alt, az)` is the
+     card's own sky projection, so the pass lands where the sun and moon do. */
+  function issPass(layer, cfg, W, H, proj, pass, offsetMs) {
+    const i = cfg.iss;
+    if (!i || layer.querySelector('.scs-iss')) return;
+    // a real pass overrides the configured arc; without one the config is used
+    const arc = pass || { az: i.az, alt: i.alt, ms: i.duration * 1000 };
+    const el = document.createElement('div');
+    el.className = 'scs-iss';
+    if (i.trail > 0) {
+      const t = document.createElement('i');
+      t.style.width = i.trail + 'px';
+      el.appendChild(t);
+    }
+    if (i.label) {
+      const s = document.createElement('span');
+      s.textContent = 'ISS';
+      el.appendChild(s);
+    }
+    const [a0, a1] = arc.az, N = 60, frames = [];
+    for (let s = 0; s <= N; s++) {
+      const t = s / N;
+      const p = proj(arc.alt * Math.sin(Math.PI * t), a0 + (a1 - a0) * t);
+      // bright through the middle, fading in at the horizon and out into shadow
+      const o = Math.pow(Math.sin(Math.PI * t), 0.45) * (t > 0.86 ? clamp((1 - t) / 0.14, 0, 1) : 1);
+      frames.push({ offset: t, opacity: o.toFixed(3),
+        transform: 'translate3d(' + (p.x / 100 * W).toFixed(1) + 'px,' + (p.y / 100 * H).toFixed(1) + 'px,0)' });
+    }
+    layer.appendChild(el);
+    const anim = el.animate(frames, { duration: Math.max(1000, arc.ms), easing: 'linear' });
+    // the panel is not always opened at the start of a pass — join it in flight
+    if (offsetMs > 0) anim.currentTime = Math.min(offsetMs, arc.ms - 500);
+    anim.onfinish = () => el.remove();
+    return anim;
+  }
+
+  /* Passes as the Satellite Tracker (N2YO) integration publishes them:
+     sensor.iss_visual_pass_0..4, one attribute set per pass. "Visual" already
+     means a sunlit station over a dark observer, so nothing has to be gated
+     by daylight — the layer's own opacity hides it by day. */
+  function issPassesFromHass(h, i) {
+    const out = [];
+    for (let n = 0; n < i.count; n++) {
+      const s = h.states && h.states[i.entities + n];
+      if (!s || !s.attributes) continue;
+      const a = s.attributes;
+      if (!a.pass_start_unix || !a.pass_end_unix) continue;
+      const az0 = COMPASS[a.start_compass], az1 = COMPASS[a.end_compass];
+      if (az0 === undefined || az1 === undefined) continue;
+      out.push({
+        start: a.pass_start_unix * 1000,
+        end: a.pass_end_unix * 1000,
+        ms: (a.pass_end_unix - a.pass_start_unix) * 1000,
+        alt: numOr(a.max_elevation, 25),
+        // the station always travels the short way round the sky; without this
+        // a SW -> E pass (225 -> 90) would be drawn crossing north
+        az: [az0, az1 + (Math.abs(az1 - az0) > 180 ? (az1 > az0 ? -360 : 360) : 0)],
+      });
+    }
+    return out.sort((a, b) => a.start - b.start);
+  }
+
+  /* One timer, re-armed whenever Home Assistant hands over new pass data: fire
+     a pass that is running now (joined in flight), or wake up for the next. */
+  function scheduleIss(layer, passes) {
+    const now = Date.now();
+    const current = passes.find((p) => now >= p.start - 1000 && now < p.end);
+    const next = passes.find((p) => p.start > now);
+    const target = current || next;
+    if (!target || layer._issTarget === target.start) return;
+    layer._issTarget = target.start;
+    clearTimeout(layer._issTimer);
+    const again = (ms) => {
+      layer._issTimer = setTimeout(() => {
+        layer._issTarget = null;
+        if (layer.isConnected) scheduleIss(layer, passes);
+      }, ms);
+    };
+    if (current) {
+      layer.scsIss(current, now - current.start);
+      again(current.end - now + 1000);
+    } else {
+      // setTimeout is not reliable over many hours; re-arm in one-hour hops
+      again(Math.min(target.start - now, 3600 * 1000));
+    }
+  }
+
+  /* The whole star layer for one frame of W x H px. `proj(alt, az)` maps a
+     sky position to {x, y} in % of the frame (the ISS needs it). */
+  function buildStars(cfg, W, H, proj) {
+    // no projection handed in (a page without the card): the default window
+    proj = proj || ((alt, az) => ({
+      x: clamp((az - 50) / 260, -0.05, 1.05) * 100,
+      y: 92 - clamp((alt + 6) / 60, -0.1, 1) * 86,
+    }));
+    const inst = 'scs-i' + (++STAR_SEQ), sel = '.' + inst;
+    const layer = document.createElement('div');
+    layer.className = 'sun-cycle-stars ' + inst;
+    const style = document.createElement('style');
+    style.textContent = starCSS(cfg, sel);
+    layer.appendChild(style);
+    if (cfg.rotate) {
+      layer.appendChild(buildStarsRotate(cfg, W, H));
+    } else {
+      const halfA = buildStarsDrift(cfg, W, H);
+      const halfB = halfA.cloneNode(true);      // seamless wrap for the drift
+      halfB.style.left = '50%';
+      // flares are added per half, after the clone, so the two halves do not
+      // flash in lockstep one screen-width apart
+      addFlares(halfA, cfg, W, H, sel, style, 0);
+      addFlares(halfB, cfg, W, H, sel, style, cfg.flares.count);
+      const drift = document.createElement('div');
+      drift.className = 'scs-drift';
+      drift.appendChild(halfA);
+      drift.appendChild(halfB);
+      layer.appendChild(drift);
+    }
+    // handles: on demand (a tuning page), and for the schedulers below
+    layer.scsConfig = cfg;
+    layer.scsMeteor = () => meteor(layer, cfg, W, H);
+    layer.scsIss = (pass, offset) => issPass(layer, cfg, W, H, proj, pass, offset);
+    layer.scsPasses = (h) => {
+      if (!cfg.iss || !cfg.iss.entities) return 0;
+      const p = issPassesFromHass(h, cfg.iss);
+      if (p.length) scheduleIss(layer, p);
+      return p.length;
+    };
+    // timers: meteors on a Poisson interval, ISS on a fixed cadence if asked.
+    // A JS timer only decides *when* to spawn; nothing here animates in JS.
+    // Both stop re-arming once the layer has left the document.
+    const timers = [];
+    layer.scsStop = () => { timers.forEach(clearTimeout); clearTimeout(layer._issTimer); };
+    if (cfg.meteors.rate > 0) {
+      const mean = 3600 / cfg.meteors.rate;
+      const nextMeteor = () => {
+        const wait = -Math.log(1 - Math.random()) * mean * 1000;
+        timers.push(setTimeout(() => {
+          if (!layer.isConnected && layer._scsStarted) return;
+          if (layer.isConnected) { layer._scsStarted = true; meteor(layer, cfg, W, H); }
+          nextMeteor();
+        }, Math.min(wait, 15 * 60 * 1000)));
+      };
+      nextMeteor();
+    }
+    if (cfg.iss && cfg.iss.every > 0) {
+      const nextPass = () => {
+        timers.push(setTimeout(() => {
+          if (!layer.isConnected && layer._scsStarted) return;
+          if (layer.isConnected) { layer._scsStarted = true; layer.scsIss(); }
+          nextPass();
+        }, cfg.iss.every * 1000));
+      };
+      nextPass();
+    }
     return layer;
   }
 
@@ -410,12 +765,7 @@
     setConfig(config) {
       this._cfg = config || {};
       const s = this._cfg.stars;
-      this._starCfg = s === false ? null : {
-        count: (s && s.count) || 90,
-        drift: s && s.drift !== undefined ? s.drift : 1800,
-        rotate: !!(s && s.rotate),
-        pivot: (s && s.pivot) || 2.2,
-      };
+      this._starCfg = s === false ? null : readStarConfig(s === true ? {} : s);
       this._sunEntity = this._cfg.sun_entity || 'sun.sun';
       const az = this._cfg.azimuth;
       this._az0 = Array.isArray(az) ? az[0] : 50;
@@ -452,6 +802,7 @@
     }
 
     set hass(h) {
+      this._hass = h;
       const sun = h.states && h.states[this._sunEntity];
       if (!sun) return;
       const e = Number(sun.attributes.elevation);
@@ -465,7 +816,24 @@
       const moved = this._painted === undefined ||
         Math.abs(e - this._painted.e) >= 0.15 ||
         (this._azim !== null && Math.abs(a - this._painted.a) >= 0.6);
-      if (moved) this._apply();
+      if (moved) this._apply(); else this._issSync();
+    }
+
+    /* `hass` arrives on every state change in the house; the ISS pass sensors
+       are fingerprinted so the scheduler only runs when one of them moved. */
+    _issSync() {
+      const cfg = this._starCfg, h = this._hass, c = this._container;
+      if (!cfg || !cfg.iss || !cfg.iss.entities || !h || !c) return;
+      const layer = c.querySelector('.sun-cycle-stars');
+      if (!layer || !layer.scsPasses) return;
+      let print = '';
+      for (let n = 0; n < cfg.iss.count; n++) {
+        const s = h.states && h.states[cfg.iss.entities + n];
+        print += (s && s.attributes && s.attributes.pass_start_unix) + '|';
+      }
+      if (print === layer._issPrint) return;
+      layer._issPrint = print;
+      layer.scsPasses(h);
     }
 
     connectedCallback() {
@@ -717,12 +1085,19 @@
       if (this._starCfg) {
         let stars = c.querySelector('.sun-cycle-stars');
         if (!stars) {
-          stars = this._starCfg.rotate
-            ? buildStarsRotate(this._starCfg.count, this._starCfg.pivot)
-            : buildStarsDrift(this._starCfg.count, this._starCfg.drift);
-          this._before(c, stars);
+          // sized to the container, not the window: a view narrower than the
+          // window would otherwise get stars laid out beyond its edge
+          const r = c.getBoundingClientRect();
+          const W = Math.round(r.width) || window.innerWidth;
+          const H = Math.round(r.height) || window.innerHeight;
+          stars = buildStars(this._starCfg, W, H, (alt, az) => this._project(alt, az));
+          // right above the painted backdrop, under the sun, the rays and the
+          // moon — stars are the farthest thing in the sky
+          if (bg && bg.parentNode === c) c.insertBefore(stars, bg.nextSibling);
+          else this._before(c, stars);
         }
         stars.style.opacity = p.stars.toFixed(2);
+        this._issSync();
       }
       // external star layer (e.g. a separate star-twinkle card): drive opacity
       const ext = c.querySelector('#star-twinkle-layer');
@@ -740,10 +1115,13 @@
   }
   customElements.define('sun-cycle-bg-card', SunCycleBgCard);
 
+  // A tuning page builds star layers directly, with its own frames and configs.
+  window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor };
+
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: 'sun-cycle-bg-card',
     name: 'Sun Cycle Background',
-    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, and a star field — all driven by sun.sun.',
+    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, and a star field with flares, meteors and the real ISS — all driven by sun.sun.',
   });
 })();
