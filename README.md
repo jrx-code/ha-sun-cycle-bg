@@ -354,6 +354,39 @@ Layers are deduplicated on re-create and die with their container — there is
 deliberately no cleanup on disconnect, which would race view-to-view
 navigation.
 
+## Roadmap
+
+Three things the sky outside does that this card does not, in the order they
+are likely to land. Nothing here is implemented yet — the card currently knows
+about the sun, the moon and the stars, and nothing about weather.
+
+- **Planets.** A handful of naked-eye planets — Venus, Mars, Jupiter, Saturn —
+  placed with the same projection as the sun and the moon, drawn as steady
+  points (a planet does not twinkle; that is what tells it apart from a star at
+  a glance), sized and haloed by apparent magnitude, optionally labelled the way
+  the ISS is. Two ways to get the data: compute it in the card from the orbital
+  elements in Paul Schlyter's [*How to compute planetary
+  positions*](https://stjarnhimlen.se/comp/ppcomp.html) — under an arc minute
+  for the inner planets, about one for the outer ones, magnitude formulas
+  included, no dependencies — or read the sensors of the
+  [HA-Sol](https://github.com/okkine/HA-Sol) integration (Skyfield + JPL DE421,
+  positions but no magnitude). Computing it keeps the card self-contained, the
+  way the lunar ephemeris already is. Note that "visible" is not a number either
+  source provides: it has to be composed from *above the horizon* + *sun below
+  about −6°* + *bright enough*.
+- **Clouds.** The sky is painted from solar elevation alone, so it is always
+  clear. An optional `weather` entity could dim and desaturate the palette,
+  soften the aureole and thin out the stars as cover rises — `cloudcover_percentage`
+  from [AstroWeather](https://github.com/mawinkler/astroweather), or plain
+  `cloud_coverage` from any HA weather entity. Cover should move slowly (a
+  minutes-long transition, not a step), or the panel will flicker every time
+  the forecast updates.
+- **Weather effects.** Rain and snow over the whole scene, in the same spirit
+  as the meteors: a handful of elements on compositor-only animations, spawned
+  from the weather state and stopped when it clears, with wind bearing tilting
+  the fall. This is the one item with a real performance budget question on a
+  kiosk — it wants a measurement on the RPi5 before it ships, not after.
+
 ## License
 
 MIT
