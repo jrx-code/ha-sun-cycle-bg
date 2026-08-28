@@ -36,7 +36,11 @@ moon**, and keeps it gently moving around the clock:
   shape, bright limb facing the sun.
 - **Stars** — a field of twinkling stars moving **east to west**, like the
   sky. Cheap linear drift by default; optional rotation about the celestial
-  pole (`stars.rotate: true`) for real arcs.
+  pole (`stars.rotate: true`) for real arcs. On top of it, all opt-in: three
+  star sizes, a few **flare** stars that flash now and then, **meteors** (or a
+  shower from a radiant), and the **ISS** crossing the sky along its real pass
+  when the Satellite Tracker integration publishes one — see
+  [Flares, meteors and the ISS](#flares-meteors-and-the-iss).
 
 Because everything is keyed to solar elevation, the panel on your wall
 matches the sky outside your window: pink dawn at dawn, golden hour at
@@ -87,6 +91,23 @@ on-screen density. Fine for panel-sized views; skip it on a 4K dashboard.
 1. Copy `sun-cycle-bg.js` to `/config/www/`.
 2. Add a dashboard resource: URL `/local/sun-cycle-bg.js`, type
    **JavaScript module**.
+
+### Optional: the real ISS
+
+`stars.iss: true` needs the pass sensors. Install
+[Satellite Tracker](https://github.com/djtimca/hasatellitetracker) (HACS
+integration, N2YO API key) and let it create `sensor.iss_visual_pass_0..4` —
+the card reads `pass_start_unix`, `pass_end_unix`, `max_elevation`,
+`start_compass` and `end_compass` from their attributes. Without the sensors
+the option is harmless: nothing flies.
+
+### Upgrading from 1.3
+
+Nothing to change. Every option added in 1.4.0 is off by default, so a 1.3
+config draws exactly what it drew. If you ran a separate star card next to
+this one with `stars: false`, delete that card and move its numbers under
+`stars:` — the knob names are the same (`count`, `drift`, `sizes`, `size`,
+`glow`, `twinkle`, `flares`, `meteors`, `iss`).
 
 ## Usage
 
@@ -268,9 +289,28 @@ series is checked against textbook geometry: 1.6° from the sun at new moon,
 179.6° opposite at full moon. On a 1280 px frame, half a degree of azimuth is
 about three pixels.
 
+## Testing
+
 `test/smoke.html` runs the card against stubbed view chrome at a frozen
-instant and prints the resulting sun/moon positions, ray opacity, phase and
-the twilight band's geometry — open it in a browser after changing anything.
+instant (2026-08-28 23:43 UTC, 53.5° N) and prints the resulting sun/moon
+positions, ray opacity, phase, the twilight band's geometry and — since
+1.4.0 — the star layer: dot count and sizes, flares and their keyframes,
+twinkle amplitude, drift/rotate, an on-demand meteor and an ISS pass joined
+in flight from stubbed `sensor.iss_visual_pass_*` states. Open it in a
+browser after changing anything, or run it headless:
+
+```bash
+python3 tools/run_smoke.py            # needs playwright + a chromium binary
+```
+
+It prints one JSON line per scene and the console errors it caught (expect
+none). The numbers are meant to be read, not asserted: compare them with the
+previous run and explain every difference before releasing.
+
+Before a release the card also goes onto a real Home Assistant with a test
+dashboard (a `panel` view holding the card, `sun_entity` pointed at a sensor
+whose `elevation`/`azimuth` you set via `POST /api/states/...`), so the
+lovelace resource, the view chrome and the layer order are the real ones.
 
 ## Demo
 
@@ -299,10 +339,13 @@ The card renders nothing itself. On every sun update it:
 1. maps the sun's azimuth and elevation onto the frame and paints
    `hui-view-background` with the interpolated sky plus the sun's aureole at
    that spot,
-2. maintains three absolutely-positioned layers in `hui-view-container`
-   (inserted before `hui-view`, so they sit above the background and below
-   every card): the ray fan, the moon (an inline SVG whose lit path is the
-   real terminator), and the star field,
+2. maintains three absolutely-positioned layers in `hui-view-container`,
+   above the background and below every card: the star field right after
+   `hui-view-background` (the farthest thing in the sky), then — inserted
+   before `hui-view` — the ray fan and the moon (an inline SVG whose lit
+   path is the real terminator). Flares live inside the star field; a meteor
+   or the ISS is one extra element appended to it for the length of its
+   flight,
 3. computes the moon's position and phase from the current time and the
    dashboard's coordinates,
 4. injects its keyframe CSS once per shadow root.
