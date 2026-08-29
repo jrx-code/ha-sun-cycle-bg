@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.6.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.6.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -736,10 +736,11 @@
     diameters: PLANET_SCALE_DIAMETERS,
     equal: Object.fromEntries(Object.keys(PLANET_SCALE).map((b) => [b, 1])),
   };
+  // English, like every other string the card ships; `names:` translates them
   const PLANET_NAMES = {
-    mercury: 'Merkury', venus: 'Wenus', earth: 'Ziemia', mars: 'Mars',
-    jupiter: 'Jowisz', saturn: 'Saturn', uranus: 'Uran', neptune: 'Neptun',
-    pluto: 'Pluton',
+    mercury: 'Mercury', venus: 'Venus', earth: 'Earth', mars: 'Mars',
+    jupiter: 'Jupiter', saturn: 'Saturn', uranus: 'Uranus', neptune: 'Neptune',
+    pluto: 'Pluto',
   };
 
   function readPlanetConfig(p) {

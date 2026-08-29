@@ -38,8 +38,9 @@ moon**, and keeps it gently moving around the clock:
   really stand. The [Sol](https://github.com/okkine/HA-Sol) integration
   publishes `sensor.sol_<body>_azimuth` and `_elevation`; the card puts each
   planet's own picture on the same projection as the sun and the moon, fading
-  it in as the sky darkens and out as it sets. Sizes are emblems, not scale —
-  see [Planets](#planets).
+  it in as the sky darkens and out as it sets — or leaving a set fraction of
+  them up in daylight. Sizes are emblems, not scale — see
+  [Planets](#planets).
 - **Stars** — a field of twinkling stars moving **east to west**, like the
   sky. Cheap linear drift by default; optional rotation about the celestial
   pole (`stars.rotate: true`) for real arcs. On top of it, all opt-in: three
@@ -180,7 +181,7 @@ planets: false          # true = the eight from the Sol integration, or:
 #   scale: brightness     # ladder: brightness | diameters | equal, or
 #                         # {body: multiplier} of your own
 #   discs: {}             # per-body [dia, cx, cy] of the disc inside the file
-#   names: {}             # per-body caption
+#   names: {}             # captions, e.g. {mars: Mars} in your language
 #   labels: false         # name under the disc
 #   glow: 0.5             # 0–2; a hair of halo so it is not a sticker
 #   min_elevation: 0      # fade out below this altitude
@@ -257,6 +258,14 @@ dusk) — set `stars: false` to avoid doubling the field.
 
 ## Planets
 
+![Planets at night, at dusk and in daylight](docs/planets.png)
+
+*The same eight planets at three sun elevations: −16° (full opacity), −4°
+(fading in with the sky) and +24° (`day: 0.35`). Discs are the placeholder
+artwork from `demo/assets/planets`, drawn by
+[`tools/make_placeholder_planets.py`](tools/make_placeholder_planets.py) —
+the card ships no planet pictures, so neither do these docs.*
+
 ```yaml
 planets: true           # everything below has a default
 ```
@@ -287,10 +296,20 @@ ranks them by true diameter, compressed logarithmically so Pluto stays a dot
 rather than a 60th of a pixel; `equal` gives every body the same disc. An object
 overrides individual bodies instead.
 
+**Captions.** `labels: true` writes the body's name under its disc, in English.
+`names:` translates them — `names: {mars: Mars, jupiter: Jowisz}` — the same way
+`bodies:` selects them.
+
 **The pictures.** No artwork ships with the card, exactly as for the sun and
 the moon: `images` is a directory of yours holding `<body>.png`, one per body
 named the way the Sol entities are (`jupiter.png`, `saturn.png`, …), or
-`files` overrides individual paths. They want transparent backgrounds.
+`files` overrides individual paths. They want transparent backgrounds. The nine
+discs under `demo/assets/planets` are *placeholders* — shaded spheres drawn by
+`tools/make_placeholder_planets.py`, this repository's own artwork under its
+MIT licence, there so the documentation has something to photograph. They look
+like planets from across a room and like a diagram up close; use your own
+photographs on a real dashboard.
+
 `tools/cutout_planets.py` makes them from renders on a black sky:
 
 ```bash
@@ -408,8 +427,10 @@ lovelace resource, the view chrome and the layer order are the real ones.
 ## Demo
 
 Open [`demo/simulator.html`](demo/simulator.html) in a browser. It runs the
-same astronomy and the same placement the card uses, with sliders for time of
-day, date and latitude, plus an autoplay button (full day in 60 s). Move the
+same astronomy and the same placement the card uses for the **sky, sun, moon
+and stars** — it predates the planets and does not draw them; for those, see
+the planet page below — with sliders for time of day, date and latitude, plus
+an autoplay button (full day in 60 s). Move the
 latitude slider to watch the diurnal arc stand up towards the equator and lie
 down towards the pole; move the date slider to watch it rise and fall with the
 seasons.
@@ -433,6 +454,18 @@ integration (`tools/sol_snapshot.py` → `demo/sol_snapshot.json`): a live panel
 for size, glow, size ladder, fade threshold, labels and body selection, five
 sizes side by side, the cutouts with their measured discs, and a table of
 where every planet was. Rebuild it with `python3 tools/build_planets_poc.py`.
+
+The planet strip at the top of [Planets](#planets) is rendered the same way the
+other documentation images are — from running code, never drawn by hand:
+
+```bash
+python3 tools/make_placeholder_planets.py   # -> demo/assets/planets/*.png
+python3 tools/render_planets_doc.py         # -> docs/planets.png
+```
+
+`render_planets_doc.py` builds the real `<sun-cycle-bg-card>` against stubbed
+view chrome and stubbed `sensor.sol_*` states, and photographs three sun
+elevations of it.
 
 ## How it works
 

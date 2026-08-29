@@ -295,6 +295,7 @@ __KARTA__
       glow: +el.glow.value,
       min_elevation: +el.min.value,
       scale: el.szereg.value,
+      names: NAZWY,             // karta podpisuje po angielsku, strona po polsku
       labels: el.labels.checked,
       day: +el.day.value,
     });
@@ -305,7 +306,11 @@ __KARTA__
     l.push('  size: ' + cfg.size);
     if (cfg.glow !== 0.5) l.push('  glow: ' + cfg.glow);
     if (cfg.min_elevation !== 0) l.push('  min_elevation: ' + cfg.min_elevation);
-    if (cfg.labels) l.push('  labels: true');
+    if (cfg.labels) {
+      l.push('  labels: true');
+      l.push('  names:');
+      cfg.bodies.forEach(b => l.push('    ' + b + ': ' + (NAZWY[b] || b)));
+    }
     if (cfg.day > 0) l.push('  day: ' + cfg.day);
     if (cfg.bodies.length !== CIALA.length)
       l.push('  bodies: [' + cfg.bodies.join(', ') + ']');
