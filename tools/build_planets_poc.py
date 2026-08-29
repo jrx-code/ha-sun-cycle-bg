@@ -117,22 +117,27 @@ STRONA = r"""<meta charset="utf-8">
   <section class="card">
     <h2>Na żywo</h2>
     <p>Kadr w proporcji panelu salonu (16:5). Suwaki zmieniają dokładnie te pola, które
-    trafiają do YAML-a pod spodem.</p>
+    trafiają do YAML-a pod spodem. <em>Widoczność w dzień</em> to podłoga krycia:
+    0 znaczy „w dzień ich nie ma”, 0,35 — tyle zostaje w samo południe, a między
+    zmierzchem a nocą karta i tak dochodzi do pełnego krycia. Przesuń suwak Słońca
+    w prawo, żeby to zobaczyć.</p>
     <div class="scena szeroka" id="glowna"><div class="horyzont"></div></div>
     <div class="panel">
       <label class="pole"><b>Wielkość (Jowisz, % szerokości) — <span id="v-size"></span></b>
-        <input type="range" id="size" min="0.8" max="6" step="0.1" value="2.4"></label>
+        <input type="range" id="size" min="0.6" max="6" step="0.1" value="1.2"></label>
       <label class="pole"><b>Poświata — <span id="v-glow"></span></b>
-        <input type="range" id="glow" min="0" max="2" step="0.05" value="0.5"></label>
+        <input type="range" id="glow" min="0" max="2" step="0.05" value="0.35"></label>
+      <label class="pole"><b>Widoczność w dzień — <span id="v-day"></span></b>
+        <input type="range" id="day" min="0" max="1" step="0.05" value="0.35"></label>
       <label class="pole"><b>Wysokość Słońca — <span id="v-elev"></span>°</b>
-        <input type="range" id="elev" min="-25" max="6" step="0.5" value="-18"></label>
+        <input type="range" id="elev" min="-25" max="30" step="0.5" value="-25"></label>
       <label class="pole"><b>Znikają poniżej — <span id="v-min"></span>°</b>
         <input type="range" id="min" min="-5" max="20" step="1" value="0"></label>
       <label class="pole"><b>Szereg wielkości</b>
         <select id="szereg">
-          <option value="jasnosc">wg jasności (domyślny)</option>
-          <option value="prawdziwe">wg prawdziwych średnic</option>
-          <option value="rowne">wszystkie równe</option>
+          <option value="diameters">wg prawdziwych średnic</option>
+          <option value="brightness">wg jasności (domyślny karty)</option>
+          <option value="equal">wszystkie równe</option>
         </select></label>
       <label class="pole"><b>Pozycje</b>
         <select id="pozycje">
@@ -142,7 +147,6 @@ STRONA = r"""<meta charset="utf-8">
     </div>
     <div class="ptaszki">
       <label><input type="checkbox" id="labels"> podpisy pod tarczami</label>
-      <label><input type="checkbox" id="day"> widoczne także w dzień</label>
       <label><input type="checkbox" id="gwiazdy" checked> pole gwiazd pod spodem</label>
     </div>
     <div class="ciala" id="ciala"></div>
@@ -154,8 +158,8 @@ STRONA = r"""<meta charset="utf-8">
 
   <section class="card">
     <h2>Pięć wielkości</h2>
-    <p>Ta sama chwila i ten sam szereg, tylko <code>size</code> inne. Kadr 16:9, planety
-    rozstawione, żeby w każdym wariancie było widać całą ósemkę.</p>
+    <p>Ta sama chwila i ten sam szereg (wg średnic), tylko <code>size</code> inne. Kadr 16:9,
+    planety rozstawione, żeby w każdym wariancie było widać całą ósemkę.</p>
     <div class="siatka" id="rozmiary"></div>
   </section>
 
@@ -234,15 +238,9 @@ __KARTA__
     return s;
   }
 
-  const SZEREGI = {
-    jasnosc: B.PLANET_SCALE,
-    rowne: Object.fromEntries(CIALA.map(b => [b, 1])),
-    prawdziwe: (() => {
-      const ln = (b) => Math.log(SREDNICE[b]);
-      const lo = Math.min(...CIALA.map(ln)), hi = Math.max(...CIALA.map(ln));
-      return Object.fromEntries(CIALA.map(b => [b, +(0.35 + 0.65 * (ln(b) - lo) / (hi - lo)).toFixed(3)]));
-    })(),
-  };
+  // the ladders belong to the card (`scale: diameters` etc.); the page only
+  // names them, so a number chosen here is the number that ships
+  const SZEREGI = B.PLANET_SCALES;
 
   /* --- scena: prawdziwa warstwa karty --- */
   function scena(host, cfg, elev, tryb, gwiazdy) {
@@ -273,7 +271,7 @@ __KARTA__
   /* --- panel na żywo --- */
   const G = document.getElementById('glowna');
   const el = {};
-  ['size','glow','elev','min','szereg','pozycje','labels','day','gwiazdy']
+  ['size','glow','day','elev','min','szereg','pozycje','labels','gwiazdy']
     .forEach(id => el[id] = document.getElementById(id));
 
   const wybrane = new Set(CIALA);
@@ -296,9 +294,9 @@ __KARTA__
       size: +el.size.value,
       glow: +el.glow.value,
       min_elevation: +el.min.value,
-      scale: SZEREGI[el.szereg.value],
+      scale: el.szereg.value,
       labels: el.labels.checked,
-      day: el.day.checked,
+      day: +el.day.value,
     });
   }
 
@@ -308,13 +306,10 @@ __KARTA__
     if (cfg.glow !== 0.5) l.push('  glow: ' + cfg.glow);
     if (cfg.min_elevation !== 0) l.push('  min_elevation: ' + cfg.min_elevation);
     if (cfg.labels) l.push('  labels: true');
-    if (cfg.day) l.push('  day: true');
+    if (cfg.day > 0) l.push('  day: ' + cfg.day);
     if (cfg.bodies.length !== CIALA.length)
       l.push('  bodies: [' + cfg.bodies.join(', ') + ']');
-    if (el.szereg.value !== 'jasnosc') {
-      l.push('  scale:');
-      cfg.bodies.forEach(b => l.push('    ' + b + ': ' + cfg.scale[b]));
-    }
+    if (el.szereg.value !== 'brightness') l.push('  scale: ' + el.szereg.value);
     if (cfg.images !== '/local/sun-cycle/planets/') l.push('  images: ' + cfg.images);
     return l.join('\n');
   }
@@ -329,7 +324,7 @@ __KARTA__
       pad('szereg') + el.szereg.options[el.szereg.selectedIndex].text,
       pad('znikaja pod') + cfg.min_elevation + ' stopni',
       pad('podpisy') + (cfg.labels ? 'tak' : 'nie'),
-      pad('w dzien') + (cfg.day ? 'tak' : 'nie'),
+      pad('w dzien') + (cfg.day > 0 ? fmt(cfg.day, 2) + ' krycia' : 'niewidoczne'),
       pad('ciala') + cfg.bodies.map(b => NAZWY[b] || b).join(', '),
       pad('slonce') + fmt(el.elev.value, 1) + ' stopni (podglad)',
       pad('pozycje') + el.pozycje.options[el.pozycje.selectedIndex].text,
@@ -345,6 +340,8 @@ __KARTA__
     scena(G, cfg, +el.elev.value, el.pozycje.value, el.gwiazdy.checked);
     document.getElementById('v-size').textContent = fmt(el.size.value, 1);
     document.getElementById('v-glow').textContent = fmt(el.glow.value, 2);
+    document.getElementById('v-day').textContent =
+      +el.day.value > 0 ? fmt(el.day.value, 2) : 'niewidoczne';
     document.getElementById('v-elev').textContent = fmt(el.elev.value, 1);
     document.getElementById('v-min').textContent = el.min.value;
     document.getElementById('yaml').textContent = yaml(cfg);
@@ -353,7 +350,7 @@ __KARTA__
   Object.values(el).forEach(e => e.addEventListener('input', rysuj));
 
   /* --- pięć wielkości --- */
-  const ROZMIARY = [1.4, 2.0, 2.4, 3.2, 4.5];
+  const ROZMIARY = [0.9, 1.2, 1.8, 2.4, 3.6];
   const siatka = document.getElementById('rozmiary');
   ROZMIARY.forEach((s, i) => {
     const w = document.createElement('div');
@@ -364,7 +361,8 @@ __KARTA__
     siatka.appendChild(w);
     const host = w.querySelector('.scena');
     requestAnimationFrame(() => scena(host, B.readPlanetConfig({
-      images: OBRAZKI, size: s, labels: true }), -18, 'rozstaw', true));
+      images: OBRAZKI, size: s, labels: true, scale: 'diameters',
+      glow: 0.35 }), -18, 'rozstaw', true));
   });
 
   /* --- wycinki --- */
@@ -381,7 +379,7 @@ __KARTA__
   /* --- tabela pozycji --- */
   const t = document.getElementById('tabela');
   t.innerHTML = '<tr><th>ciało</th><th>azymut</th><th>wysokość</th><th>wschód</th>' +
-    '<th>zachód</th><th>średnica</th><th>godło (wg jasności)</th></tr>';
+    '<th>zachód</th><th>średnica</th><th>godło (wg średnic)</th></tr>';
   CIALA.forEach(b => {
     const p = SNAP.planety[b] || {};
     const alt = Number(p.elevation);
@@ -392,7 +390,9 @@ __KARTA__
       '<td class="l ' + (alt > 0 ? 'nad' : 'pod') + '">' + fmt(alt, 1) + '°</td>' +
       '<td class="l">' + godz(p.rise) + '</td><td class="l">' + godz(p.set) + '</td>' +
       '<td class="l">' + SREDNICE[b].toLocaleString('pl-PL') + ' km</td>' +
-      '<td class="l">×' + String(B.PLANET_SCALE[b]).replace('.', ',') + '</td>';
+      '<td class="l">×' + String(B.PLANET_SCALES.diameters[b]).replace('.', ',') +
+      ' <span style="color:var(--muted)">(jasność ×' +
+      String(B.PLANET_SCALE[b]).replace('.', ',') + ')</span></td>';
     t.appendChild(tr);
   });
 
@@ -409,8 +409,9 @@ META = {
     "kolejnosc": 105,
     "opis": ("Osiem planet na tle nieba, pozycje z integracji Sol (sensor.sol_*_azimuth "
              "i _elevation), rysunek z wyciętych zdjęć z przezroczystym tłem. Panel na żywo: "
-             "wielkość tarcz, poświata, szereg wielkości (jasność / prawdziwe średnice / równe), "
-             "próg znikania, podpisy, wybór ciał — plus gotowy YAML i przepis do skopiowania. "
+             "wielkość tarcz, poświata, widoczność w dzień, szereg wielkości (prawdziwe średnice "
+             "/ jasność / równe), próg znikania, podpisy, wybór ciał — plus gotowy YAML i przepis "
+             "do skopiowania. "
              "Niżej pięć wielkości na kadrach 16:9, galeria wycinków z pomiarem tarczy i tabela "
              "pozycji ze wschodami i zachodami."),
 }

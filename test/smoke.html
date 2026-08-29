@@ -209,7 +209,10 @@ function scenaPlanet(elev, extra) {
 out.push(['PLANETY noc domyslne', scenaPlanet(-16.18)]);
 out.push(['PLANETY noc z podpisami', scenaPlanet(-16.18, { labels: true, size: 4 })]);
 out.push(['PLANETY dzien (gasna)', scenaPlanet(49)]);
-out.push(['PLANETY dzien day:true', scenaPlanet(49, { day: true })]);
+out.push(['PLANETY dzien day:true (podloga 0.35)', scenaPlanet(49, { day: true })]);
+out.push(['PLANETY dzien day:0.15', scenaPlanet(49, { day: 0.15 })]);
+out.push(['PLANETY zmierzch day:true elev=-4', scenaPlanet(-4, { day: true })]);
+out.push(['PLANETY szereg diameters', scenaPlanet(-16.18, { scale: 'diameters', size: 1.2 })]);
 out.push(['PLANETY wylaczone', planety(buduj(-16.18, 321.56, { planets: false }))]);
 out.push(['PLANETY readPlanetConfig(true)', window.sunCycleBg.readPlanetConfig(true)]);
 

@@ -177,13 +177,15 @@ planets: false          # true = the eight from the Sol integration, or:
 #   images: /local/sun-cycle/planets/   # + <body>.png
 #   files: {}             # per-body override: {saturn: /local/mine.png}
 #   size: 2.4             # Jupiter's disc, % of the view width
-#   scale: {}             # per-body multiplier of that
+#   scale: brightness     # ladder: brightness | diameters | equal, or
+#                         # {body: multiplier} of your own
 #   discs: {}             # per-body [dia, cx, cy] of the disc inside the file
 #   names: {}             # per-body caption
 #   labels: false         # name under the disc
 #   glow: 0.5             # 0–2; a hair of halo so it is not a sticker
 #   min_elevation: 0      # fade out below this altitude
-#   day: false            # true = keep them up in daylight too
+#   day: false            # daylight opacity floor: false = invisible by day,
+#                         # true = 0.35, or a number 0-1 of your own
 
 # Optional artwork for the two discs — see below. Left out, both stay drawn.
 sun_image: null         # e.g. /local/sun-cycle/sun.png
@@ -268,17 +270,22 @@ the bottom edge all night, and one outside the `azimuth:` window fades out
 instead of piling up on the rim.
 
 **When they are visible.** They ride the same curve as the stars: fully out in
-daylight, fully in once the sun is about 9° below the horizon. `day: true`
-keeps them up around the clock, which is not astronomy but is sometimes what a
-dashboard wants.
+daylight, fully in once the sun is about 9° below the horizon. `day` raises the
+daylight end of that curve instead of switching it off — `day: true` leaves 35 %
+opacity at noon, `day: 0.15` a whisper, and the fade in and out of dusk still
+happens on top of it. Planets in a blue sky are not astronomy, but a dashboard
+that only shows them after dark shows them to nobody.
 
 **How big.** Not to scale, and it cannot be: Jupiter is at best 45 arcseconds
 across, which on a 1280 px view spanning 260° of azimuth is a twentieth of a
 pixel. A naked-eye planet *is* a point of light. So each disc is a small
 emblem: `size` is Jupiter's diameter as a percentage of the view width (2.4 %
 ≈ 31 px on a 1280 px kiosk), and everything else is a multiple of it through
-`scale`. The defaults rank the bodies by how bright they are in the sky rather
-than by true diameter, which is why Venus outranks Uranus.
+`scale`. Three ladders ship: `brightness` (the default) ranks the bodies by how
+bright they are in the sky, which is why Venus outranks Uranus; `diameters`
+ranks them by true diameter, compressed logarithmically so Pluto stays a dot
+rather than a 60th of a pixel; `equal` gives every body the same disc. An object
+overrides individual bodies instead.
 
 **The pictures.** No artwork ships with the card, exactly as for the sun and
 the moon: `images` is a directory of yours holding `<body>.png`, one per body

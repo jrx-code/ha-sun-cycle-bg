@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.5.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.6.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -723,6 +723,19 @@
     uranus: [0.6519, 0.4939, 0.4965], neptune: [0.5284, 0.4589, 0.4962],
     pluto: [0.9432, 0.5079, 0.4954],
   };
+  // `scale: diameters` — the true mean diameters, compressed logarithmically
+  // into the same band. Pluto is 2 377 km against Jupiter's 139 820, so a
+  // linear ranking would leave it a 60th of a pixel; the log keeps the order
+  // and the sense of "a giant next to a rock" without losing the rock.
+  const PLANET_SCALE_DIAMETERS = {
+    mercury: 0.465, venus: 0.61, earth: 0.618, mars: 0.517, jupiter: 1,
+    saturn: 0.971, uranus: 0.838, neptune: 0.833, pluto: 0.35,
+  };
+  const PLANET_SCALES = {
+    brightness: PLANET_SCALE,
+    diameters: PLANET_SCALE_DIAMETERS,
+    equal: Object.fromEntries(Object.keys(PLANET_SCALE).map((b) => [b, 1])),
+  };
   const PLANET_NAMES = {
     mercury: 'Merkury', venus: 'Wenus', earth: 'Ziemia', mars: 'Mars',
     jupiter: 'Jowisz', saturn: 'Saturn', uranus: 'Uran', neptune: 'Neptun',
@@ -741,12 +754,21 @@
       images: typeof c.images === 'string' ? c.images : '/local/sun-cycle/planets/',
       files: c.files && typeof c.files === 'object' ? c.files : {},
       discs: Object.assign({}, PLANET_DISCS, c.discs || {}),
-      scale: Object.assign({}, PLANET_SCALE, c.scale || {}),
+      // a name picks one of the shipped ladders; an object overrides body by
+      // body on top of the default one
+      scale: typeof c.scale === 'string'
+        ? Object.assign({}, PLANET_SCALES[c.scale] || PLANET_SCALE)
+        : Object.assign({}, PLANET_SCALE, c.scale || {}),
       names: Object.assign({}, PLANET_NAMES, c.names || {}),
       size: num(c.size, 2.4),
       glow: num(c.glow, 0.5),
       labels: c.labels === true,
-      day: c.day === true,
+      // `day` is how much of a planet survives full daylight: false/0 = none,
+      // true = the default floor, or a number 0-1 of your own. A planet at
+      // full opacity against a noon sky reads as a sticker, but at nothing it
+      // is a feature you only ever see in the dark.
+      day: c.day === true ? 0.35 : (c.day === false || c.day === undefined
+        ? 0 : clamp(num(c.day, 0), 0, 1)),
       min_elevation: num(c.min_elevation, 0),
     };
   }
@@ -796,8 +818,9 @@
      stars are, so they ride the same curve. */
   function placePlanets(layer, cfg, states, proj, sunElev) {
     if (!states) return;
-    // deep enough into the night for a planet to hold its own against the sky
-    const night = cfg.day ? 1 : clamp((-sunElev - 1) / 8, 0, 1);
+    // deep enough into the night for a planet to hold its own against the sky,
+    // never below the daylight floor
+    const night = lerp(cfg.day, 1, clamp((-sunElev - 1) / 8, 0, 1));
     for (const el of layer.children) {
       const body = el.dataset.body;
       if (!body) continue;                    // the layer's own <style>
@@ -1304,7 +1327,8 @@
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        buildPlanets, readPlanetConfig, placePlanets,
-                       PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_NAMES };
+                       PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,
+                       PLANET_NAMES };
 
   window.customCards = window.customCards || [];
   window.customCards.push({
