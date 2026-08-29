@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.4.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.5.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -229,6 +229,9 @@
     // the star layer's own rules (drift, spin, twinkle, flares, meteors, ISS)
     // travel inside the layer, scoped to a per-instance class — see starCSS()
     '.sun-cycle-stars{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
+    'transition:opacity 2s linear;}' +
+    // the planet layer carries its own rules inside it — see PLANET_CSS
+    '.sun-cycle-planets{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
     'transition:opacity 2s linear;}';
 
   /* Conic gradient with a smooth cosine profile — soft-edged rays without
@@ -691,6 +694,151 @@
     }
   }
 
+  // --- planets -----------------------------------------------------------
+  /* The Sol integration (HACS) publishes sensor.sol_<body>_azimuth and
+     _elevation for the eight planets other than Earth, updated as they move.
+     The card reads those two numbers and puts the artwork on the same
+     projection the sun, the moon and the ISS already use.
+
+     Sizes are not to scale, and cannot be: Jupiter is 45 arcseconds across at
+     its best, which on a 1280 px view spanning 260 degrees of azimuth is a
+     twentieth of a pixel. Naked-eye planets ARE points of light. So the discs
+     are drawn as small emblems instead — big enough to read as themselves,
+     ranked by how bright the planet is in the sky rather than by its true
+     size, which is why Venus outranks Uranus.  */
+  const PLANET_BODIES = ['mercury', 'venus', 'mars', 'jupiter', 'saturn',
+                         'uranus', 'neptune', 'pluto'];
+  // relative to `size`; the disc measured by tools/cutout_planets.py is
+  // divided out first, so these are the diameters of the balls themselves
+  const PLANET_SCALE = {
+    mercury: 0.58, venus: 0.88, earth: 0.8, mars: 0.7, jupiter: 1,
+    saturn: 0.94, uranus: 0.6, neptune: 0.56, pluto: 0.46,
+  };
+  // [disc diameter / file width, cx / width, cy / height] of the shipped
+  // cutouts — measured, not guessed (tools/cutout_planets.py prints them)
+  const PLANET_DISCS = {
+    mercury: [0.9515, 0.51, 0.4938], venus: [0.9641, 0.4908, 0.4985],
+    earth: [0.9393, 0.5107, 0.5023], mars: [0.8713, 0.501, 0.4842],
+    jupiter: [0.9771, 0.5026, 0.4966], saturn: [0.4316, 0.4574, 0.5229],
+    uranus: [0.6519, 0.4939, 0.4965], neptune: [0.5284, 0.4589, 0.4962],
+    pluto: [0.9432, 0.5079, 0.4954],
+  };
+  const PLANET_NAMES = {
+    mercury: 'Merkury', venus: 'Wenus', earth: 'Ziemia', mars: 'Mars',
+    jupiter: 'Jowisz', saturn: 'Saturn', uranus: 'Uran', neptune: 'Neptun',
+    pluto: 'Pluton',
+  };
+
+  function readPlanetConfig(p) {
+    if (p === false || p === undefined || p === null) return null;
+    const c = p === true ? {} : (p || {});
+    const num = (v, def) => (isFinite(v) ? Number(v) : def);
+    const bodies = Array.isArray(c.bodies) && c.bodies.length
+      ? c.bodies.map((b) => String(b).toLowerCase()) : PLANET_BODIES.slice();
+    return {
+      entities: typeof c.entities === 'string' ? c.entities : 'sensor.sol_',
+      bodies,
+      images: typeof c.images === 'string' ? c.images : '/local/sun-cycle/planets/',
+      files: c.files && typeof c.files === 'object' ? c.files : {},
+      discs: Object.assign({}, PLANET_DISCS, c.discs || {}),
+      scale: Object.assign({}, PLANET_SCALE, c.scale || {}),
+      names: Object.assign({}, PLANET_NAMES, c.names || {}),
+      size: num(c.size, 2.4),
+      glow: num(c.glow, 0.5),
+      labels: c.labels === true,
+      day: c.day === true,
+      min_elevation: num(c.min_elevation, 0),
+    };
+  }
+
+  /* Travels inside the layer, the way the star field's rules do: a tuning
+     page builds the layer on its own and never gets the card's stylesheet. */
+  const PLANET_CSS =
+    '.sun-cycle-planets>div{position:absolute;pointer-events:none;transition:opacity 2s linear;}' +
+    '.sun-cycle-planets img{display:block;width:100%;height:auto;}' +
+    '.sun-cycle-planets b{position:absolute;transform:translateX(-50%);' +
+    'font:500 9px/1 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;' +
+    'color:rgba(232,238,248,.62);text-shadow:0 1px 2px rgba(0,0,0,.75);white-space:nowrap;}';
+
+  function planetSrc(cfg, body) {
+    return cfg.files[body] || (cfg.images + body + '.png');
+  }
+
+  /* One <div><img></div> per body, built once and then only moved. */
+  function buildPlanets(cfg) {
+    const layer = document.createElement('div');
+    layer.className = 'sun-cycle-planets';
+    const style = document.createElement('style');
+    style.textContent = PLANET_CSS;
+    layer.appendChild(style);
+    cfg.bodies.forEach((body) => {
+      const el = document.createElement('div');
+      el.dataset.body = body;
+      el.style.opacity = '0';
+      const im = document.createElement('img');
+      im.src = planetSrc(cfg, body);
+      im.alt = '';
+      im.loading = 'lazy';
+      el.appendChild(im);
+      if (cfg.labels) {
+        const b = document.createElement('b');
+        b.textContent = cfg.names[body] || body;
+        el.appendChild(b);
+      }
+      layer.appendChild(el);
+    });
+    layer.scsPlanetPrint = '';
+    return layer;
+  }
+
+  /* Position and fade every planet. `states` is hass.states, `sunElev` the
+     sun's elevation — planets are daylight-invisible for the same reason the
+     stars are, so they ride the same curve. */
+  function placePlanets(layer, cfg, states, proj, sunElev) {
+    if (!states) return;
+    // deep enough into the night for a planet to hold its own against the sky
+    const night = cfg.day ? 1 : clamp((-sunElev - 1) / 8, 0, 1);
+    for (const el of layer.children) {
+      const body = el.dataset.body;
+      if (!body) continue;                    // the layer's own <style>
+      const az = Number((states[cfg.entities + body + '_azimuth'] || {}).state);
+      const alt = Number((states[cfg.entities + body + '_elevation'] || {}).state);
+      if (!isFinite(az) || !isFinite(alt)) { el.style.opacity = '0'; continue; }
+      const pos = proj(alt, az);
+      const disc = cfg.discs[body] || [1, 0.5, 0.5];
+      const w = cfg.size * (cfg.scale[body] || 1) / disc[0];
+      // A planet below the horizon is behind the Earth; the projection parks
+      // anything down there on the bottom edge, so it has to be faded out
+      // rather than left sitting on the rim all night.
+      const up = clamp((alt - cfg.min_elevation) / 4, 0, 1);
+      // The sky window is narrower than the sky: a planet outside it gets
+      // parked on the frame edge by the projection, and half a dozen of them
+      // parked there would read as a row of stickers on the rim. Fade the
+      // last two percent instead.
+      const inFrame = clamp(pos.x / 2, 0, 1) * clamp((100 - pos.x) / 2, 0, 1);
+      const a = night * up * inFrame;
+      el.style.width = w.toFixed(3) + '%';
+      el.style.left = pos.x.toFixed(2) + '%';
+      el.style.top = pos.y.toFixed(2) + '%';
+      el.style.transform =
+        `translate(${(-disc[1] * 100).toFixed(2)}%, ${(-disc[2] * 100).toFixed(2)}%)`;
+      el.style.opacity = a.toFixed(3);
+      // the caption belongs under the *ball*, not under the file: Saturn's
+      // box is more than twice its disc, and a label hung off the box bottom
+      // would float a ring-width below the planet
+      const cap = el.lastElementChild;
+      if (cap && cap.tagName === 'B') {
+        cap.style.left = (disc[1] * 100).toFixed(1) + '%';
+        cap.style.top = ((disc[2] + disc[0] / 2) * 100 + 4).toFixed(1) + '%';
+      }
+      // A disc pasted on the sky reads as a sticker; a hair of glow in the
+      // planet's own colour is what the eye expects around a bright object.
+      el.style.filter = cfg.glow > 0
+        ? `drop-shadow(0 0 ${(w * 0.35 * cfg.glow).toFixed(2)}vw rgba(210,226,255,${(0.5 * cfg.glow).toFixed(2)}))`
+        : '';
+    }
+  }
+
   /* The whole star layer for one frame of W x H px. `proj(alt, az)` maps a
      sky position to {x, y} in % of the frame (the ISS needs it). */
   function buildStars(cfg, W, H, proj) {
@@ -774,6 +922,7 @@
       this._rayBlur = r && r.blur !== undefined ? r.blur : 28;
       this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
       this._showMoon = this._cfg.moon !== false;
+      this._planetCfg = readPlanetConfig(this._cfg.planets);
       this._warmDusk = this._cfg.twilight_palette === true;
 
       // --- optional artwork for the two discs ----------------------------
@@ -816,7 +965,7 @@
       const moved = this._painted === undefined ||
         Math.abs(e - this._painted.e) >= 0.15 ||
         (this._azim !== null && Math.abs(a - this._painted.a) >= 0.6);
-      if (moved) this._apply(); else this._issSync();
+      if (moved) this._apply(); else { this._issSync(); this._planetSync(); }
     }
 
     /* `hass` arrives on every state change in the house; the ISS pass sensors
@@ -834,6 +983,28 @@
       if (print === layer._issPrint) return;
       layer._issPrint = print;
       layer.scsPasses(h);
+    }
+
+    /* The Sol sensors step by a degree at a time, far more often than the sun
+       clears the repaint threshold, so the planets get their own cheap update:
+       read eight pairs of states, write nothing unless one of them moved. */
+    _planetSync() {
+      const cfg = this._planetCfg, c = this._container;
+      if (!cfg || !c || this._elev === undefined) return;
+      const layer = c.querySelector('.sun-cycle-planets');
+      if (!layer) return;
+      const st = this._hass && this._hass.states;
+      if (!st) return;
+      // fingerprint first: `hass` lands on every state change in the house,
+      // and eight string reads are cheaper than sixteen style writes
+      let print = this._elev.toFixed(2);
+      for (const b of cfg.bodies) {
+        print += '|' + (st[cfg.entities + b + '_azimuth'] || {}).state +
+                 ',' + (st[cfg.entities + b + '_elevation'] || {}).state;
+      }
+      if (print === layer._print) return;
+      layer._print = print;
+      placePlanets(layer, cfg, st, (alt, az) => this._project(alt, az), this._elev);
     }
 
     connectedCallback() {
@@ -1081,6 +1252,21 @@
         }
       }
 
+      // --- planets ---------------------------------------------------------
+      if (this._planetCfg) {
+        let pl = c.querySelector('.sun-cycle-planets');
+        if (!pl) {
+          pl = buildPlanets(this._planetCfg);
+          // above the stars (a planet is nearer than the field behind it) and
+          // below the moon, which is nearer still — the moon layer is built
+          // earlier in this same pass, so it is already there to sit under
+          const moon = c.querySelector('.sun-cycle-moon');
+          if (moon && moon.parentNode === c) c.insertBefore(pl, moon);
+          else this._before(c, pl);
+        }
+        this._planetSync();
+      }
+
       // --- star field ------------------------------------------------------
       if (this._starCfg) {
         let stars = c.querySelector('.sun-cycle-stars');
@@ -1116,12 +1302,14 @@
   customElements.define('sun-cycle-bg-card', SunCycleBgCard);
 
   // A tuning page builds star layers directly, with its own frames and configs.
-  window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor };
+  window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
+                       buildPlanets, readPlanetConfig, placePlanets,
+                       PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_NAMES };
 
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: 'sun-cycle-bg-card',
     name: 'Sun Cycle Background',
-    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, and a star field with flares, meteors and the real ISS — all driven by sun.sun.',
+    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, the planets where the Sol integration puts them, and a star field with flares, meteors and the real ISS.',
   });
 })();

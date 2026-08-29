@@ -156,6 +156,63 @@ out.push(['GWIAZDY domyslne  dzien', gwiazdy(buduj(49, 180, { stars: {} }))]);
 out.push(['GWIAZDY rotate', gwiazdy(buduj(-16.18, 321.56, { stars: { rotate: true, count: 60 } }))]);
 out.push(['GWIAZDY wylaczone', gwiazdy(buduj(-16.18, 321.56, { stars: false }))]);
 out.push(['GWIAZDY readStarConfig({})', window.sunCycleBg.readStarConfig({})]);
+// 1.5.0: planets. The card ships no artwork, and a missing file would log a
+// console error the runner counts, so every body points at a 1x1 transparent
+// PNG — the geometry under test is the placement, not the picture.
+const PIKSEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+const SOL = (() => {
+  // one planet high in the south, one low in the east, one below the horizon,
+  // one outside the 50-310 azimuth window
+  const p = { saturn: [119, 23], uranus: [67, 9], venus: [289, -27.5], jupiter: [4, -19] };
+  const st = {};
+  for (const b of window.sunCycleBg.PLANET_BODIES) {
+    const v = p[b] || [180, 30];
+    st['sensor.sol_' + b + '_azimuth'] = { state: String(v[0]) };
+    st['sensor.sol_' + b + '_elevation'] = { state: String(v[1]) };
+  }
+  return st;
+})();
+function planety(cont) {
+  const layer = cont.querySelector('.sun-cycle-planets');
+  if (!layer) return { layer: false };
+  const czytaj1 = (b) => {
+    const el = layer.querySelector('[data-body=' + b + ']');
+    if (!el) return null;
+    return { w: el.style.width, pos: el.style.left + '/' + el.style.top,
+             shift: el.style.transform, alpha: +el.style.opacity,
+             glow: /drop-shadow/.test(el.style.filter),
+             label: (el.querySelector('b') || {}).textContent || null };
+  };
+  return {
+    layer: true,
+    // above the stars (painted earlier in the tree), below the moon
+    przedKsiezycem: !!(layer.nextElementSibling &&
+      layer.nextElementSibling.classList.contains('sun-cycle-moon')),
+    poGwiazdach: [...layer.parentNode.children].indexOf(layer) >
+      [...layer.parentNode.children].findIndex(e => e.classList.contains('sun-cycle-stars')),
+    scoped: /sun-cycle-planets>div/.test(layer.querySelector('style').textContent),
+    ile: layer.querySelectorAll('[data-body]').length,
+    wysoko: czytaj1('saturn'), nisko: czytaj1('uranus'),
+    podHoryzontem: czytaj1('venus'), pozaOknem: czytaj1('jupiter'),
+  };
+}
+function scenaPlanet(elev, extra) {
+  const cfg = Object.assign({ files: Object.fromEntries(
+    window.sunCycleBg.PLANET_BODIES.map(b => [b, PIKSEL])) }, extra || {});
+  const cont = buduj(elev, 321.56, { stars: { count: 20 }, planets: cfg });
+  cont.querySelector('sun-cycle-bg-card').hass = {
+    states: Object.assign({ 'sun.sun': { attributes: { elevation: elev, azimuth: 321.56 } } }, SOL),
+    config: { latitude: 53.5, longitude: 14.5 },
+  };
+  return planety(cont);
+}
+out.push(['PLANETY noc domyslne', scenaPlanet(-16.18)]);
+out.push(['PLANETY noc z podpisami', scenaPlanet(-16.18, { labels: true, size: 4 })]);
+out.push(['PLANETY dzien (gasna)', scenaPlanet(49)]);
+out.push(['PLANETY dzien day:true', scenaPlanet(49, { day: true })]);
+out.push(['PLANETY wylaczone', planety(buduj(-16.18, 321.56, { planets: false }))]);
+out.push(['PLANETY readPlanetConfig(true)', window.sunCycleBg.readPlanetConfig(true)]);
+
 const contNoc = buduj(-16.18, 321.56, OBRAZKI);
 out.push(['OBRAZKI noc  przed wczytaniem pliku', czytaj(contNoc, -16.18, 321.56)]);
 setTimeout(() => {

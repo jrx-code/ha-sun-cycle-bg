@@ -34,6 +34,12 @@ moon**, and keeps it gently moving around the clock:
   mirroring the sun (on a given night it may be up for 8 hours while the sun
   was up for 14), and it is drawn as the actual crescent / half / gibbous
   shape, bright limb facing the sun.
+- **Planets** — the other eight bodies of the solar system stand where they
+  really stand. The [Sol](https://github.com/okkine/HA-Sol) integration
+  publishes `sensor.sol_<body>_azimuth` and `_elevation`; the card puts each
+  planet's own picture on the same projection as the sun and the moon, fading
+  it in as the sky darkens and out as it sets. Sizes are emblems, not scale —
+  see [Planets](#planets).
 - **Stars** — a field of twinkling stars moving **east to west**, like the
   sky. Cheap linear drift by default; optional rotation about the celestial
   pole (`stars.rotate: true`) for real arcs. On top of it, all opt-in: three
@@ -101,6 +107,20 @@ the card reads `pass_start_unix`, `pass_end_unix`, `max_elevation`,
 `start_compass` and `end_compass` from their attributes. Without the sensors
 the option is harmless: nothing flies.
 
+### Optional: the planets
+
+`planets: true` needs the [Sol](https://github.com/okkine/HA-Sol) integration
+(HACS) — it creates `sensor.sol_<body>_azimuth` and `sensor.sol_<body>_elevation`
+for Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune and Pluto, and the
+card reads exactly those two states per body. Without the integration the
+option is harmless: nothing is drawn. You also need one picture per planet
+under `/local/` — see [Planets](#planets).
+
+### Upgrading from 1.4
+
+Nothing to change. `planets:` is off by default, so a 1.4 config draws exactly
+what it drew.
+
 ### Upgrading from 1.3
 
 Nothing to change. Every option added in 1.4.0 is off by default, so a 1.3
@@ -150,6 +170,20 @@ stars:                  # `stars: false` disables the built-in field
     radiant: null       # [x%, y%] = a shower, every streak runs from there
     pair: 0             # chance (0–1) of a second streak right after
   iss: false            # true = the real ISS from sensor.iss_visual_pass_0..4
+planets: false          # true = the eight from the Sol integration, or:
+# planets:
+#   entities: sensor.sol_   # prefix, + <body>_azimuth / _elevation
+#   bodies: [mercury, venus, mars, jupiter, saturn, uranus, neptune, pluto]
+#   images: /local/sun-cycle/planets/   # + <body>.png
+#   files: {}             # per-body override: {saturn: /local/mine.png}
+#   size: 2.4             # Jupiter's disc, % of the view width
+#   scale: {}             # per-body multiplier of that
+#   discs: {}             # per-body [dia, cx, cy] of the disc inside the file
+#   names: {}             # per-body caption
+#   labels: false         # name under the disc
+#   glow: 0.5             # 0–2; a hair of halo so it is not a sticker
+#   min_elevation: 0      # fade out below this altitude
+#   day: false            # true = keep them up in daylight too
 
 # Optional artwork for the two discs — see below. Left out, both stay drawn.
 sun_image: null         # e.g. /local/sun-cycle/sun.png
@@ -218,6 +252,55 @@ set up.
 If your dashboard already has its own star layer with the element id
 `star-twinkle-layer`, its opacity is driven too (fades at dawn, returns at
 dusk) — set `stars: false` to avoid doubling the field.
+
+## Planets
+
+```yaml
+planets: true           # everything below has a default
+```
+
+**Where they are.** Two states per body from the
+[Sol](https://github.com/okkine/HA-Sol) integration — `sensor.sol_saturn_azimuth`
+and `sensor.sol_saturn_elevation` — projected exactly like the sun and the
+moon: azimuth across the frame, elevation up it. Nothing is computed in the
+card. A planet below `min_elevation` fades out instead of sitting parked on
+the bottom edge all night, and one outside the `azimuth:` window fades out
+instead of piling up on the rim.
+
+**When they are visible.** They ride the same curve as the stars: fully out in
+daylight, fully in once the sun is about 9° below the horizon. `day: true`
+keeps them up around the clock, which is not astronomy but is sometimes what a
+dashboard wants.
+
+**How big.** Not to scale, and it cannot be: Jupiter is at best 45 arcseconds
+across, which on a 1280 px view spanning 260° of azimuth is a twentieth of a
+pixel. A naked-eye planet *is* a point of light. So each disc is a small
+emblem: `size` is Jupiter's diameter as a percentage of the view width (2.4 %
+≈ 31 px on a 1280 px kiosk), and everything else is a multiple of it through
+`scale`. The defaults rank the bodies by how bright they are in the sky rather
+than by true diameter, which is why Venus outranks Uranus.
+
+**The pictures.** No artwork ships with the card, exactly as for the sun and
+the moon: `images` is a directory of yours holding `<body>.png`, one per body
+named the way the Sol entities are (`jupiter.png`, `saturn.png`, …), or
+`files` overrides individual paths. They want transparent backgrounds.
+`tools/cutout_planets.py` makes them from renders on a black sky:
+
+```bash
+python3 tools/cutout_planets.py ~/Pictures/planets out/ --size 256
+```
+
+It thresholds the sky away, keeps the largest connected component (the planet
+with its rings, never a star), fills the holes, feathers the limb by a pixel,
+and fits a circle to the silhouette by RANSAC to find the **ball** inside the
+file. That last number matters: a bounding box would measure Saturn's rings
+(0.95 of the file instead of 0.43) and shrink the planet to a quarter of
+everyone else, and a distance transform would measure the lit crescent of a
+half-shadowed Mars. Inside the fitted circle the cutout is fully opaque, so a
+night side stays dark instead of showing sky through it, while the rings stay
+translucent. The script prints — and writes to `discs.json` — the
+`[diameter, cx, cy]` triples; the card ships those numbers for these files as
+its defaults, and `discs:` overrides them for your own.
 
 ## Flares, meteors and the ISS
 
@@ -296,7 +379,10 @@ instant (2026-08-28 23:43 UTC, 53.5° N) and prints the resulting sun/moon
 positions, ray opacity, phase, the twilight band's geometry and — since
 1.4.0 — the star layer: dot count and sizes, flares and their keyframes,
 twinkle amplitude, drift/rotate, an on-demand meteor and an ISS pass joined
-in flight from stubbed `sensor.iss_visual_pass_*` states. Open it in a
+in flight from stubbed `sensor.iss_visual_pass_*` states. Since 1.5.0 it also
+covers the planets: layer order, the disc offsets, and the four fades (below
+the horizon, outside the azimuth window, daylight, and `day: true`) from
+stubbed `sensor.sol_*` states. Open it in a
 browser after changing anything, or run it headless:
 
 ```bash
@@ -332,6 +418,15 @@ documentation cannot drift away from the code.
 were tuned on: four ways of drawing the discs on one shared instant, with
 sliders for disc size and blur.
 
+[`tools/build_planets_poc.py`](tools/build_planets_poc.py) builds the same kind
+of page for the planets (in Polish; the page itself is generated, not committed,
+because the card is pasted into it). It inlines this very `sun-cycle-bg.js` and draws every scene
+with the card's own `buildPlanets()`, on positions snapshotted from a live Sol
+integration (`tools/sol_snapshot.py` → `demo/sol_snapshot.json`): a live panel
+for size, glow, size ladder, fade threshold, labels and body selection, five
+sizes side by side, the cutouts with their measured discs, and a table of
+where every planet was. Rebuild it with `python3 tools/build_planets_poc.py`.
+
 ## How it works
 
 The card renders nothing itself. On every sun update it:
@@ -342,10 +437,11 @@ The card renders nothing itself. On every sun update it:
 2. maintains three absolutely-positioned layers in `hui-view-container`,
    above the background and below every card: the star field right after
    `hui-view-background` (the farthest thing in the sky), then — inserted
-   before `hui-view` — the ray fan and the moon (an inline SVG whose lit
-   path is the real terminator). Flares live inside the star field; a meteor
-   or the ISS is one extra element appended to it for the length of its
-   flight,
+   before `hui-view` — the ray fan, the planets and the moon (an inline SVG
+   whose lit path is the real terminator). Flares live inside the star field;
+   a meteor or the ISS is one extra element appended to it for the length of
+   its flight; the planet layer is one `<img>` per body, moved and faded, and
+   carries its own scoped stylesheet so a tuning page can build it alone,
 3. computes the moon's position and phase from the current time and the
    dashboard's coordinates,
 4. injects its keyframe CSS once per shadow root.
@@ -356,11 +452,11 @@ navigation.
 
 ## Roadmap
 
-Three things the sky outside does that this card does not, in the order they
-are likely to land. Nothing here is implemented yet — the card currently knows
-about the sun, the moon and the stars, and nothing about weather.
+Two things the sky outside does that this card does not. The card knows about
+the sun, the moon, the stars and — since 1.5.0 — the planets, and nothing about
+weather.
 
-- **Planets.** A handful of naked-eye planets — Venus, Mars, Jupiter, Saturn —
+- ~~**Planets.**~~ A handful of naked-eye planets — Venus, Mars, Jupiter, Saturn —
   placed with the same projection as the sun and the moon, drawn as steady
   points (a planet does not twinkle; that is what tells it apart from a star at
   a glance), sized and haloed by apparent magnitude, optionally labelled the way
@@ -374,6 +470,10 @@ about the sun, the moon and the stars, and nothing about weather.
   way the lunar ephemeris already is. Note that "visible" is not a number either
   source provides: it has to be composed from *above the horizon* + *sun below
   about −6°* + *bright enough*.
+  **Shipped in 1.5.0**, by the second route: the Sol integration's sensors,
+  with pictures instead of magnitude-scaled points — see
+  [Planets](#planets). Computing the positions in the card, and with them a
+  real magnitude, is still open.
 - **Clouds.** The sky is painted from solar elevation alone, so it is always
   clear. An optional `weather` entity could dim and desaturate the palette,
   soften the aureole and thin out the stars as cover rises — `cloudcover_percentage`
