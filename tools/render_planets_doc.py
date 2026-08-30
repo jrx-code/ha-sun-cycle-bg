@@ -5,11 +5,9 @@ Like tools/render_docs.py, the picture comes from running code rather than from
 a drawing: this builds the real <sun-cycle-bg-card> against stubbed view chrome
 and stubbed `sensor.sol_*` states, and photographs three panels of it.
 
-The discs are the placeholder artwork from demo/assets/planets (see
-tools/make_placeholder_planets.py) — the card ships no planet pictures, so the
-documentation must not either.
+The discs are the cutouts in demo/assets/planets, placed by the `discs.json`
+that tools/cutout_planets.py wrote next to them.
 
-    python3 tools/make_placeholder_planets.py
     python3 tools/render_planets_doc.py         # -> docs/planets.png
 
 Needs: playwright (with chromium).

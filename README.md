@@ -208,9 +208,11 @@ fan and the moon halo. The two options are independent.
 
 **No artwork ships with the card.** These are paths to your files (`/local/...`),
 so the card itself carries no images and you keep whatever licence your own
-artwork has. The two PNGs under `demo/assets/` exist only to drive
-`demo/images-poc.html`; they are the repository owner's own artwork and fall
-under this repository's MIT licence like the rest of it.
+artwork has. The PNGs under `demo/assets/` — the two discs and the nine
+planets — are the repository owner's own artwork and fall under this
+repository's MIT licence like the rest of it; HACS installs only
+`sun-cycle-bg.js`, so they are there to drive the demo pages and the
+documentation, and to be copied to `/local/` by anyone who wants them.
 
 `*_image_disc` is `[diameter / image width, cx / image width, cy / image
 height]` — where the disc actually sits inside the file. Artwork rarely fills
@@ -261,10 +263,8 @@ dusk) — set `stars: false` to avoid doubling the field.
 ![Planets at night, at dusk and in daylight](docs/planets.png)
 
 *The same eight planets at three sun elevations: −16° (full opacity), −4°
-(fading in with the sky) and +24° (`day: 0.35`). Discs are the placeholder
-artwork from `demo/assets/planets`, drawn by
-[`tools/make_placeholder_planets.py`](tools/make_placeholder_planets.py) —
-the card ships no planet pictures, so neither do these docs.*
+(fading in with the sky) and +24° (`day: 0.35`). Discs are the nine cutouts in
+`demo/assets/planets`.*
 
 ```yaml
 planets: true           # everything below has a default
@@ -300,17 +300,21 @@ overrides individual bodies instead.
 `names:` translates them — `names: {mars: Mars, jupiter: Jowisz}` — the same way
 `bodies:` selects them.
 
-**The pictures.** No artwork ships with the card, exactly as for the sun and
-the moon: `images` is a directory of yours holding `<body>.png`, one per body
-named the way the Sol entities are (`jupiter.png`, `saturn.png`, …), or
-`files` overrides individual paths. They want transparent backgrounds. The nine
-discs under `demo/assets/planets` are *placeholders* — shaded spheres drawn by
-`tools/make_placeholder_planets.py`, this repository's own artwork under its
-MIT licence, there so the documentation has something to photograph. They look
-like planets from across a room and like a diagram up close; use your own
-photographs on a real dashboard.
+**The pictures.** `images` is a directory holding `<body>.png`, one per body
+named the way the Sol entities are (`jupiter.png`, `saturn.png`, …), or `files`
+overrides individual paths. They want transparent backgrounds.
 
-`tools/cutout_planets.py` makes them from renders on a black sky:
+Nine such cutouts sit in [`demo/assets/planets`](demo/assets/planets) — the
+repository owner's own artwork, under this repository's MIT licence like
+`demo/assets/sun.png` and `moon.png`. HACS installs a single file
+(`sun-cycle-bg.js`, see `hacs.json`), so they do not arrive with the card:
+copy the directory to `/config/www/sun-cycle/planets/` yourself and leave
+`images` at its default, or point it wherever you put them. The card's default
+`discs` numbers are the measurements of exactly these files, so they need no
+`discs:` block.
+
+Make your own from renders on a black sky with `tools/cutout_planets.py` —
+the same script that made these:
 
 ```bash
 python3 tools/cutout_planets.py ~/Pictures/planets out/ --size 256
@@ -459,7 +463,6 @@ The planet strip at the top of [Planets](#planets) is rendered the same way the
 other documentation images are — from running code, never drawn by hand:
 
 ```bash
-python3 tools/make_placeholder_planets.py   # -> demo/assets/planets/*.png
 python3 tools/render_planets_doc.py         # -> docs/planets.png
 ```
 
