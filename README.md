@@ -304,7 +304,16 @@ card. A planet below `min_elevation` fades out instead of sitting parked on
 the bottom edge all night, and one outside the `azimuth:` window fades out
 instead of piling up on the rim.
 
-**How they move.** Sol rewrites a position only when the planet crosses a whole
+**How they move.**
+
+![Before and after: a planet hopping a degree at a time, and the same planet walked to its next position](docs/planets-walk.gif)
+
+*Both panels are this card, fed the same planets at the same instants; the only
+difference is whether the sensors carry the two promise attributes. Time is
+compressed — a degree takes Sol about five minutes — but the frame is scaled so
+a degree is 4.9 px, the same as on a 1280 px kiosk.*
+
+Sol rewrites a position only when the planet crosses a whole
 degree of azimuth (half a degree of elevation), which on one house measured out
 at a change every 294 s for azimuth and 206 s for elevation. Drawn literally
 that is a planet jumping ~5 px across a 1280 px view and then standing still
@@ -519,6 +528,17 @@ python3 tools/render_planets_doc.py         # -> docs/planets.png
 `render_planets_doc.py` builds the real `<sun-cycle-bg-card>` against stubbed
 view chrome and stubbed `sensor.sol_*` states, and photographs three sun
 elevations of it.
+
+The before/after animation in [Planets](#planets) comes from the same idea,
+with two cards side by side — one fed sensors carrying `next_target` /
+`next_update`, one fed sensors without them:
+
+```bash
+python3 tools/render_walk_doc.py            # -> docs/planets-walk.gif
+```
+
+It records the page as video (Playwright captures at a constant frame rate, so
+the walk is sampled evenly) and converts it with ffmpeg.
 
 ## How it works
 
