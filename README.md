@@ -85,6 +85,23 @@ about the pole means the layer has to cover the entire disc it sweeps, which
 is several times the frame area, so the star count scales up to keep the same
 on-screen density. Fine for panel-sized views; skip it on a 4K dashboard.
 
+## What it needs
+
+| Feature | Integration | Entities the card reads |
+|---|---|---|
+| Sky, sun, rays, star opacity | **Sun** (`sun`, built in, set up by default) | `sun.sun` — attributes `elevation` and `azimuth`. Any other entity with those two attributes works: `sun_entity:`. |
+| Moon (position and phase) | none | computed in the card from the clock and the dashboard's latitude/longitude (Home Assistant sends them in `hass.config`). |
+| Stars, flares, meteors | none | none — the field is generated. |
+| ISS (`stars.iss`) | [Satellite Tracker](https://github.com/djtimca/hasatellitetracker) (HACS, needs an N2YO API key) | `sensor.iss_visual_pass_0` … `_4`, attributes `pass_start_unix`, `pass_end_unix`, `max_elevation`, `start_compass`, `end_compass`. Prefix and count are configurable. |
+| Planets (`planets:`) | [Sol](https://github.com/okkine/HA-Sol) (HACS) | two per body: `sensor.sol_<body>_azimuth` and `sensor.sol_<body>_elevation`, for `mercury`, `venus`, `mars`, `jupiter`, `saturn`, `uranus`, `neptune`, `pluto`. Prefix is configurable (`entities:`). |
+
+Nothing but `sun.sun` is required. Both optional integrations are read
+defensively — no sensors means the feature draws nothing, never an error.
+
+Sol also publishes `_rise`, `_set`, `_transit` and `_antitransit` per body, and
+the two position sensors carry `next_target` and `next_update` attributes; the
+card ignores all six today.
+
 ## Install
 
 ### HACS (custom repository)
@@ -111,9 +128,15 @@ the option is harmless: nothing flies.
 ### Optional: the planets
 
 `planets: true` needs the [Sol](https://github.com/okkine/HA-Sol) integration
-(HACS) — it creates `sensor.sol_<body>_azimuth` and `sensor.sol_<body>_elevation`
-for Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune and Pluto, and the
-card reads exactly those two states per body. Without the integration the
+(HACS). Its config flow asks for a location and then creates, per body:
+
+```
+sensor.sol_jupiter_azimuth        158.0    (degrees, whole)
+sensor.sol_jupiter_elevation       52.5    (degrees, half)
+sensor.sol_jupiter_rise / _set / _transit / _antitransit   (timestamps)
+```
+
+The card reads the first two and nothing else. Without the integration the
 option is harmless: nothing is drawn. You also need one picture per planet
 under `/local/` — see [Planets](#planets).
 
