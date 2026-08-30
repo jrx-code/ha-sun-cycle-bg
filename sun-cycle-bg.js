@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.7.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.8.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -736,6 +736,15 @@
     diameters: PLANET_SCALE_DIAMETERS,
     equal: Object.fromEntries(Object.keys(PLANET_SCALE).map((b) => [b, 1])),
   };
+  // The lit colour of each shipped cutout, measured off the brightest 30 % of
+  // its ball (the night side would drag every planet towards grey). Used for
+  // the daylight point, which has no picture to take its colour from.
+  const PLANET_TINTS = {
+    mercury: [135, 130, 126], venus: [217, 198, 141], earth: [164, 158, 148],
+    mars: [200, 121, 80], jupiter: [188, 168, 147], saturn: [198, 181, 155],
+    uranus: [176, 219, 230], neptune: [85, 141, 224], pluto: [211, 207, 201],
+  };
+
   // English, like every other string the card ships; `names:` translates them
   const PLANET_NAMES = {
     mercury: 'Mercury', venus: 'Venus', earth: 'Earth', mars: 'Mars',
@@ -761,6 +770,14 @@
         ? Object.assign({}, PLANET_SCALES[c.scale] || PLANET_SCALE)
         : Object.assign({}, PLANET_SCALE, c.scale || {}),
       names: Object.assign({}, PLANET_NAMES, c.names || {}),
+      tints: Object.assign({}, PLANET_TINTS, c.tints || {}),
+      // By day a planet is not a disc — it is a point of light, and that is
+      // exactly what Venus looks like when you find it in a blue sky. So the
+      // picture crossfades to a dot as the sun climbs. `points: false` keeps
+      // the picture around the clock; a number sets the dot's base diameter
+      // in px (it is scaled per body by naked-eye brightness, so Venus is the
+      // biggest dot whatever ladder the discs are drawn on).
+      points: c.points === false ? 0 : num(c.points, 3.5),
       size: num(c.size, 2.4),
       glow: num(c.glow, 0.5),
       labels: c.labels === true,
@@ -784,7 +801,10 @@
     '.sun-cycle-planets>div{position:absolute;left:0;top:0;pointer-events:none;' +
     'transition-property:opacity,transform;transition-timing-function:linear;' +
     'transition-duration:2s,0s;}' +
-    '.sun-cycle-planets img{display:block;width:100%;height:auto;}' +
+    '.sun-cycle-planets img{display:block;width:100%;height:auto;transition:opacity 2s linear;}' +
+    // the daylight point: a static element, only its opacity is ever animated
+    '.sun-cycle-planets i{position:absolute;border-radius:50%;' +
+    'transform:translate(-50%,-50%);transition:opacity 2s linear;opacity:0;}' +
     '.sun-cycle-planets b{position:absolute;transform:translateX(-50%);' +
     'font:500 9px/1 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;' +
     'color:rgba(232,238,248,.62);text-shadow:0 1px 2px rgba(0,0,0,.75);white-space:nowrap;}';
@@ -845,10 +865,23 @@
       im.alt = '';
       im.loading = 'lazy';
       el.appendChild(im);
+      if (cfg.points > 0) {
+        // A point of light, not a small planet: a hard core in the body's own
+        // colour, fading into a halo about three times as wide. Sized in px,
+        // because a naked-eye planet does not grow with the dashboard.
+        const d = cfg.points * (0.55 + 0.75 * (PLANET_SCALE[body] || 0.6));
+        const t = cfg.tints[body] || [235, 240, 250];
+        const dot = document.createElement('i');
+        dot.style.width = dot.style.height = (d * 3).toFixed(1) + 'px';
+        dot.style.background =
+          `radial-gradient(circle, rgba(255,255,255,.95) 0%, rgb(${t.join(',')}) ` +
+          `${(100 / 3).toFixed(0)}%, rgba(${t.join(',')},.35) 52%, transparent 72%)`;
+        el.appendChild(dot);
+      }
       if (cfg.labels) {
         const b = document.createElement('b');
         b.textContent = cfg.names[body] || body;
-        el.appendChild(b);
+        el.appendChild(b);              // stays last: placePlanets reads it so
       }
       layer.appendChild(el);
     });
@@ -927,6 +960,22 @@
         el.style.transform = place(pos);
       }
       el.style.opacity = a.toFixed(3);
+
+      // --- disc by night, point of light by day ---------------------------
+      // Crossfade rather than switch: the sky itself takes minutes to turn,
+      // and a picture that pops into a dot at some threshold would be the one
+      // thing on the view that moves in steps.
+      const dot = el.querySelector('i');
+      if (dot) {
+        const dzien = smoothstep(clamp((sunElev + 1) / 6, 0, 1));
+        const img = el.querySelector('img');
+        if (img) img.style.opacity = (1 - dzien).toFixed(3);
+        dot.style.opacity = dzien.toFixed(3);
+        // sits on the ball's centre inside the file, not the file's centre
+        dot.style.left = (disc[1] * 100).toFixed(1) + '%';
+        dot.style.top = (disc[2] * 100).toFixed(1) + '%';
+      }
+
       // the caption belongs under the *ball*, not under the file: Saturn's
       // box is more than twice its disc, and a label hung off the box bottom
       // would float a ring-width below the planet

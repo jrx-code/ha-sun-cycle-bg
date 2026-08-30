@@ -39,7 +39,7 @@ SKY = {
 PANELE = [
     (-16.0, "night — full opacity"),
     (-4.0, "dusk — fading in"),
-    (24.0, "day — day: 0.35"),
+    (24.0, "day — points, at the day: 0.35 floor"),
 ]
 
 STRONA = """<!doctype html><meta charset="utf-8">

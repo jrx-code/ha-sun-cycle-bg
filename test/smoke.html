@@ -178,9 +178,14 @@ function planety(cont) {
   const czytaj1 = (b) => {
     const el = layer.querySelector('[data-body=' + b + ']');
     if (!el) return null;
+    const im = el.querySelector('img'), pk = el.querySelector('i');
     return { w: el.style.width, przesun: el.style.transform,
              czas: el.style.transitionDuration, alpha: +el.style.opacity,
              glow: /drop-shadow/.test(el.style.filter),
+             // '' means the card never wrote it — not zero
+             tarcza: im && im.style.opacity !== '' ? +im.style.opacity : null,
+             punkt: pk ? +pk.style.opacity : null,
+             punktD: pk ? pk.style.width : null,
              label: (el.querySelector('b') || {}).textContent || null };
   };
   return {
@@ -249,6 +254,9 @@ out.push(['PLANETY dzien day:true (podloga 0.35)', scenaPlanet(49, { day: true }
 out.push(['PLANETY dzien day:0.15', scenaPlanet(49, { day: 0.15 })]);
 out.push(['PLANETY zmierzch day:true elev=-4', scenaPlanet(-4, { day: true })]);
 out.push(['PLANETY szereg diameters', scenaPlanet(-16.18, { scale: 'diameters', size: 1.2 })]);
+out.push(['PLANETY punkt: dzien +20', scenaPlanet(20, { day: 0.35 })]);
+out.push(['PLANETY punkt: swit +2', scenaPlanet(2, { day: 0.35 })]);
+out.push(['PLANETY punkt wylaczony', scenaPlanet(20, { day: 0.35, points: false })]);
 out.push(['PLANETY chod 120 s', scenaChod(120)]);
 out.push(['PLANETY chod bez obietnicy', scenaPlanet(-16.18)]);
 out.push(['PLANETY chod przez polnoc', scenaChod(120, true)]);

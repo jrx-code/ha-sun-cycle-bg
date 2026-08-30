@@ -39,7 +39,8 @@ moon**, and keeps it gently moving around the clock:
   publishes `sensor.sol_<body>_azimuth` and `_elevation`; the card puts each
   planet's own picture on the same projection as the sun and the moon, fading
   it in as the sky darkens and out as it sets — or leaving a set fraction of
-  them up in daylight. Sizes are emblems, not scale — see
+  them up in daylight, where each one becomes a point of light in its own
+  colour instead of a pasted disc. Sizes are emblems, not scale — see
   [Planets](#planets).
 - **Stars** — a field of twinkling stars moving **east to west**, like the
   sky. Cheap linear drift by default; optional rotation about the celestial
@@ -207,6 +208,9 @@ planets: false          # true = the eight from the Sol integration, or:
 #   scale: brightness     # ladder: brightness | diameters | equal, or
 #                         # {body: multiplier} of your own
 #   discs: {}             # per-body [dia, cx, cy] of the disc inside the file
+#   points: 3.5           # by day a planet is a point of light, not a disc:
+#                         # base dot diameter in px; false keeps the picture
+#   tints: {}             # per-body dot colour, [r, g, b]
 #   names: {}             # captions, e.g. {mars: Mars} in your language
 #   labels: false         # name under the disc
 #   glow: 0.5             # 0–2; a hair of halo so it is not a sticker
@@ -289,8 +293,8 @@ dusk) — set `stars: false` to avoid doubling the field.
 ![Planets at night, at dusk and in daylight](docs/planets.png)
 
 *The same eight planets at three sun elevations: −16° (full opacity), −4°
-(fading in with the sky) and +24° (`day: 0.35`). Discs are the nine cutouts in
-`demo/assets/planets`.*
+(fading in with the sky) and +24°, where they have become points of light at
+the `day: 0.35` floor. Discs are the nine cutouts in `demo/assets/planets`.*
 
 ```yaml
 planets: true           # everything below has a default
@@ -336,6 +340,16 @@ The one thing this does not survive is resizing the window between updates: the
 walk is written in pixels, so the discs sit on the old geometry until the next
 repaint — at most half a minute, since `sun.sun` keeps ticking. The star field
 has always behaved the same way.
+
+**By day they are points, not discs.** A planet in a blue sky is a point of
+light — that is what Venus looks like when you find it in daylight — and a
+photographic disc pasted on a noon sky reads as a sticker no matter how faint
+it is made. So as the sun climbs past the horizon the picture crossfades into a
+dot in the planet's own colour, and back into the picture at dusk. The colours
+are measured off the shipped cutouts (`tints:` overrides them), and the dot is
+sized by naked-eye brightness whatever ladder the discs use, so Venus is the
+biggest dot even when Jupiter is the biggest disc. `points: false` keeps the
+picture around the clock.
 
 **When they are visible.** They ride the same curve as the stars: fully out in
 daylight, fully in once the sun is about 9° below the horizon. `day` raises the
