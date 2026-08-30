@@ -65,6 +65,8 @@ Designed for wall-mounted kiosk tablets:
   animated layer forces every element painted above it into a layer of its own),
 - the palette repaints only when the sun moves ≥ 0.15° in elevation or ≥ 0.6°
   in azimuth (about every half minute),
+- the planets are walked by one CSS transition each, re-armed once per sensor
+  update (every few minutes) — no timer, no JS between updates,
 - the star field is 5 painted nodes per copy — 10 for the drifting strip, 5
   when rotating (multi-point `box-shadow` stars, group-level twinkle),
 - the whole astronomy pass is a few dozen floating-point operations per
@@ -98,9 +100,10 @@ on-screen density. Fine for panel-sized views; skip it on a 4K dashboard.
 Nothing but `sun.sun` is required. Both optional integrations are read
 defensively — no sensors means the feature draws nothing, never an error.
 
-Sol also publishes `_rise`, `_set`, `_transit` and `_antitransit` per body, and
-the two position sensors carry `next_target` and `next_update` attributes; the
-card ignores all six today.
+The two Sol position sensors also carry `next_target` and `next_update`
+attributes, and the card reads those as well — that is what keeps the planets
+moving smoothly between updates (see [Planets](#planets)). The four timestamp
+sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
 
 ## Install
 
@@ -300,6 +303,30 @@ moon: azimuth across the frame, elevation up it. Nothing is computed in the
 card. A planet below `min_elevation` fades out instead of sitting parked on
 the bottom edge all night, and one outside the `azimuth:` window fades out
 instead of piling up on the rim.
+
+**How they move.** Sol rewrites a position only when the planet crosses a whole
+degree of azimuth (half a degree of elevation), which on one house measured out
+at a change every 294 s for azimuth and 206 s for elevation. Drawn literally
+that is a planet jumping ~5 px across a 1280 px view and then standing still
+for five minutes. So the card does not draw the planet where it is: it reads
+the `next_target` and `next_update` attributes the same sensors carry — where
+the planet is going and when it will be there — puts the disc on the *target*
+and gives a `transform` transition exactly the time remaining. The planet walks
+at the right speed and arrives as the new state lands, with nothing to catch up
+on. Against 90 minutes of history those two attributes were exact 71 times out
+of 71, the arrival within 0.2 s.
+
+Both axes ride one transform, and they have separate deadlines, so the pair
+runs to the earlier one and the slower axis is asked where it will be at that
+instant — which its own promise answers. Nothing is animated in JS: one
+transition per planet, re-armed once per sensor update, and re-arming mid-walk
+continues from wherever the disc has got to. A sensor without the attributes
+(or a stale one, after a restart) simply places the planet, as before.
+
+The one thing this does not survive is resizing the window between updates: the
+walk is written in pixels, so the discs sit on the old geometry until the next
+repaint — at most half a minute, since `sun.sun` keeps ticking. The star field
+has always behaved the same way.
 
 **When they are visible.** They ride the same curve as the stars: fully out in
 daylight, fully in once the sun is about 9° below the horizon. `day` raises the

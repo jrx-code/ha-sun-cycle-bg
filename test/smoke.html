@@ -178,8 +178,8 @@ function planety(cont) {
   const czytaj1 = (b) => {
     const el = layer.querySelector('[data-body=' + b + ']');
     if (!el) return null;
-    return { w: el.style.width, pos: el.style.left + '/' + el.style.top,
-             shift: el.style.transform, alpha: +el.style.opacity,
+    return { w: el.style.width, przesun: el.style.transform,
+             czas: el.style.transitionDuration, alpha: +el.style.opacity,
              glow: /drop-shadow/.test(el.style.filter),
              label: (el.querySelector('b') || {}).textContent || null };
   };
@@ -196,6 +196,42 @@ function planety(cont) {
     podHoryzontem: czytaj1('venus'), pozaOknem: czytaj1('jupiter'),
   };
 }
+/* 1.7.0: the walk. Sol carries next_target/next_update; the card should aim
+   the disc at the promised spot and give the transition exactly the time that
+   is left. These states are built with a promise 120 s out. */
+function solZObietnica(offsetS) {
+  const st = {};
+  const teraz = FROZEN.getTime();
+  for (const b of window.sunCycleBg.PLANET_BODIES) {
+    const v = SOL['sensor.sol_' + b + '_azimuth'].state;
+    const e = SOL['sensor.sol_' + b + '_elevation'].state;
+    st['sensor.sol_' + b + '_azimuth'] = {
+      state: v, last_changed: new Date(teraz - 60000).toISOString(),
+      attributes: { next_target: String(+v + 1),
+                    next_update: new Date(teraz + offsetS * 1000).toISOString() } };
+    st['sensor.sol_' + b + '_elevation'] = {
+      state: e, last_changed: new Date(teraz - 30000).toISOString(),
+      // the other axis is due later, so the pair must ride the azimuth deadline
+      attributes: { next_target: String(+e + 0.5),
+                    next_update: new Date(teraz + offsetS * 2000).toISOString() } };
+  }
+  return st;
+}
+function scenaChod(offsetS, przezZero) {
+  const st = solZObietnica(offsetS);
+  if (przezZero) {                       // 359.0 -> 0.0 is one degree, not 359
+    st['sensor.sol_saturn_azimuth'].state = '359.0';
+    st['sensor.sol_saturn_azimuth'].attributes.next_target = '0.0';
+  }
+  const cont = buduj(-16.18, 321.56, { stars: { count: 20 }, planets: {
+    files: Object.fromEntries(window.sunCycleBg.PLANET_BODIES.map(b => [b, PIKSEL])) } });
+  cont.querySelector('sun-cycle-bg-card').hass = {
+    states: Object.assign({ 'sun.sun': { attributes: { elevation: -16.18, azimuth: 321.56 } } }, st),
+    config: { latitude: 53.5, longitude: 14.5 },
+  };
+  return planety(cont);
+}
+
 function scenaPlanet(elev, extra) {
   const cfg = Object.assign({ files: Object.fromEntries(
     window.sunCycleBg.PLANET_BODIES.map(b => [b, PIKSEL])) }, extra || {});
@@ -213,6 +249,9 @@ out.push(['PLANETY dzien day:true (podloga 0.35)', scenaPlanet(49, { day: true }
 out.push(['PLANETY dzien day:0.15', scenaPlanet(49, { day: 0.15 })]);
 out.push(['PLANETY zmierzch day:true elev=-4', scenaPlanet(-4, { day: true })]);
 out.push(['PLANETY szereg diameters', scenaPlanet(-16.18, { scale: 'diameters', size: 1.2 })]);
+out.push(['PLANETY chod 120 s', scenaChod(120)]);
+out.push(['PLANETY chod bez obietnicy', scenaPlanet(-16.18)]);
+out.push(['PLANETY chod przez polnoc', scenaChod(120, true)]);
 out.push(['PLANETY wylaczone', planety(buduj(-16.18, 321.56, { planets: false }))]);
 out.push(['PLANETY readPlanetConfig(true)', window.sunCycleBg.readPlanetConfig(true)]);
 

@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.6.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.7.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -777,7 +777,13 @@
   /* Travels inside the layer, the way the star field's rules do: a tuning
      page builds the layer on its own and never gets the card's stylesheet. */
   const PLANET_CSS =
-    '.sun-cycle-planets>div{position:absolute;pointer-events:none;transition:opacity 2s linear;}' +
+    // Position rides in the transform, not in left/top: the glide below is a
+    // transition, and a transition on left/top relayouts the view on every
+    // frame. The duration list is (opacity, transform); JS sets the second
+    // one per planet, from how long the integration says it has.
+    '.sun-cycle-planets>div{position:absolute;left:0;top:0;pointer-events:none;' +
+    'transition-property:opacity,transform;transition-timing-function:linear;' +
+    'transition-duration:2s,0s;}' +
     '.sun-cycle-planets img{display:block;width:100%;height:auto;}' +
     '.sun-cycle-planets b{position:absolute;transform:translateX(-50%);' +
     'font:500 9px/1 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;' +
@@ -785,6 +791,42 @@
 
   function planetSrc(cfg, body) {
     return cfg.files[body] || (cfg.images + body + '.png');
+  }
+
+  /* Sol publishes a position as a whole degree of azimuth (half a degree of
+     elevation) and only rewrites it when the planet crosses the next one —
+     every few minutes. Drawn literally, a planet therefore jumps ~5 px across
+     a 1280 px view and then stands still for five minutes.
+
+     But the sensor also carries `next_target` and `next_update`: where it is
+     going and when it will be there. Measured against 90 minutes of history on
+     one house: 71 promises out of 71 kept, the value exact and the time within
+     0.2 s. So the card can place the planet where it *will* be and let the
+     compositor walk it there in exactly the time remaining — it arrives as the
+     new state lands, and there is nothing to catch up on. No JS runs between
+     updates; a transition does the whole thing.
+
+     This reads one axis. `at(t)` is its value at any instant, so the two axes
+     can be sampled at a common deadline — they have separate ones. */
+  function solAxis(st, wrap) {
+    const v = Number(st && st.state);
+    if (!isFinite(v)) return null;
+    const a = st.attributes || {};
+    let target = Number(a.next_target);
+    const t1 = Date.parse(a.next_update);
+    const t0 = Date.parse(st.last_changed);
+    // Azimuth wraps at north: 359 -> 0 is one degree of motion, but read as
+    // numbers it is a 359-degree sweep back across the whole frame. Unwrap the
+    // target onto the same turn as the value before anything interpolates.
+    if (wrap && isFinite(target) && Math.abs(target - v) > 180) {
+      target += target > v ? -360 : 360;
+    }
+    const promise = isFinite(target) && t1 > 0 && t0 > 0 && t1 > t0;
+    return {
+      now: v,
+      t1: promise ? t1 : 0,
+      at: (t) => (promise ? v + (target - v) * clamp((t - t0) / (t1 - t0), 0, 1) : v),
+    };
   }
 
   /* One <div><img></div> per body, built once and then only moved. */
@@ -822,19 +864,34 @@
     // deep enough into the night for a planet to hold its own against the sky,
     // never below the daylight floor
     const night = lerp(cfg.day, 1, clamp((-sunElev - 1) / 8, 0, 1));
+    // The glide is written in pixels, so the layer has to have a size. It is
+    // inset:0 in the view container, so this is the frame. A detached or
+    // zero-sized layer (a page that never laid it out) falls back to placing
+    // the planets where they are, in per cent, exactly as before.
+    const box = layer.getBoundingClientRect();
+    const W = box.width, H = box.height, px = W > 0 && H > 0;
+    const now = Date.now();
     for (const el of layer.children) {
       const body = el.dataset.body;
       if (!body) continue;                    // the layer's own <style>
-      const az = Number((states[cfg.entities + body + '_azimuth'] || {}).state);
-      const alt = Number((states[cfg.entities + body + '_elevation'] || {}).state);
-      if (!isFinite(az) || !isFinite(alt)) { el.style.opacity = '0'; continue; }
-      const pos = proj(alt, az);
+      const azAx = solAxis(states[cfg.entities + body + '_azimuth'], true);
+      const altAx = solAxis(states[cfg.entities + body + '_elevation'], false);
+      if (!azAx || !altAx) { el.style.opacity = '0'; continue; }
+      const az = azAx.now, alt = altAx.now;
+      // One transform carries both axes, so one deadline has to serve both:
+      // the earlier of the two. The other axis is not simply left behind — it
+      // is asked where it will be at that instant, which its own promise
+      // answers exactly. Whichever sensor updates first re-arms the pair.
+      const deadline = Math.min(azAx.t1 || Infinity, altAx.t1 || Infinity);
+      const glide = px && deadline > now && deadline < Infinity;
+      const t = glide ? deadline : now;
+      const pos = proj(altAx.at(t), azAx.at(t));
       const disc = cfg.discs[body] || [1, 0.5, 0.5];
       const w = cfg.size * (cfg.scale[body] || 1) / disc[0];
       // A planet below the horizon is behind the Earth; the projection parks
       // anything down there on the bottom edge, so it has to be faded out
       // rather than left sitting on the rim all night.
-      const up = clamp((alt - cfg.min_elevation) / 4, 0, 1);
+      const up = clamp((altAx.at(t) - cfg.min_elevation) / 4, 0, 1);
       // The sky window is narrower than the sky: a planet outside it gets
       // parked on the frame edge by the projection, and half a dozen of them
       // parked there would read as a row of stickers on the rim. Fade the
@@ -842,10 +899,33 @@
       const inFrame = clamp(pos.x / 2, 0, 1) * clamp((100 - pos.x) / 2, 0, 1);
       const a = night * up * inFrame;
       el.style.width = w.toFixed(3) + '%';
-      el.style.left = pos.x.toFixed(2) + '%';
-      el.style.top = pos.y.toFixed(2) + '%';
-      el.style.transform =
-        `translate(${(-disc[1] * 100).toFixed(2)}%, ${(-disc[2] * 100).toFixed(2)}%)`;
+      // the disc offset stays a share of the element (that is what centres the
+      // ball rather than the file); the position is prepended in pixels
+      const centre =
+        ` translate(${(-disc[1] * 100).toFixed(2)}%, ${(-disc[2] * 100).toFixed(2)}%)`;
+      const place = (p) => (px
+        ? `translate(${(p.x / 100 * W).toFixed(1)}px, ${(p.y / 100 * H).toFixed(1)}px)`
+        : '') + centre;
+      if (!px) {                              // fallback: no size, no glide
+        el.style.left = pos.x.toFixed(2) + '%';
+        el.style.top = pos.y.toFixed(2) + '%';
+        el.style.transform = centre.trim();
+      } else {
+        // A newly built layer has no position yet: writing the target straight
+        // away would slide the planet in from the corner. Put it where it is
+        // now, flush that, and only then arm the walk.
+        if (!el._scsPlaced) {
+          el.style.transitionDuration = '0s,0s';
+          el.style.transform = place(proj(alt, az));
+          void el.offsetWidth;                // flush, so the next write animates
+          el._scsPlaced = true;
+        }
+        // Re-arming mid-walk is free and self-correcting: the transition
+        // continues from wherever the element has got to, towards the same
+        // point, in the time that is left.
+        el.style.transitionDuration = '2s,' + (glide ? (deadline - now) / 1000 : 0).toFixed(1) + 's';
+        el.style.transform = place(pos);
+      }
       el.style.opacity = a.toFixed(3);
       // the caption belongs under the *ball*, not under the file: Saturn's
       // box is more than twice its disc, and a label hung off the box bottom
@@ -1023,8 +1103,12 @@
       // and eight string reads are cheaper than sixteen style writes
       let print = this._elev.toFixed(2);
       for (const b of cfg.bodies) {
-        print += '|' + (st[cfg.entities + b + '_azimuth'] || {}).state +
-                 ',' + (st[cfg.entities + b + '_elevation'] || {}).state;
+        for (const os of ['_azimuth', '_elevation']) {
+          const e = st[cfg.entities + b + os] || {};
+          // the promise is part of the print: a new next_update is what re-arms
+          // the walk, and it can change without the state changing
+          print += '|' + e.state + '@' + ((e.attributes || {}).next_update || '');
+        }
       }
       if (print === layer._print) return;
       layer._print = print;
