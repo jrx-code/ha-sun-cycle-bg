@@ -1,6 +1,8 @@
 node_modules/
 *.log
 
-# generated tuning page: the card is pasted into it at build time
+# generated tuning pages: the card is pasted into them at build time
 demo/tlo-planety.html
 demo/tlo-planety.meta.json
+demo/droga-mleczna.html
+demo/droga-mleczna.meta.json
