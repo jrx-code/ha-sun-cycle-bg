@@ -1,5 +1,6 @@
 node_modules/
 *.log
+__pycache__/
 
 # generated tuning pages: the card is pasted into them at build time
 demo/tlo-planety.html
