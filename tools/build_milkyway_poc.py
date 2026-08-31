@@ -140,6 +140,8 @@ STRONA = r"""<meta charset="utf-8">
         <input type="range" id="godz" min="18" max="30" step="0.25" value="23.5"></label>
       <label class="pole"><b>Jasność pasa — <span id="v-jasn"></span></b>
         <input type="range" id="jasn" min="0" max="1" step="0.02" value="0.9"></label>
+      <label class="pole"><b>Zanik przy horyzoncie od — <span id="v-hor"></span>°</b>
+        <input type="range" id="hor" min="0" max="40" step="1" value="22"></label>
       <label class="pole"><b>Rozmycie — <span id="v-rozm"></span> px</b>
         <input type="range" id="rozm" min="0" max="8" step="1" value="0"></label>
       <label class="pole"><b>Noc</b>
@@ -394,7 +396,11 @@ __KARTA__
         const p = altaz(eq.ra, eq.dec, J);
         const q = pr(p.alt, p.az);
         wx[n] = q.x / 100 * W; wy[n] = q.y / 100 * H;
-        ok[n] = p.alt > -6 ? 1 : 0;
+        // Odrzucanie oczek po wysokosci rysowalo kanciasta, wielokatna
+        // krawedz u dolu — to ona wygladala na „ucieta dolna czesc", nie
+        // gradient. Odrzucamy dopiero gleboko pod horyzontem, gdzie gradient
+        // i tak wyzerowal krycie, wiec granica nie moze byc widoczna.
+        ok[n] = p.alt > -25 ? 1 : 0;
       }
     }
 
@@ -409,6 +415,8 @@ __KARTA__
         if (!ok[a] || !ok[b2] || !ok[c2]) continue;
         const szer = Math.max(Math.abs(wx[b2] - wx[a]), Math.abs(wx[c2] - wx[a]));
         if (szer > W * 0.4) continue;        // oczko rozerwane przez zawijanie azymutu
+        const wys = Math.max(Math.abs(wy[b2] - wy[a]), Math.abs(wy[c2] - wy[a]));
+        if (wys > H * 0.6) continue;         // oczko rozciagniete przez zenit
         const m11 = (wx[b2] - wx[a]) / sw, m12 = (wy[b2] - wy[a]) / sw;
         const m21 = (wx[c2] - wx[a]) / sh, m22 = (wy[c2] - wy[a]) / sh;
         gb.save();
@@ -428,9 +436,15 @@ __KARTA__
     // oczko — na oczko wychodzily schodki.
     const o = OKNA[okno], zakres = o.max - o.min;
     const yDla = (a) => (92 - (a - o.min) / zakres * 86) / 100 * H;
-    const grad = gb.createLinearGradient(0, yDla(16), 0, yDla(0));
+    // Pierwsza wersja gasla do zera dokladnie na wysokosci 0 stopni, czyli na
+    // 84 % wysokosci kadru — a pod spodem zostawalo jeszcze 16 % ramki i pas
+    // wygladal, jakby ktos go uciac w powietrzu. Teraz zanik konczy sie na
+    // dolnej krawedzi: astronomicznie to i tak obszar pod horyzontem, ale nic
+    // sie nie urywa. Suwak ustawia, jak wysoko zanik sie zaczyna.
+    const grad = gb.createLinearGradient(0, yDla(opcje.horyzont), 0, H);
     grad.addColorStop(0, 'rgba(0,0,0,1)');
-    grad.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(0.45, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(0.78, 'rgba(0,0,0,0.28)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     gb.globalCompositeOperation = 'destination-in';
     gb.fillStyle = grad;
@@ -495,7 +509,7 @@ __KARTA__
   /* --- panel --- */
   const G = document.getElementById('glowna');
   const el = {};
-  ['godz','jasn','rozm','zrodlo','kl','kb','krot','kfov',
+  ['godz','jasn','rozm','hor','zrodlo','kl','kb','krot','kfov',
    'noc','okno','slonce','gwiazdy','planety','tylkopas']
     .forEach(id => el[id] = document.getElementById(id));
   const fmt = (v, n) => Number(v).toFixed(n).replace('.', ',');
@@ -506,7 +520,7 @@ __KARTA__
   function opcje() {
     BAZA = el.noc.value;
     return { jasnosc: +el.jasn.value, rozmycie: +el.rozm.value,
-             zrodlo: el.zrodlo.value,
+             horyzont: +el.hor.value, zrodlo: el.zrodlo.value,
              kl: +el.kl.value, kb: +el.kb.value, krot: +el.krot.value, kfov: +el.kfov.value,
              okno: el.okno.value, slonce: +el.slonce.value,
              gwiazdy: el.gwiazdy.checked, planety: el.planety.checked,
@@ -519,6 +533,7 @@ __KARTA__
     document.getElementById('v-godz').textContent = godzTekst(godz);
     document.getElementById('v-jasn').textContent = fmt(o.jasnosc, 2);
     document.getElementById('v-rozm').textContent = o.rozmycie;
+    document.getElementById('v-hor').textContent = o.horyzont;
     document.getElementById('v-kl').textContent = o.kl;
     document.getElementById('v-kb').textContent = o.kb;
     document.getElementById('v-krot').textContent = o.krot;
@@ -533,6 +548,7 @@ __KARTA__
       pad('godzina') + godzTekst(godz),
       pad('jasnosc') + fmt(o.jasnosc, 2),
       pad('rozmycie') + o.rozmycie + ' px',
+      pad('zanik od') + o.horyzont + ' stopni wysokosci',
       pad('zrodlo') + el.zrodlo.options[el.zrodlo.selectedIndex].text,
       pad('kadr l/b') + o.kl + ' / ' + o.kb + ' stopni',
       pad('kadr obrot') + o.krot + ' stopni, pole ' + o.kfov + ' stopni',
