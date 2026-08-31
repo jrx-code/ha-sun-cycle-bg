@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.12.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.12.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -2077,11 +2077,18 @@
     '.scb-tyt{flex:1;}' +
     '.scb-odznaka{font-weight:400;font-size:12px;color:var(--secondary-text-color);}' +
     '.scb-cialo{padding:0 12px 10px;}' +
-    '.scb-w{display:grid;grid-template-columns:130px minmax(0,1fr) 46px;gap:8px;' +
+    '.scb-w{display:grid;grid-template-columns:126px minmax(0,1fr) 58px;gap:8px;' +
       'align-items:center;margin:6px 0 2px;font-size:14px;}' +
     '.scb-w label{color:var(--secondary-text-color);}' +
     '.scb-w .scb-n{text-align:right;font-variant-numeric:tabular-nums;' +
       'color:var(--primary-text-color);}' +
+    '.scb-w .scb-num input{width:100%;box-sizing:border-box;text-align:right;font:inherit;' +
+      'font-size:13px;font-variant-numeric:tabular-nums;padding:3px 4px;border-radius:5px;' +
+      'color:var(--primary-text-color);background:transparent;border:1px solid transparent;}' +
+    '.scb-w .scb-num input:hover,.scb-w .scb-num input:focus{background:var(--card-background-color,#111);' +
+      'border-color:var(--divider-color,rgba(255,255,255,.2));outline:none;}' +
+    '.scb-w .scb-num input::-webkit-outer-spin-button,' +
+    '.scb-w .scb-num input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}' +
     '.scb-w input[type=range]{width:100%;accent-color:var(--primary-color,#03a9f4);}' +
     '.scb-w input[type=text],.scb-w select{width:100%;box-sizing:border-box;font:inherit;' +
       'font-size:13px;padding:5px 8px;border-radius:6px;color:var(--primary-text-color);' +
@@ -2288,19 +2295,43 @@
               pole = document.createElement('input');
               pole.type = 'range';
               pole.min = p.min; pole.max = p.max; pole.step = p.krok; pole.value = String(v);
-              licz.textContent = String(v);
+              // The slider snaps to its step, and a value written by hand does
+              // not have to sit on that grid: `count: 222` with a step of 5
+              // used to read back as 220 and would have been saved as 220 the
+              // moment the slider was touched. The number beside it is now a
+              // field of its own — the slider is the coarse way in, typing is
+              // the exact one, and an off-grid value survives untouched.
+              licz.textContent = '';
+              licz.classList.add('scb-num');
+              const dokladne = document.createElement('input');
+              dokladne.type = 'number';
+              dokladne.min = p.min; dokladne.max = p.max; dokladne.step = 'any';
+              dokladne.value = String(v);
+              dokladne.dataset.k = p.k + ':liczba';
+              licz.appendChild(dokladne);
+              pole._dokladne = dokladne;
             }
             w.appendChild(pole);
             w.appendChild(licz);
           }
           pole.dataset.k = p.k;
-          const zapisz = () => {
+          const zapisz = (zrodlo) => {
             let nowa;
             if (p.typ === 'bool') nowa = pole.checked;
             else if (p.typ === 'tekst') nowa = pole.value.trim();
             else if (p.typ === 'wybor') nowa = pole.value;
-            else nowa = Number(pole.value);
-            if (p.typ === 'zakres') licz.textContent = String(nowa);
+            else {
+              const d = pole._dokladne;
+              if (zrodlo === 'liczba') {
+                const surowa = Number(d.value);
+                nowa = isFinite(surowa) ? clamp(surowa, p.min, p.max) : p.dom;
+                if (nowa !== surowa) d.value = String(nowa);
+                pole.value = String(nowa);          // knob follows, snapping as it likes
+              } else {
+                nowa = Number(pole.value);
+                d.value = String(nowa);
+              }
+            }
             if (p.k === '__az0' || p.k === '__az1') {
               // one option, two sliders: the window is a pair and is written
               // whole, or dropped whole when both ends are back at default
@@ -2320,7 +2351,14 @@
               !edytorRowne(edytorCzytaj(this._cfg, q.k, q.dom), q.dom)).length;
             od.textContent = ile ? ile + (ile === 1 ? ' change' : ' changes') : '';
           };
-          pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', zapisz);
+          pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', () => zapisz('suwak'));
+          if (pole._dokladne) {
+            pole._dokladne.addEventListener('change', () => zapisz('liczba'));
+            // Enter should commit without waiting for focus to leave
+            pole._dokladne.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') { e.preventDefault(); zapisz('liczba'); }
+            });
+          }
           if (p.o) w.appendChild(edytorOpis(p.o));
           cialo.appendChild(w);
         }
