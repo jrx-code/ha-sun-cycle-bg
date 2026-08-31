@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.15.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.15.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -795,6 +795,14 @@
       entities: typeof c.entities === 'string' ? c.entities : 'sensor.sol_',
       bodies,
       images: typeof c.images === 'string' ? c.images : baza + 'planets/',
+      // Whether that path is the card's own guess. It matters because the two
+      // ways HACS delivers a plugin put the pictures in two different places:
+      // a download from the repository tree keeps `dist/planets/`, a download
+      // from a release's assets cannot — GitHub asset names hold no slash, so
+      // every file lands flat beside the script. buildPlanets falls back to the
+      // flat name when the guess 404s; a path given in the config is taken as
+      // given and never second-guessed.
+      imagesDomyslne: typeof c.images !== 'string',
       files: c.files && typeof c.files === 'object' ? c.files : {},
       discs: Object.assign({}, PLANET_DISCS, c.discs || {}),
       // a name picks one of the shipped ladders; an object overrides body by
@@ -1223,6 +1231,9 @@
       el.style.opacity = '0';
       const im = document.createElement('img');
       im.src = planetSrc(cfg, body);
+      if (cfg.imagesDomyslne && !cfg.files[body]) {
+        im.onerror = () => { im.onerror = null; im.src = HACS_BASE + body + '.png'; };
+      }
       im.alt = '';
       im.loading = 'lazy';
       el.appendChild(im);
