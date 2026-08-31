@@ -146,6 +146,11 @@ drawn discs.
 
 ### The visual editor
 
+![The card as the picker draws it: the band, the moon and eight planets](docs/thumbnail.png)
+
+*What **Add card** shows: the card drawing itself, with the stub config a new
+card starts on.*
+
 Adding the card from **Add card** shows it under its own name with a live
 thumbnail, and opening it gives a form rather than a YAML box: eight collapsed
 groups, a switch on each group header, a line under every control saying what
@@ -176,6 +181,8 @@ The editor also checks its own table of defaults against the card's
 `readStarConfig` / `readPlanetConfig` / `readMilkyConfig` when it opens, and
 says so in red if the two ever disagree — a silent disagreement would make it
 drop a key that is not the default after all.
+
+![The form: collapsed groups, switches on the headers, a hint under every control, and the YAML panel](docs/editor.png)
 
 Outside a dashboard view — in the card picker, and in the editor's own live
 preview — the card has no view to paint, so it paints a 16:9 box of its own
@@ -751,6 +758,15 @@ frozen to the moment it was taken:
 
 ```bash
 python3 tools/render_hero_doc.py            # -> docs/hero.png
+```
+
+The two pictures in [The visual editor](#the-visual-editor) are the card and
+its editor element, not a screenshot of Home Assistant — the thumbnail is what
+`getStubConfig()` and a `hass` carrying nothing but a midday sun produce, which
+is exactly the picker's situation:
+
+```bash
+python3 tools/render_editor_doc.py          # -> docs/thumbnail.png, docs/editor.png
 ```
 
 The strip in [The Milky Way](#the-milky-way) is the same card again, with the
