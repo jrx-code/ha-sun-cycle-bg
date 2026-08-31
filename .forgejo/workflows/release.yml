@@ -35,7 +35,9 @@ jobs:
               fetch -q --depth 1 origin "${{ github.sha }}"
           git checkout -qf FETCH_HEAD
           git clean -qxdff          # last run's leftovers are not this commit
-          git log -1 --oneline
+          # --no-pager everywhere: this runner gives the job a tty, so a bare
+          # `git log` sits in less until the job is cancelled
+          git --no-pager log -1 --oneline
 
       - name: dist/ is what tools/make_dist.py produces
         run: |
