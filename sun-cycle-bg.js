@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.9.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.9.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -901,6 +901,27 @@
     };
   }
 
+  /* Horizontal -> equatorial -> galactic. The inverse chain, for the panorama:
+     there the mesh runs over the *sky*, not over the picture. Parameterising a
+     whole-sky panorama by its own pixels puts the mesh poles and its seam in
+     the middle of the view, where they draw a fan of slivers around a hole —
+     which is exactly what the first cut did. Over the sky there is neither. */
+  function altazToGal(alt, az, jd, lat, lon) {
+    const a = alt * D2R, z = az * D2R, pr = lat * D2R;
+    const dec = Math.asin(clamp(Math.sin(a) * Math.sin(pr) +
+      Math.cos(a) * Math.cos(pr) * Math.cos(z), -1, 1));
+    const H = Math.atan2(-Math.sin(z) * Math.cos(a),
+      Math.cos(pr) * Math.sin(a) - Math.sin(pr) * Math.cos(a) * Math.cos(z));
+    const ra = ((gmst(jd) + lon - H * R2D) % 360 + 360) % 360;
+    const r = ra * D2R, d = dec;
+    const rp = NGP_RA * D2R, dp = NGP_DEC * D2R, ln = L_NCP * D2R;
+    const b = Math.asin(clamp(Math.sin(dp) * Math.sin(d) +
+      Math.cos(dp) * Math.cos(d) * Math.cos(r - rp), -1, 1));
+    const y = Math.cos(d) * Math.sin(r - rp);
+    const x = Math.cos(dp) * Math.sin(d) - Math.sin(dp) * Math.cos(d) * Math.cos(r - rp);
+    return { l: (((ln - Math.atan2(y, x)) * R2D) % 360 + 360) % 360, b: b * R2D };
+  }
+
   function readMilkyConfig(m) {
     if (!m || typeof m !== 'object' || !m.image) return null;
     const num = (v, def) => (isFinite(v) ? Number(v) : def);
@@ -932,6 +953,108 @@
     return layer;
   }
 
+  /* The panorama path: the mesh runs over the sky window the card shows, and
+     every node asks which pixel of the panorama belongs there. Quads are drawn
+     with the affine transform that carries their three source corners onto
+     their three screen corners — the picture is still sampled by the browser
+     at full resolution, and neither the panorama's seam nor its poles can
+     appear anywhere, because the mesh never visits them. */
+  function drawMilkyPanorama(layer, g, buf, gb, img, cfg, jd, lat, lon,
+                             alpha, okno, W, H, dpr) {
+    const U = cfg.mesh, V = Math.max(6, Math.round(cfg.mesh * 0.5));
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const az0 = okno.az0, az1 = okno.az1;
+    const alt0 = okno.min, alt1 = okno.max;
+    const px = new Float64Array((U + 1) * (V + 1)), py = new Float64Array((U + 1) * (V + 1));
+    const su = new Float64Array(px.length), sv = new Float64Array(px.length);
+    for (let j = 0; j <= V; j++) {
+      for (let i = 0; i <= U; i++) {
+        const n = j * (U + 1) + i;
+        const az = az0 + (az1 - az0) * (i / U);
+        const alt = alt1 + (alt0 - alt1) * (j / V);
+        const gl = altazToGal(alt, az, jd, lat, lon);
+        su[n] = (((180 - gl.l) % 360 + 360) % 360) / 360 * iw;
+        sv[n] = (0.5 - gl.b / 180) * ih;
+        px[n] = (az - az0) / (az1 - az0) * W;
+        py[n] = (92 - (alt - alt0) / (alt1 - alt0) * 86) / 100 * H;
+      }
+    }
+    let quads = 0;
+    for (let j = 0; j < V; j++) {
+      for (let i = 0; i < U; i++) {
+        const a = j * (U + 1) + i, b2 = a + 1, c2 = a + U + 1;
+        // A quad straddling the panorama's seam has source corners a whole
+        // width apart. Unwrapping them onto one turn puts the quad off the
+        // picture, so it is also drawn with the image shifted a width either
+        // way; the clip keeps whichever copy lands inside. Skipping these was
+        // the first cut, and it left a notch down the seam.
+        let szew = 0;
+        if (Math.abs(su[b2] - su[a]) > iw * 0.5 || Math.abs(su[c2] - su[a]) > iw * 0.5) {
+          szew = 1;
+          for (const n of [b2, c2, c2 + 1]) {
+            if (su[n] - su[a] > iw * 0.5) su[n] -= iw;
+            else if (su[n] - su[a] < -iw * 0.5) su[n] += iw;
+          }
+        }
+        const dx1 = su[b2] - su[a], dy1 = sv[b2] - sv[a];
+        const dx2 = su[c2] - su[a], dy2 = sv[c2] - sv[a];
+        const det = dx1 * dy2 - dy1 * dx2;
+        if (!isFinite(det) || Math.abs(det) < 1e-6) continue;
+        const ex1 = px[b2] - px[a], ey1 = py[b2] - py[a];
+        const ex2 = px[c2] - px[a], ey2 = py[c2] - py[a];
+        // M carries source pixels onto screen pixels
+        const m11 = (ex1 * dy2 - ex2 * dy1) / det, m12 = (ey1 * dy2 - ey2 * dy1) / det;
+        const m21 = (ex2 * dx1 - ex1 * dx2) / det, m22 = (ey2 * dx1 - ey1 * dx2) / det;
+        gb.save();
+        // the clip polygon is pushed out from its centre by half a pixel:
+        // quads sharing an edge otherwise leave a hairline of background
+        // between them, and a grid of hairlines is the mesh made visible
+        const cx = (px[a] + px[b2] + px[c2] + px[c2 + 1]) / 4;
+        const cy = (py[a] + py[b2] + py[c2] + py[c2 + 1]) / 4;
+        const roz = (x, y) => {
+          const d = Math.hypot(x - cx, y - cy) || 1;
+          return [x + (x - cx) / d * 0.6, y + (y - cy) / d * 0.6];
+        };
+        gb.beginPath();
+        let q = roz(px[a], py[a]); gb.moveTo(q[0], q[1]);
+        q = roz(px[b2], py[b2]); gb.lineTo(q[0], q[1]);
+        q = roz(px[c2 + 1], py[c2 + 1]); gb.lineTo(q[0], q[1]);
+        q = roz(px[c2], py[c2]); gb.lineTo(q[0], q[1]);
+        gb.closePath(); gb.clip();
+        gb.transform(m11, m12, m21, m22,
+                     px[a] - (m11 * su[a] + m21 * sv[a]),
+                     py[a] - (m12 * su[a] + m22 * sv[a]));
+        gb.drawImage(img, 0, 0);
+        if (szew) { gb.drawImage(img, -iw, 0); gb.drawImage(img, iw, 0); }
+        gb.restore();
+        quads++;
+      }
+    }
+    milkyHorizon(gb, cfg, okno, W, H);
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = alpha;
+    g.drawImage(buf, 0, 0, buf.width, buf.height, 0, 0, W, H);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    return quads;
+  }
+
+  /* Extinction near the horizon, as a gradient over the whole frame: per-quad
+     it came out as steps, and ending it at 0 deg left the band stopping a
+     sixth of the frame above the bottom edge. */
+  function milkyHorizon(gb, cfg, okno, W, H) {
+    const yFor = (alt) => (92 - (alt - okno.min) / (okno.max - okno.min) * 86) / 100 * H;
+    const grad = gb.createLinearGradient(0, yFor(cfg.horizon), 0, H);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.45, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(0.78, 'rgba(0,0,0,0.28)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    gb.globalCompositeOperation = 'destination-in';
+    gb.fillStyle = grad;
+    gb.fillRect(0, 0, W, H);
+    gb.globalCompositeOperation = 'source-over';
+  }
+
   /* One repaint of the band. Runs when the card repaints anyway — every half
      minute or so — and nothing at all in between. */
   function drawMilky(layer, cfg, proj, jd, lat, lon, alpha, okno) {
@@ -946,13 +1069,15 @@
     if (alpha <= 0.004) return 0;
 
     let buf = layer._buf;
-    if (!buf) { buf = layer._buf = document.createElement('canvas'); }
+    if (!buf) { buf = layer._buf = document.createElement('canvas'); }   // shared by both paths
     buf.width = layer.width; buf.height = layer.height;
     const gb = buf.getContext('2d');
     gb.setTransform(dpr, 0, 0, dpr, 0, 0);
     gb.clearRect(0, 0, W, H);
 
     const rownik = cfg.projection === 'equirect';
+    if (rownik) return drawMilkyPanorama(layer, g, buf, gb, img, cfg, jd, lat, lon,
+                                         alpha, okno, W, H, dpr);
     // an all-sky panorama needs a taller mesh: it spans 180 degrees of
     // declination against the frame's few dozen
     const U = rownik ? cfg.mesh * 2 : cfg.mesh;
@@ -961,6 +1086,7 @@
                   ar: img.naturalHeight / img.naturalWidth };
     const N = (U + 1) * (V + 1);
     const wx = new Float64Array(N), wy = new Float64Array(N);
+    const alt = new Float64Array(N);
     const ok = new Uint8Array(N);
     for (let j = 0; j <= V; j++) {
       for (let i = 0; i <= U; i++) {
@@ -973,19 +1099,33 @@
         const pos = altaz(eq.ra, eq.dec, jd, lat, lon);
         const q = proj(pos.alt, pos.az);
         wx[n] = q.x / 100 * W; wy[n] = q.y / 100 * H;
-        // culling only far under the horizon: the fade has taken the opacity
+        alt[n] = pos.alt;
+        // Culling only far under the horizon: the fade has taken the opacity
         // to nothing long before, so no boundary can show. Culling at the
-        // horizon itself drew a polygonal edge across the view.
-        ok[n] = pos.alt > -25 ? 1 : 0;
+        // horizon itself drew a polygonal edge across the view. On a panorama
+        // the rows within a few degrees of the galactic poles are dropped too:
+        // there the quads are degenerate slivers and they draw as a fan.
+        // The band is what a panorama is for, and the sky around the galactic
+        // poles is nearly empty — while the mesh there is a fan of degenerate
+        // slivers converging on a point, which is exactly what it drew. So the
+        // panorama is used between +-70 deg of galactic latitude and the card's
+        // own star field covers the rest.
+        const biegun = rownik && Math.abs(gl.b) > 70;
+        ok[n] = (pos.alt > -25 && !biegun) ? 1 : 0;
       }
     }
 
     const sw = img.naturalWidth / U, sh = img.naturalHeight / V;
+    const gora = okno.max;
     let quads = 0;
     for (let j = 0; j < V; j++) {
       for (let i = 0; i < U; i++) {
         const a = j * (U + 1) + i, b2 = a + 1, c2 = a + U + 1;
         if (!ok[a] || !ok[b2] || !ok[c2]) continue;
+        // Everything above the window's top edge is clamped onto one line by
+        // the projection, so a quad entirely up there is a sliver — and a row
+        // of slivers is the scalloped edge that showed along the top.
+        if (alt[a] > gora && alt[b2] > gora && alt[c2] > gora) continue;
         // a quad torn by the azimuth wrap or stretched over the zenith would
         // smear the picture across the frame
         if (Math.max(Math.abs(wx[b2] - wx[a]), Math.abs(wx[c2] - wx[a])) > W * 0.4) continue;
@@ -1003,19 +1143,7 @@
       }
     }
 
-    // Extinction: near the horizon we look through many times the air, so the
-    // band dims and is gone before it gets there. A gradient over the frame,
-    // ending at the bottom edge — ending it at 0 deg left the band stopping in
-    // mid-air, a sixth of the frame above the bottom.
-    const yFor = (alt) => (92 - (alt - okno.min) / (okno.max - okno.min) * 86) / 100 * H;
-    const grad = gb.createLinearGradient(0, yFor(cfg.horizon), 0, H);
-    grad.addColorStop(0, 'rgba(0,0,0,1)');
-    grad.addColorStop(0.45, 'rgba(0,0,0,0.72)');
-    grad.addColorStop(0.78, 'rgba(0,0,0,0.28)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    gb.globalCompositeOperation = 'destination-in';
-    gb.fillStyle = grad;
-    gb.fillRect(0, 0, W, H);
+    milkyHorizon(gb, cfg, okno, W, H);
 
     g.globalCompositeOperation = 'lighter';
     g.globalAlpha = alpha;
@@ -1607,7 +1735,8 @@
         const moc = cfg.strength * p.stars;
         mw.style.opacity = moc > 0.004 ? '1' : '0';
         mw._draw = () => drawMilky(mw, cfg, (alt, az) => this._project(alt, az),
-          julian(new Date()), this._lat, this._lon, moc, { min: -6, max: 54 });
+          julian(new Date()), this._lat, this._lon, moc,
+          { min: -6, max: 54, az0: this._az0, az1: this._az1 });
         mw._draw();
       }
 
