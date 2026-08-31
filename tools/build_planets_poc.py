@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the planets tuning page: demo/tlo-planety.html
 
-Same rule as the star page: nothing here is a mock-up. ../sun-cycle-bg.js is
+Same rule as the star page: nothing here is a mock-up. ../src/sun-cycle-bg.js is
 read at build time and pasted into the page verbatim, and every scene is drawn
 by that file's own window.sunCycleBg.buildPlanets() / placePlanets(), on the
 sun-cycle-bg palette, with the projection the card uses for the sun and moon.
@@ -22,7 +22,7 @@ import sys
 
 HERE = pathlib.Path(__file__).parent
 ROOT = HERE.parent
-KARTA = ROOT / "sun-cycle-bg.js"
+KARTA = ROOT / "src" / "sun-cycle-bg.js"
 SNAP = ROOT / "demo" / "sol_snapshot.json"
 OUT = ROOT / "demo" / "tlo-planety.html"
 
@@ -196,7 +196,7 @@ STRONA = r"""<meta charset="utf-8">
 </main>
 
 <script>
-/* ---- karta sun-cycle-bg, wklejona dosłownie z ../sun-cycle-bg.js ---- */
+/* ---- karta sun-cycle-bg, wklejona dosłownie z ../src/sun-cycle-bg.js ---- */
 __KARTA__
 </script>
 <script>

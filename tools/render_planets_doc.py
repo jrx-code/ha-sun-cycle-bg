@@ -55,7 +55,7 @@ customElements.define('hui-view-container', A);
 customElements.define('hui-view-background', B);
 customElements.define('hui-view', C);
 </script>
-<script src="/sun-cycle-bg.js"></script>
+<script src="/src/sun-cycle-bg.js"></script>
 <script>
 const SKY = %s, DISCS = %s;
 window.render = (elev) => {

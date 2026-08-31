@@ -49,16 +49,27 @@ jobs:
           fi
           echo "dist/ matches the sources"
 
-      - name: the card in dist/ is the card in the repository
-        run: cmp dist/sun-cycle-bg.js sun-cycle-bg.js
+      - name: the card in dist/ is the card in src/
+        run: cmp dist/sun-cycle-bg.js src/sun-cycle-bg.js
 
       - name: the tag is the version the card announces
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          KARTA=$(sed -n '1s/.*sun-cycle-bg \([0-9][0-9.]*\).*/\1/p' sun-cycle-bg.js)
+          KARTA=$(sed -n '1s/.*sun-cycle-bg \([0-9][0-9.]*\).*/\1/p' src/sun-cycle-bg.js)
           TAG=${GITHUB_REF#refs/tags/v}
           echo "card: $KARTA, tag: $TAG"
           [ "$KARTA" = "$TAG" ] || { echo "::error::card says $KARTA, tag says $TAG"; exit 1; }
+
+      # HACS takes dist/ only while nothing shadows it from the root: with a
+      # root copy of the card present it fetches that one file and the artwork
+      # never arrives (repositories/plugin.py, update_filenames).
+      - name: nothing shadows dist/ from the repository root
+        run: |
+          if [ -e sun-cycle-bg.js ]; then
+            echo "::error::sun-cycle-bg.js in the root shadows dist/ for HACS"
+            exit 1
+          fi
+          echo "root is clear, dist/ is what HACS will take"
 
       - name: every file dist/ names is actually there
         run: |

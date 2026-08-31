@@ -5,7 +5,7 @@ Every option the card has, as a control, over a live preview drawn by the card
 itself, with the YAML fragment underneath — only the keys that differ from the
 defaults, ready to paste into a dashboard.
 
-Why generated and not committed: ../sun-cycle-bg.js is pasted in verbatim at
+Why generated and not committed: ../src/sun-cycle-bg.js is pasted in verbatim at
 build time, so the page can never be tuning a different card than the one in
 the repository. demo/config-poc.html, the page this replaces, was committed
 with the card inlined by hand and still carried 1.3.0 eight releases later.
@@ -26,7 +26,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).parent.parent
-KARTA = ROOT / "sun-cycle-bg.js"
+KARTA = ROOT / "src" / "sun-cycle-bg.js"
 OUT = ROOT / "demo" / "konfigurator.html"
 LAT, LON = 53.5182, 14.4570
 # obrazki na HA; na dysku repo ta sama para lezy w demo/assets

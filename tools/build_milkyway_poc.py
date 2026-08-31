@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the Milky Way tuning page: demo/droga-mleczna.html
 
-Same rule as the other tuning pages: ../sun-cycle-bg.js is pasted in verbatim
+Same rule as the other tuning pages: ../src/sun-cycle-bg.js is pasted in verbatim
 and every scene is drawn by the card's own code — sky palette, star field,
 planets. The one new thing, the band itself, is drawn on a canvas by the code
 this page is here to judge before any of it goes into the card.
@@ -24,7 +24,7 @@ import sys
 
 
 ROOT = pathlib.Path(__file__).parent.parent
-KARTA = ROOT / "sun-cycle-bg.js"
+KARTA = ROOT / "src" / "sun-cycle-bg.js"
 OUT = ROOT / "demo" / "droga-mleczna.html"
 LAT, LON = 53.5182, 14.4570          # Home Assistant's own coordinates
 MIEJSCE = "Bartoszewem"   # forma po „nad": tak brzmi w tytule i naglowku
@@ -219,7 +219,7 @@ STRONA = r"""<meta charset="utf-8">
 </main>
 
 <script>
-/* ---- karta sun-cycle-bg, wklejona dosłownie z ../sun-cycle-bg.js ---- */
+/* ---- karta sun-cycle-bg, wklejona dosłownie z ../src/sun-cycle-bg.js ---- */
 __KARTA__
 </script>
 <script>

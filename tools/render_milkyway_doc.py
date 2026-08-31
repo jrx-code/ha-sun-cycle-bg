@@ -63,7 +63,7 @@ customElements.define('hui-view-container', A);
 customElements.define('hui-view-background', B);
 customElements.define('hui-view', C);
 </script>
-<script src="/sun-cycle-bg.js"></script>
+<script src="/src/sun-cycle-bg.js"></script>
 <script>
 window.panel = (elev, rzutowanie, podpis) => {
   const fig = document.createElement('figure');

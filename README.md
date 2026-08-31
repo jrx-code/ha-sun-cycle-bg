@@ -127,10 +127,10 @@ sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
    **Dashboard** (Lovelace).
 2. Install **Sun Cycle Background**, reload resources when prompted.
 
-HACS installs everything in `dist/` — the card **and its artwork** — into
-`/config/www/community/ha-sun-cycle-bg/` — the sun, the moon, nine planets and
-a photograph of the Milky Way. Every default path in the card points there, so
-on a fresh system this already draws something:
+HACS installs the contents of `dist/` into
+`/config/www/community/ha-sun-cycle-bg/`: the card, the sun, the moon, nine
+planets and two photographs of the Milky Way. Every default path in the card
+points there, so on a fresh system this already draws something:
 
 ```yaml
 type: custom:sun-cycle-bg-card
@@ -146,12 +146,13 @@ drawn discs.
 
 ### Manual
 
-1. Copy `sun-cycle-bg.js` to `/config/www/`.
-2. Add a dashboard resource: URL `/local/sun-cycle-bg.js`, type
+1. Copy the whole of `dist/` to `/config/www/sun-cycle/`.
+2. Add a dashboard resource: URL `/local/sun-cycle/sun-cycle-bg.js`, type
    **JavaScript module**.
-3. The artwork does not come along this way. Either copy `dist/` from this
-   repository to `/config/www/sun-cycle/` and set `assets: /local/sun-cycle/`,
-   or point each path individually.
+3. Set `assets: /local/sun-cycle/` so the default paths follow the files. Copy
+   `dist/sun-cycle-bg.js` alone if you do not want the artwork; the card then
+   draws its own sun and moon, and `planets:` / `milky_way:` need paths of
+   your own.
 
 ### Optional: the real ISS
 
@@ -291,14 +292,13 @@ moon is drawn as a circle with the real terminator. Point `sun_image` and
 while every glow stays rendered — the twilight band, the disc aureole, the ray
 fan and the moon halo. The two options are independent.
 
-**Artwork ships in the release, not in the card file.** The zip HACS installs
-carries the sun, the moon, the planets and the Milky Way beside
-`sun-cycle-bg.js`, and the defaults point at them; these options replace them
-with files of yours. The PNGs under `demo/assets/` — the two discs and the nine
-planets — are the repository owner's own artwork and fall under this
-repository's MIT licence like the rest of it; HACS installs only
-`sun-cycle-bg.js`, so they are there to drive the demo pages and the
-documentation, and to be copied to `/local/` by anyone who wants them.
+**Artwork ships beside the card, not inside it.** `dist/` carries the sun, the
+moon, the nine planets and the Milky Way next to `sun-cycle-bg.js`, HACS
+installs the directory, and the defaults point into it; these options replace
+them with files of yours. The PNGs are the repository owner's own artwork and
+fall under this repository's MIT licence like the rest of it. The originals
+live in `demo/assets/`, which is where the demo pages read them from and where
+`tools/make_dist.py` copies them from.
 
 `*_image_disc` is `[diameter / image width, cx / image width, cy / image
 height]` — where the disc actually sits inside the file. Artwork rarely fills
@@ -436,12 +436,10 @@ overrides individual paths. They want transparent backgrounds.
 
 Nine such cutouts sit in [`demo/assets/planets`](demo/assets/planets) — the
 repository owner's own artwork, under this repository's MIT licence like
-`demo/assets/sun.png` and `moon.png`. HACS installs a single file
-(`sun-cycle-bg.js`, see `hacs.json`), so they do not arrive with the card:
-copy the directory to `/config/www/sun-cycle/planets/` yourself and leave
-`images` at its default, or point it wherever you put them. The card's default
-`discs` numbers are the measurements of exactly these files, so they need no
-`discs:` block.
+`demo/assets/sun.png` and `moon.png`. `tools/make_dist.py` copies them into
+`dist/planets/`, which is what HACS installs, so `planets: true` needs no
+paths. The card's default `discs` numbers are the measurements of exactly
+these files, so they need no `discs:` block either.
 
 Make your own from renders on a black sky with `tools/cutout_planets.py` —
 the same script that made these:
@@ -583,7 +581,7 @@ the layer carries `scsMeteor()`, `scsIss()` and `scsStop()`.
 
 ## Tuning the palette
 
-The whole look lives in one table at the top of `sun-cycle-bg.js` — `STOPS`:
+The whole look lives in one table at the top of `src/sun-cycle-bg.js` — `STOPS`:
 seven anchors keyed by sun elevation (−18° … 52°), each holding the sky
 gradient (3 × RGB), the sun halo colour (RGBA) and the star opacity.
 Everything between anchors is linear RGB interpolation. Positions are no
@@ -669,7 +667,7 @@ python3 tools/build_config_poc.py       # -> demo/konfigurator.html
 
 [`tools/build_planets_poc.py`](tools/build_planets_poc.py) builds the same kind
 of page for the planets (in Polish; the page itself is generated, not committed,
-because the card is pasted into it). It inlines this very `sun-cycle-bg.js` and draws every scene
+because the card is pasted into it). It inlines this very `src/sun-cycle-bg.js` and draws every scene
 with the card's own `buildPlanets()`, on positions snapshotted from a live Sol
 integration (`tools/sol_snapshot.py` → `demo/sol_snapshot.json`): a live panel
 for size, glow, size ladder, fade threshold, labels and body selection, five
