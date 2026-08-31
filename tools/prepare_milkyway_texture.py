@@ -17,8 +17,21 @@ Verified mapping (measured, not assumed — sampling the file at known objects):
 
     python3 tools/prepare_milkyway_texture.py ~/Pobrane/eso0932a.jpg
 
-The output is deliberately small: a dashboard shows a slice of sky a few
-hundred pixels tall, so 2048x1024 is already finer than the frame can print.
+How big the output has to be is arithmetic, and the first cut got it wrong.
+The card shows a window of about 260 deg of azimuth by 60 deg of altitude
+across the whole frame, so a 1920x1080 panel asks for 1920/260 = 7.4 px/deg
+across and 1080*0.86/60 = 15.5 px/deg down. An equirectangular texture carries
+width/360 px/deg. At 2048 that is 5.7 - every pixel of the band was stretched
+two to three times on the way to the screen, which is exactly the smear the
+panel showed. At 4096 it is 11.4, and the vertical direction is covered as
+well, because near the band the equirectangular grid is barely stretched and
+the mesh samples it at close to 1:1.
+
+Why not the full 6000 (16.7 px/deg, the most ESO publishes): a Raspberry Pi
+kiosk rasterises through V3D, whose maximum texture is 4096 px. Past that the
+browser stops handing the picture to the GPU and every repaint of the band
+falls back to software. 4096 is the largest size that still goes up as one
+texture.
 """
 import argparse
 import pathlib
@@ -34,7 +47,7 @@ KREDYT = "The Milky Way panorama - ESO/S. Brunier - CC BY 4.0 - eso.org/public/i
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("src", help="eso0932a.jpg, 6000x3000")
-    ap.add_argument("--width", type=int, default=2048)
+    ap.add_argument("--width", type=int, default=4096)
     ap.add_argument("--quality", type=int, default=82)
     a = ap.parse_args()
     im = Image.open(a.src).convert("RGB")

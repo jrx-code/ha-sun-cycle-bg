@@ -11,7 +11,7 @@ equirectangular in galactic coordinates.
   otherwise". The only note on the image page concerns the 800-megapixel
   original, which ESO does not publish; the 6000 × 3000 version used here is
   published there.
-- What was done to it: downscaled 6000 × 3000 → 2048 × 1024 and saved as JPEG
+- What was done to it: downscaled 6000 × 3000 → 4096 × 2048 and saved as JPEG
   by `tools/prepare_milkyway_texture.py`, which also writes the credit into the
   file's own comment field. Nothing was retouched.
 

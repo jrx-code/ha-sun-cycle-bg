@@ -107,7 +107,7 @@ STRONA = r"""<meta charset="utf-8">
     Drugie źródło to panorama całego nieba
     <em>The Milky Way panorama</em> (ESO/S. Brunier, GigaGalaxy Zoom, 6000×3000,
     równoprostokątna we współrzędnych galaktycznych, licencja CC BY 4.0), przeskalowana do
-    2048×1024. Obłoki gwiazdowe, pas pyłu i Obłoki Magellana są takie, jakie sfotografowano —
+    4096×2048. Obłoki gwiazdowe, pas pyłu i Obłoki Magellana są takie, jakie sfotografowano —
     nic tu nie jest rysowane wzorem.</p>
     <p class="note">Niebo, gwiazdy i planety rysuje <code>sun-cycle-bg.js</code> wklejony
     w tę stronę dosłownie. Pas rysuje kod, który ta strona ma ocenić, zanim cokolwiek z niego
