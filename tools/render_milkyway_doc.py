@@ -4,7 +4,8 @@
 Three panels, all drawn by the real <sun-cycle-bg-card> against stubbed view
 chrome, with the clock frozen so the sky is where it is said to be:
 
-  1. the owner's own photograph, placed where it was taken (projection: frame),
+  1. the shipped photograph, placed where it was measured to belong
+     (projection: frame, the card's own defaults),
   2. the same instant from an all-sky panorama (projection: equirect),
   3. the same again with the sun up — which is empty, because that is what the
      card does in daylight.
@@ -35,7 +36,7 @@ CHWILA = "2026-08-30T19:00:00Z"
 LAT, LON = 53.5182, 14.4570
 
 PANELE = [
-    (-16.0, "frame", "your own photograph, placed where it was taken"),
+    (-16.0, "frame", "one photograph, at its true scale and place"),
     (-16.0, "equirect", "an all-sky panorama, same instant"),
     (12.0, "frame", "sun up — nothing, as it should be"),
 ]
@@ -76,14 +77,16 @@ window.panel = (elev, rzutowanie, podpis) => {
   host.appendChild(cont);
   const card = document.createElement('sun-cycle-bg-card');
   const rowniki = rzutowanie === 'equirect';
+  // Nothing is placed by hand here: `assets:` points the card's own defaults at
+  // the repository copies, and `milky_way: {}` is exactly what a fresh install
+  // writes — so the strip in the README shows the shipped placement, measured
+  // fov and all, not a picture tuned for the picture's sake.
   card.setConfig({
+    assets: '/demo/assets/',
     stars: { count: 110, sizes: 'mixed', size: 0.5, glow: 0.05, twinkle: 0.45, drift: 0 },
     moon: false,
-    milky_way: rowniki
-      ? { image: '/demo/assets/milky-way.jpg', projection: 'equirect', strength: 0.9 }
-      : { image: '/demo/assets/milky-way-cutout.webp', l: -5, b: -2, rot: -24,
-          fov: 110, strength: 0.9 },
-    planets: { images: '/demo/assets/planets/', size: 1.2, scale: 'diameters', glow: 0.35 },
+    milky_way: rowniki ? { projection: 'equirect' } : {},
+    planets: { size: 1.2, scale: 'diameters', glow: 0.35 },
   });
   cont.insertBefore(card, cont.firstChild);
   card.hass = {

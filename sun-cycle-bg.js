@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.10.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.11.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -868,9 +868,10 @@
 
      Nothing about the band can be computed: it is resolved star clouds and
      torn dust, and every analytic model of it comes out a grey smear. So the
-     light is a picture of yours, and the card only decides where each piece of
-     it belongs — galactic coordinates to equatorial to horizontal, the same
-     chain the moon already runs on.
+     light is a photograph — one of the two that ship with the card, or one of
+     yours — and the card only decides where each piece of it belongs:
+     galactic coordinates to equatorial to horizontal, the same chain the moon
+     already runs on.
 
      The picture is drawn as a picture: a mesh of quads, each with an affine
      transform from the real geometry, sampled by the browser at full
@@ -936,21 +937,29 @@
     if (!m || typeof m !== 'object') return null;
     const num = (v, def) => (isFinite(v) ? Number(v) : def);
     const baza = typeof assets === 'string' ? assets : HACS_BASE;
-    // no `image` given: the photograph that ships in the release archive,
-    // with the placement it was measured at
-    const domyslny = !m.image;
+    // 'frame'    — a photograph of one part of the sky, put back where it
+    //              was taken (gnomonic, needs l/b/rot/fov). Sharp, but only
+    //              there: when that region is under the Earth the layer is
+    //              empty, which for a picture of the galactic centre means
+    //              most of the night for half the year.
+    // 'equirect' — an all-sky panorama in galactic coordinates, 2:1. Always
+    //              has something up, at the cost of being an average of the
+    //              whole sphere rather than one good exposure.
+    const rownik = m.projection === 'equirect';
+    // No `image`: the picture that ships with the card, and — like the sun and
+    // the moon discs — the placement it was measured at, because a file the
+    // card supplies is a file the card knows where to put. A frame of somebody
+    // else's sky has no such numbers, so its defaults stay neutral and the
+    // placement has to be given.
+    const wlasny = typeof m.image === 'string' && m.image;
     return {
-      image: String(m.image),
-      // 'frame'    — a photograph of one part of the sky, put back where it
-      //              was taken (gnomonic, needs l/b/rot/fov). Sharp, but only
-      //              there: when that region is under the Earth the layer is
-      //              empty, which for a picture of the galactic centre means
-      //              most of the night for half the year.
-      // 'equirect' — an all-sky panorama in galactic coordinates, 2:1. Always
-      //              has something up, at the cost of being an average of the
-      //              whole sphere rather than one good exposure.
-      projection: m.projection === 'equirect' ? 'equirect' : 'frame',
-      l: num(m.l, 0), b: num(m.b, 0), rot: num(m.rot, 0), fov: num(m.fov, 110),
+      image: wlasny || baza + (rownik ? 'milky-way.jpg' : 'milky-way-cutout.webp'),
+      projection: rownik ? 'equirect' : 'frame',
+      // measured by correlating the shipped frame against the ESO panorama
+      // (r = 0.64), not chosen by eye — see tools/build_milkyway_poc.py, which
+      // carries the same four numbers and the page they were tuned on
+      l: num(m.l, wlasny ? 0 : -5), b: num(m.b, wlasny ? 0 : -2),
+      rot: num(m.rot, wlasny ? 0 : -24), fov: num(m.fov, wlasny ? 110 : 62),
       strength: clamp(num(m.strength, 0.9), 0, 1),
       horizon: num(m.horizon, 22),
       mesh: Math.round(clamp(num(m.mesh, 32), 6, 64)),

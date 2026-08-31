@@ -299,6 +299,16 @@ out.push(['MLECZNA bez obrazka', mleczna(-16.18, { image: '' })]);
 out.push(['MLECZNA panorama (equirect)', mleczna(-16.18, { projection: 'equirect' })]);
 out.push(['MLECZNA readMilkyConfig', window.sunCycleBg.readMilkyConfig(
   { image: '/local/x.webp', l: -5, b: -2, rot: -24, fov: 110 })]);
+// 1.11.0: `milky_way: {}` musi samo trafic na plik z dist/ i na zmierzone
+// polozenie tego pliku. Wczesniej wychodzil z tego adres "undefined".
+out.push(['MLECZNA domyslny kadr', window.sunCycleBg.readMilkyConfig({})]);
+out.push(['MLECZNA domyslna panorama', window.sunCycleBg.readMilkyConfig(
+  { projection: 'equirect' })]);
+out.push(['MLECZNA domyslny kadr + assets:', window.sunCycleBg.readMilkyConfig(
+  {}, '/local/sun-cycle/')]);
+// wlasny plik nie dostaje cudzych pomiarow
+out.push(['MLECZNA wlasny plik bez polozenia', window.sunCycleBg.readMilkyConfig(
+  { image: '/local/moje.png' })]);
 // geometria: centrum Galaktyki i Oblok Magellana wg katalogu
 out.push(['MLECZNA galToEq(0,0)', window.sunCycleBg.galToEq(0, 0)]);
 out.push(['MLECZNA galToEq(280.5,-32.9) = LMC', window.sunCycleBg.galToEq(280.5, -32.9)]);

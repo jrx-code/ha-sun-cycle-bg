@@ -228,16 +228,19 @@ stars:                  # `stars: false` disables the built-in field
     radiant: null       # [x%, y%] = a shower, every streak runs from there
     pair: 0             # chance (0–1) of a second streak right after
   iss: false            # true = the real ISS from sensor.iss_visual_pass_0..4
-# A photograph of the Milky Way. None ships with the card.
+# A photograph of the Milky Way. Two ship with the card, and `milky_way: {}`
+# picks the one that matches `projection`.
 # milky_way:
-#   image: <assets>/milky-way-cutout.webp
+#   image: <assets>/milky-way-cutout.webp   # equirect default: milky-way.jpg
 #   projection: frame     # frame = one photograph, put back where it was taken
 #                         # (needs l/b/rot/fov); equirect = an all-sky panorama
 #                         # in galactic coordinates, 2:1
 #   l: -5                 # centre of the frame, galactic degrees
 #   b: -2
 #   rot: -24              # roll of the frame
-#   fov: 110              # how much sky it spans across
+#   fov: 62               # how much sky it spans across
+#                         # l/b/rot/fov default to the measured placement of
+#                         # the shipped frame; your own image gets 0/0/0/110
 #   strength: 0.9         # 0–1 at its brightest; it fades with the sky
 #   horizon: 22           # elevation where the horizon fade begins
 #   mesh: 32              # quads across; more is smoother and slower
@@ -454,13 +457,15 @@ its defaults, and `discs:` overrides them for your own.
 
 ## The Milky Way
 
+![One photograph at its true scale, an all-sky panorama at the same instant, and daylight](docs/milky-way.png)
+
 ```yaml
-milky_way:
-  image: /local/sun-cycle/milky-way.webp
-  l: -5
-  b: -2
-  rot: -24
-  fov: 110
+milky_way: {}           # the shipped frame, where it was measured to belong
+```
+
+```yaml
+milky_way:              # or the all-sky panorama, which is never all below
+  projection: equirect  # the horizon
 ```
 
 **Why a photograph.** The band is resolved star clouds and torn dust lanes. A
@@ -472,19 +477,28 @@ each piece of that picture belongs at this minute, from this latitude.
 
 **Two kinds of picture.** `projection: frame` (the default) takes one
 photograph and puts it back where it was taken — sharp, but present only while
-that part of the sky is up; a shot of the galactic centre from 53° N is a
-summer-evening thing, and at noon it is fifty degrees under the Earth and the
-layer is legitimately empty. `projection: equirect` takes an all-sky panorama,
-2:1, in galactic coordinates: always something overhead, at the cost of being
-an average of the whole sphere rather than one good exposure.
+that part of the sky is up. Check that before choosing it: the shipped frame is
+centred on the galactic centre, declination −34°, and from 53° N that point
+culminates at **+2°**, so what shows is the top of the frame and only from
+March to September. Counted on a mesh over the frame, at the darkest minute of
+the 15th of each month at 53.5° N: 0 % of it is above the horizon in December
+and January, 22 % in February, 52 % at the June peak, 1 % in November.
+`projection: equirect` takes an all-sky panorama, 2:1, in galactic
+coordinates. The galactic plane and the horizon are both great circles, so they
+always cross: exactly half the band is up at any instant of any night, from
++28° at its lowest yearly culmination to +88° at its highest. The price is an
+average of the whole sphere rather than one good exposure.
 
 **Placing a frame.** `l`, `b`, `rot` and `fov` say where the camera pointed,
 how it was rolled and how much sky it covered. Guessing them by eye is
 unnecessary: correlate the photograph against an all-sky panorama and read the
-numbers off the best fit — that is how the values in this README were obtained
-(r = 0.64, and at those numbers the band angle, the bright core and the Great
-Rift line up). A larger `fov` than the true one enlarges the picture on the
-sky: a liberty with the scale, and nothing else, but say so if you take it.
+numbers off the best fit — that is how the shipped frame's defaults were
+obtained (`l −5, b −2, rot −24, fov 62`, r = 0.64, and at those numbers the
+band angle, the bright core and the Great Rift line up). A larger `fov` than
+the true one enlarges the picture on the sky: a liberty with the scale, and
+nothing else, but say so if you take it. It also buys visibility, because the
+frame grows upward as well: at `fov: 110` the September figure above goes from
+12 % of the frame up to 35 %.
 
 **How it is drawn.** A mesh of quads, each with an affine transform computed
 from the real geometry, sampled by the browser at full source resolution, added
@@ -657,6 +671,21 @@ python3 tools/render_walk_doc.py            # -> docs/planets-walk.gif
 
 It records the page as video (Playwright captures at a constant frame rate, so
 the walk is sampled evenly) and converts it with ffmpeg.
+
+The strip in [The Milky Way](#the-milky-way) is the same card again, with the
+clock frozen at an instant when the band is actually up — a picture taken at
+build time would show whatever the sky happened to be doing, and at midday that
+is nothing at all:
+
+```bash
+python3 tools/render_milkyway_doc.py        # -> docs/milky-way.png
+```
+
+Its two night panels are configured with `milky_way: {}` and
+`milky_way: {projection: equirect}` and nothing else, so they show the shipped
+defaults rather than numbers picked to flatter the picture. That is why the
+frame panel is a small patch low over the horizon: at 53.5° N, on that night,
+that is where it belongs.
 
 ## How it works
 

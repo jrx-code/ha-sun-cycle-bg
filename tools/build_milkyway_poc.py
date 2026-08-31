@@ -6,12 +6,11 @@ and every scene is drawn by the card's own code — sky palette, star field,
 planets. The one new thing, the band itself, is drawn on a canvas by the code
 this page is here to judge before any of it goes into the card.
 
-The band's geometry is baked at build time by tools/milky_way.py: a grid over
-galactic latitude and longitude, each patch carrying its equatorial position
-(which never changes) and its modelled brightness. The page only rotates that
-grid into the sky for the chosen instant, which is a dozen lines of sidereal
-time — so the brightness model has one home, in Python, and the page cannot
-drift away from it.
+Nothing is baked at build time and no brightness is modelled: the light is two
+photographs, and the page computes only where each piece of them belongs at the
+chosen instant. That is a dozen lines of sidereal time plus the galactic to
+equatorial rotation, the same chain tools/milky_way.py prints for a sanity
+check on the command line.
 
     python3 tools/build_milkyway_poc.py
     export BW_SESSION=$(bw unlock --raw)
@@ -30,9 +29,9 @@ OUT = ROOT / "demo" / "droga-mleczna.html"
 LAT, LON = 53.5182, 14.4570          # Home Assistant's own coordinates
 MIEJSCE = "Bartoszewem"   # forma po „nad": tak brzmi w tytule i naglowku
 
-# The baked texture: brightness sampled on a whole-degree galactic grid. The
-# page maps every pixel of the frame back onto the sky and reads this, so the
-# model has one home — milky_way.py — and cannot drift into a second language.
+# Dwa zdjecia: panorama calego nieba (ESO) i wlasny kadr ze zdjetym tlem.
+# Zadnego modelu jasnosci tu nie ma — analityczny zostal wyrzucony, bo pas to
+# rozdzielone oblok gwiazdowe i poszarpany pyl, a nie gladka funkcja l i b.
 TEKSTURA = "/local/sun-cycle/milky-way.jpg"          # panorama calego nieba
 KADR = "/local/sun-cycle/milky-way-cutout.webp"      # zdjecie z przezroczystym tlem
 KREDYT = "ESO/S. Brunier — CC BY 4.0"
@@ -167,7 +166,7 @@ STRONA = r"""<meta charset="utf-8">
       <label class="pole"><b>Kadr: obrót — <span id="v-krot"></span>°</b>
         <input type="range" id="krot" min="-90" max="90" step="1" value="__KADR_ROT__"></label>
       <label class="pole"><b>Kadr: rozpiętość — <span id="v-kfov"></span>° nieba</b>
-        <input type="range" id="kfov" min="30" max="150" step="2" value="110"></label>
+        <input type="range" id="kfov" min="30" max="150" step="2" value="__KADR_FOV__"></label>
     </div>
     <div class="ptaszki">
       <label><input type="checkbox" id="gwiazdy" checked> pole gwiazd karty</label>
@@ -192,11 +191,12 @@ STRONA = r"""<meta charset="utf-8">
     tu przede wszystkim letnim Łabędziem nad głową, a nie Strzelcem nad horyzontem.</p>
     <table id="tabela"></table>
     <p class="note" style="margin-top:12px"><strong>O rozpiętości:</strong> prawdziwe pole
-    widzenia tego zdjęcia to <strong>62°</strong> — tyle wyszło z dopasowania. Suwak stoi
-    domyślnie na 110°, czyli zdjęcie jest <em>powiększone</em> prawie dwukrotnie, bo w skali
-    1:1 zajmuje na panelu mały placek nisko nad horyzontem. To świadomy zabieg plastyczny,
-    nie astronomia: kierunek, obrót i pora są prawdziwe, sama skala nie. Ustaw 62°, jeśli
-    ma się zgadzać co do stopnia.</p>
+    widzenia tego zdjęcia to <strong>62°</strong> — tyle wyszło z dopasowania i tyle stoi
+    na suwaku. Większa liczba <em>powiększa</em> zdjęcie na niebie: w skali 1:1 zajmuje ono
+    mały placek nisko nad horyzontem, więc powiększenie kupuje widoczność, bo kadr rośnie
+    też do góry. To zabieg plastyczny, nie astronomia: kierunek, obrót i pora zostają
+    prawdziwe, sama skala nie. Przy 110° we wrześniu nad horyzontem jest 35% kadru zamiast
+    12%.</p>
     <p class="note" style="margin-top:12px"><strong>Kadr kontra panorama:</strong> zdjęcie
     obejmuje jeden rejon nieba wokół centrum Galaktyki — czyli najładniejszy kawałek pasa,
     ale tylko ten jeden. Poza jego krawędzią nie ma nic i widać to, gdy pas powinien biec
@@ -641,8 +641,8 @@ META = {
              "położenie i obrót, wysokość Słońca, "
              "z gwiazdami i planetami karty pod spodem. Niżej ta sama noc w czterech "
              "godzinach i tabela: wysokość centrum Galaktyki i najwyższego punktu pasa "
-             "godzina po godzinie. Jasność pasa jest modelem (grubość, spadek od centrum, "
-             "Wielka Szczelina), geometria — nie."),
+             "godzina po godzinie. Światło pasa to fotografia, nie model: gładka funkcja "
+             "l i b daje szarą plamę i została skasowana. Kadr stoi na zmierzonych 62°."),
 }
 
 
