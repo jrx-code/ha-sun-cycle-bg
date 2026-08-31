@@ -144,6 +144,32 @@ own files whenever you have better ones; `assets: /local/my-sky/` moves all the
 defaults at once. `sun_image: false` and `moon_image: false` go back to the
 drawn discs.
 
+### The visual editor
+
+Adding the card from **Add card** shows it under its own name with a live
+thumbnail, and opening it gives a form rather than a YAML box: eight collapsed
+groups, a switch on each group header, a line under every control saying what
+it does, and a count on the header of how many settings in that group are no
+longer the default.
+
+Two rules it follows, because an editor that breaks a hand-written config is
+worse than no editor:
+
+- **It writes a diff, not a dump.** A control back at the card's default has
+  its key removed, so the config stays as short as what you actually changed.
+- **It never touches a key it does not model.** `planets.bodies`, `tints:`,
+  `names:`, `discs:`, `files:`, `meteors.radiant` and anything else that only
+  YAML can express survive opening and using the editor.
+
+The editor also checks its own table of defaults against the card's
+`readStarConfig` / `readPlanetConfig` / `readMilkyConfig` when it opens, and
+says so in red if the two ever disagree — a silent disagreement would make it
+drop a key that is not the default after all.
+
+Outside a dashboard view — in the card picker, and in the editor's own live
+preview — the card has no view to paint, so it paints a 16:9 box of its own
+with the same layers. That is what the thumbnail is.
+
 ### Manual
 
 1. Copy the whole of `dist/` to `/config/www/sun-cycle/`.

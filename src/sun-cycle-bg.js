@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.11.3 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.12.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1429,6 +1429,17 @@
   }
 
   class SunCycleBgCard extends HTMLElement {
+    // The visual editor. Lovelace asks the class, not the element.
+    static getConfigElement() {
+      return document.createElement('sun-cycle-bg-card-editor');
+    }
+
+    // What a freshly added card starts as. Everything else is a default, and
+    // the two blocks named here are the ones that are off unless asked for.
+    static getStubConfig() {
+      return { stars: true, milky_way: {} };
+    }
+
     setConfig(config) {
       this._cfg = config || {};
       const s = this._cfg.stars;
@@ -1546,17 +1557,43 @@
     }
 
     connectedCallback() {
-      this.style.display = 'none';
       // climb to hui-view-container across shadow boundaries
       let el = this;
       while (el && (el.tagName || '').toLowerCase() !== 'hui-view-container') {
         el = el.parentElement || (el.getRootNode && el.getRootNode().host);
       }
-      this._container = el || null;
+      if (el) {
+        // in a view: the card is furniture, the view is the canvas
+        this.style.display = 'none';
+        this._container = el;
+      } else {
+        // No view above us — the card picker and the editor's live preview
+        // render the card on its own. Painting nothing there is why the card
+        // used to have no thumbnail: a picker entry with an empty box. So it
+        // paints into a canvas of its own instead, same code, same layers.
+        this._container = this._podglad();
+      }
       this._apply();
       // other background cards may build their layers after us
       setTimeout(() => this._apply(true), 600);
       setTimeout(() => this._apply(true), 2000);
+    }
+
+    /* A stand-in for the view: a 16:9 box holding the same backdrop element
+       the card paints on a real view. Built once, reused on reconnect. */
+    _podglad() {
+      let box = this.querySelector('.sun-cycle-standalone');
+      if (box) return box;
+      this.style.display = 'block';
+      box = document.createElement('div');
+      box.className = 'sun-cycle-standalone';
+      box.style.cssText = 'position:relative;display:block;width:100%;aspect-ratio:16/9;' +
+        'overflow:hidden;border-radius:var(--ha-card-border-radius,12px);background:#000;';
+      const bg = document.createElement('hui-view-background');
+      bg.style.cssText = 'position:absolute;inset:0;display:block;';
+      box.appendChild(bg);
+      this.appendChild(box);
+      return box;
     }
 
     _before(c, node) {
@@ -1892,8 +1929,470 @@
 
     // No destructive cleanup: layers are deduped on (re)create and die with
     // their container. Removing them here races view-to-view navigation.
-    getCardSize() { return 0; }
+    // 0 in a view, because the card is invisible there and takes no room. In
+    // the picker and the editor preview it draws a box, and a size of 0 would
+    // collapse it.
+    getCardSize() { return this.querySelector('.sun-cycle-standalone') ? 3 : 0; }
   }
+
+  /* ---- the visual editor -------------------------------------------------
+     Everything the editor knows about an option is here: where it lives in the
+     config, what it defaults to, and one line of what it does. The defaults
+     are the same numbers readStarConfig / readPlanetConfig / readMilkyConfig
+     use, and the editor checks them against those readers on open — a silent
+     disagreement would make it drop a key that is not actually the default. */
+  const EDYTOR_GRUPY = [
+    { tytul: 'Sky', pola: [
+      { k: '__az0', et: 'window: east', typ: 'zakres', min: 0, max: 360, krok: 1, dom: 50,
+        o: 'Left edge of the view: the azimuth the visible slice of sky starts at.' },
+      { k: '__az1', et: 'window: west', typ: 'zakres', min: 0, max: 360, krok: 1, dom: 310,
+        o: 'Right edge. The narrower the slice, the faster the sun crosses the screen.' },
+      { k: 'twilight_palette', et: 'warm dusk', typ: 'bool', dom: false,
+        o: 'Amber twilight anchors instead of the cooler mauve ones.' },
+      { k: 'moon', et: 'moon', typ: 'bool', dom: true,
+        o: 'The moon, on its own position and phase — it does not follow the sun.' },
+      { k: 'rays.blur', et: 'rays: blur', typ: 'zakres', min: 0, max: 60, krok: 1, dom: 28,
+        o: 'How soft the crepuscular fan is. 0 drops the blur filter.' },
+      { k: 'rays.strength', et: 'rays: strength', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 0.5,
+        o: 'Peak opacity of the rays, right at the horizon.' },
+    ] },
+    { tytul: 'Stars', wlacznik: 'stars', domWl: true, skrotWl: true, spr: 'stars', pola: [
+      { k: 'stars', et: 'star field', typ: 'bool', dom: true, glowna: true,
+        o: 'Switching it off takes the flares, the meteors and the ISS with it.' },
+      { k: 'stars.count', et: 'count', typ: 'zakres', min: 0, max: 300, krok: 5, dom: 90, s: 'count',
+        o: 'How many stars are on screen.' },
+      { k: 'stars.drift', et: 'drift (s/width)', typ: 'zakres', min: 0, max: 3600, krok: 60, dom: 1800, s: 'drift',
+        o: 'Seconds for a star to cross the screen. 0 holds them still.' },
+      { k: 'stars.rotate', et: 'rotate about the pole', typ: 'bool', dom: false, s: 'rotate',
+        o: 'Real arcs instead of sideways drift. Prettier, and costs more stars.' },
+      { k: 'stars.pivot', et: 'pole (x height)', typ: 'zakres', min: 0.5, max: 6, krok: 0.1, dom: 2.2, s: 'pivot',
+        o: 'How far below the frame the centre of rotation sits. Rotation only.' },
+      { k: 'stars.sizes', et: 'sizes', typ: 'wybor', opcje: ['flat', 'mixed'], dom: 'flat', s: 'sizes',
+        o: 'flat: all equal. mixed: three diameters, brighter stars bigger.' },
+      { k: 'stars.size', et: 'size', typ: 'zakres', min: 0.25, max: 2, krok: 0.05, dom: 1, s: 'size',
+        o: 'Star diameter.' },
+      { k: 'stars.glow', et: 'glow', typ: 'zakres', min: 0, max: 2, krok: 0.05, dom: 1, s: 'glow',
+        o: 'Halo around a star. 0 gives hard pixels.' },
+      { k: 'stars.twinkle', et: 'twinkle', typ: 'zakres', min: 0, max: 1.4, krok: 0.05, dom: 1, s: 'twinkle',
+        o: 'How much they flicker. 0 is steady.' },
+    ] },
+    { tytul: 'Flares', zalezyOd: 'stars', pola: [
+      { k: 'stars.flares.count', et: 'stars flaring', typ: 'zakres', min: 0, max: 12, krok: 1, dom: 0, s: 'flares.count',
+        o: 'How many stars flash now and then. 0 is off.' },
+      { k: 'stars.flares.every', et: 'every (s)', typ: 'zakres', min: 4, max: 120, krok: 1, dom: 26, s: 'flares.every',
+        o: 'Seconds per flash. Each star keeps its own rhythm.' },
+      { k: 'stars.flares.strength', et: 'strength', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 1, s: 'flares.strength',
+        o: 'How bright the flash is.' },
+      { k: 'stars.flares.spikes', et: 'diffraction spikes', typ: 'bool', dom: true, s: 'flares.spikes',
+        o: 'The star-shaped cross a lens makes, not an eye.' },
+    ] },
+    { tytul: 'Meteors', zalezyOd: 'stars', pola: [
+      { k: 'stars.meteors.rate', et: 'per hour', typ: 'zakres', min: 0, max: 120, krok: 1, dom: 0, s: 'meteors.rate',
+        o: 'Streaks an hour. 0 is off.' },
+      { k: 'stars.meteors.length', et: 'length (px)', typ: 'zakres', min: 40, max: 500, krok: 10, dom: 190, s: 'meteors.length',
+        o: 'How long a streak is.' },
+      { k: 'stars.meteors.speed', et: 'duration (s)', typ: 'zakres', min: 0.3, max: 4, krok: 0.1, dom: 1.1, s: 'meteors.speed',
+        o: 'Seconds for one streak to cross.' },
+      { k: 'stars.meteors.angle', et: 'angle (deg)', typ: 'zakres', min: 0, max: 80, krok: 1, dom: 24, s: 'meteors.angle',
+        o: 'How steeply they fall, from the horizontal.' },
+      { k: 'stars.meteors.pair', et: 'chance of a second', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 0, s: 'meteors.pair',
+        o: 'Odds that a second streak follows the first.' },
+    ] },
+    { tytul: 'ISS', wlacznik: 'stars.iss', domWl: false, skrotWl: true, zalezyOd: 'stars', pola: [
+      { k: 'stars.iss', et: 'ISS', typ: 'bool', dom: false, glowna: true,
+        o: 'Real passes from the Satellite Tracker integration. Without it nothing flies and nothing breaks.' },
+      { k: 'stars.iss.trail', et: 'trail (px)', typ: 'zakres', min: 0, max: 200, krok: 5, dom: 0,
+        o: 'Length of the trail behind the station. 0 for none.' },
+      { k: 'stars.iss.label', et: 'caption', typ: 'bool', dom: false,
+        o: 'An "ISS" label beside the dot.' },
+      { k: 'stars.iss.every', et: 'demo pass every (s)', typ: 'zakres', min: 0, max: 120, krok: 5, dom: 0,
+        o: 'A demonstration pass on the fallback arc. 0 leaves only real ones.' },
+    ] },
+    { tytul: 'Planets', wlacznik: 'planets', domWl: false, skrotWl: true, pola: [
+      { k: 'planets', et: 'planets', typ: 'bool', dom: false, glowna: true,
+        o: 'The eight bodies where they really are. Needs the Sol integration.' },
+      { k: 'planets.size', et: 'size (% width)', typ: 'zakres', min: 0.4, max: 6, krok: 0.1, dom: 2.4, p: 'size',
+        o: 'The largest disc, Jupiter. These are emblems: to scale a planet would be under a pixel.' },
+      { k: 'planets.scale', et: 'ladder', typ: 'wybor', opcje: ['brightness', 'diameters', 'equal'], dom: 'brightness',
+        o: 'What the sizes differ by: brightness in the sky, true diameter, or nothing.' },
+      { k: 'planets.glow', et: 'glow', typ: 'zakres', min: 0, max: 2, krok: 0.05, dom: 0.5, p: 'glow',
+        o: 'A hair of halo so a disc does not read as a sticker.' },
+      { k: 'planets.points', et: 'daylight dot (px)', typ: 'zakres', min: 0, max: 10, krok: 0.5, dom: 3.5, p: 'points',
+        o: 'By day a planet is a point of light, not a disc. 0 keeps the picture.' },
+      { k: 'planets.day', et: 'daylight floor', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 0, p: 'day',
+        o: 'How much survives full daylight. 0 lets the sky decide alone.' },
+      { k: 'planets.min_elevation', et: 'fade below (deg)', typ: 'zakres', min: -10, max: 30, krok: 1, dom: 0, p: 'min_elevation',
+        o: 'Below this altitude a planet fades out.' },
+      { k: 'planets.labels', et: 'captions', typ: 'bool', dom: false, p: 'labels',
+        o: 'The name under the disc.' },
+    ] },
+    { tytul: 'Milky Way', wlacznik: 'milky_way', domWl: false, skrotWl: {}, pola: [
+      { k: 'milky_way', et: 'band', typ: 'bool', dom: false, glowna: true,
+        o: 'A photograph of the band, put back where on the sky it belongs.' },
+      { k: 'milky_way.projection', et: 'projection', typ: 'wybor', opcje: ['frame', 'equirect'], dom: 'frame', m: 'projection',
+        o: 'frame: one photograph, up only while that part of the sky is. equirect: an all-sky panorama, half the band up every night.' },
+      { k: 'milky_way.strength', et: 'brightness', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 0.9, m: 'strength',
+        o: 'Peak brightness. It fades with the sky either way.' },
+      { k: 'milky_way.horizon', et: 'horizon fade (deg)', typ: 'zakres', min: 0, max: 60, krok: 1, dom: 22, m: 'horizon',
+        o: 'The altitude where the fade towards the horizon begins.' },
+      { k: 'milky_way.mesh', et: 'mesh', typ: 'zakres', min: 6, max: 64, krok: 2, dom: 32, m: 'mesh',
+        o: 'How finely the picture is warped. More is smoother and slower.' },
+      { k: 'milky_way.l', et: 'frame: l (deg)', typ: 'zakres', min: -180, max: 180, krok: 1, dom: -5, m: 'l',
+        o: 'Where the centre of the photograph sits along the band. "frame" only.' },
+      { k: 'milky_way.b', et: 'frame: b (deg)', typ: 'zakres', min: -90, max: 90, krok: 1, dom: -2, m: 'b',
+        o: 'Where it sits across the band. "frame" only.' },
+      { k: 'milky_way.rot', et: 'frame: roll (deg)', typ: 'zakres', min: -180, max: 180, krok: 1, dom: -24, m: 'rot',
+        o: 'Roll of the photograph. "frame" only.' },
+      { k: 'milky_way.fov', et: 'frame: field (deg)', typ: 'zakres', min: 20, max: 150, krok: 1, dom: 62, m: 'fov',
+        o: 'How much sky the photograph spans. The measured value is 62; more enlarges it. "frame" only.' },
+    ] },
+    { tytul: 'Discs and files', pola: [
+      { k: 'sun_image_width', et: 'sun: width (%)', typ: 'zakres', min: 3, max: 25, krok: 0.5, dom: 10.5,
+        o: 'Diameter of the sun disc.' },
+      { k: 'sun_image_blur', et: 'sun: edge blur (%)', typ: 'zakres', min: 0, max: 40, krok: 0.5, dom: 11.5,
+        o: 'Softness of its edge. 0 gives a hard circle, which reads as a sticker.' },
+      { k: 'moon_image_width', et: 'moon: width (%)', typ: 'zakres', min: 3, max: 30, krok: 0.5, dom: 13,
+        o: 'Diameter of the moon disc.' },
+      { k: 'sun_image', et: 'sun: file', typ: 'tekst', dom: '', hint: '/local/my/sun.png',
+        o: 'Your own file. Empty keeps the one the card installs.' },
+      { k: 'moon_image', et: 'moon: file', typ: 'tekst', dom: '', hint: '/local/my/moon.png',
+        o: 'Your own file. Empty keeps the one the card installs.' },
+      { k: 'assets', et: 'assets folder', typ: 'tekst', dom: '', hint: '/local/sun-cycle/',
+        o: 'Moves every default path at once. Empty uses the HACS folder.' },
+      { k: 'sun_entity', et: 'sun entity', typ: 'tekst', dom: '', hint: 'sun.sun',
+        o: 'Where the elevation and azimuth come from. Empty means sun.sun.' },
+    ] },
+  ];
+
+  const EDYTOR_CSS =
+    '.scb-grupa{border:1px solid var(--divider-color,rgba(255,255,255,.12));border-radius:10px;' +
+      'margin:0 0 8px;}' +
+    '.scb-grupa[open]{background:rgba(127,127,127,.06);}' +
+    '.scb-grupa>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;' +
+      'padding:10px 12px;font-size:14px;font-weight:600;color:var(--primary-text-color);}' +
+    '.scb-grupa>summary::-webkit-details-marker{display:none;}' +
+    '.scb-grupa>summary::before{content:"\\203A";display:inline-block;width:9px;font-size:16px;' +
+      'color:var(--secondary-text-color);transition:transform .15s ease;}' +
+    '.scb-grupa[open]>summary::before{transform:rotate(90deg);}' +
+    '.scb-tyt{flex:1;}' +
+    '.scb-odznaka{font-weight:400;font-size:12px;color:var(--secondary-text-color);}' +
+    '.scb-cialo{padding:0 12px 10px;}' +
+    '.scb-w{display:grid;grid-template-columns:130px minmax(0,1fr) 46px;gap:8px;' +
+      'align-items:center;margin:6px 0 2px;font-size:14px;}' +
+    '.scb-w label{color:var(--secondary-text-color);}' +
+    '.scb-w .scb-n{text-align:right;font-variant-numeric:tabular-nums;' +
+      'color:var(--primary-text-color);}' +
+    '.scb-w input[type=range]{width:100%;accent-color:var(--primary-color,#03a9f4);}' +
+    '.scb-w input[type=text],.scb-w select{width:100%;box-sizing:border-box;font:inherit;' +
+      'font-size:13px;padding:5px 8px;border-radius:6px;color:var(--primary-text-color);' +
+      'background:var(--card-background-color,#111);' +
+      'border:1px solid var(--divider-color,rgba(255,255,255,.12));}' +
+    '.scb-o{grid-column:1/-1;color:var(--secondary-text-color);font-size:12px;' +
+      'line-height:1.35;margin:0 0 7px;}' +
+    '.scb-grupa[data-off] .scb-cialo .scb-w{opacity:.4;pointer-events:none;}' +
+    '.scb-p{appearance:none;-webkit-appearance:none;margin:0 0 0 auto;cursor:pointer;width:34px;' +
+      'height:19px;border-radius:999px;background:var(--divider-color,rgba(255,255,255,.2));' +
+      'position:relative;transition:background .16s ease;flex:none;}' +
+    '.scb-p::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;' +
+      'border-radius:50%;background:var(--secondary-text-color,#9aa);' +
+      'transition:transform .16s ease,background .16s ease;}' +
+    '.scb-p:checked{background:var(--primary-color,#03a9f4);}' +
+    '.scb-p:checked::after{transform:translateX(15px);background:var(--card-background-color,#111);}' +
+    '.scb-blad{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;' +
+      'background:rgba(224,87,74,.15);border:1px solid var(--error-color,#e0574a);}';
+
+  /* config -> value, value -> config. The rule everywhere: a value equal to the
+     card's default is not written, and a key the editor does not model is never
+     touched — opening the editor must not quietly drop `bodies:`, `tints:`,
+     `radiant:` or anything else that only YAML can express. */
+  function edytorCzytaj(cfg, klucz, dom) {
+    if (klucz === '__az0' || klucz === '__az1') {
+      const a = cfg.azimuth;
+      const i = klucz === '__az0' ? 0 : 1;
+      return Array.isArray(a) && isFinite(a[i]) ? Number(a[i]) : dom;
+    }
+    const czesci = klucz.split('.');
+    let o = cfg;
+    for (let i = 0; i < czesci.length - 1; i++) {
+      if (o === true) o = {};
+      if (!o || typeof o !== 'object') return dom;
+      o = o[czesci[i]];
+    }
+    if (o === true) return dom;
+    if (!o || typeof o !== 'object') return dom;
+    const v = o[czesci[czesci.length - 1]];
+    if (v === undefined || v === null) return dom;
+    if (typeof dom === 'boolean') return v !== false && v !== undefined;
+    if (typeof dom === 'number') return isFinite(v) ? Number(v) : dom;
+    return v;
+  }
+
+  function edytorPisz(cfg, klucz, wartosc, dom) {
+    if (klucz === '__az0' || klucz === '__az1') return;
+    const czesci = klucz.split('.');
+    const rowne = typeof dom === 'number' && typeof wartosc === 'number'
+      ? Math.abs(wartosc - dom) < 1e-9 : wartosc === dom;
+    let o = cfg;
+    for (let i = 0; i < czesci.length - 1; i++) {
+      const k = czesci[i];
+      // a shorthand has to become an object before anything can be written
+      // inside it: `stars: true` plus `stars.count` is not a config
+      if (o[k] === true || o[k] === undefined || o[k] === null) {
+        if (rowne) return;                       // nothing to write, nothing to build
+        o[k] = {};
+      }
+      if (typeof o[k] !== 'object') return;
+      o = o[k];
+    }
+    const ost = czesci[czesci.length - 1];
+    if (rowne) delete o[ost]; else o[ost] = wartosc;
+  }
+
+  // an empty block left behind after the last non-default value was cleared
+  function edytorSprzataj(cfg, grupy) {
+    for (const g of grupy) {
+      if (!g.wlacznik || g.wlacznik.indexOf('.') >= 0) continue;
+      const b = cfg[g.wlacznik];
+      if (b && typeof b === 'object' && !Object.keys(b).length) {
+        cfg[g.wlacznik] = g.domWl ? undefined : g.skrotWl;
+        if (cfg[g.wlacznik] === undefined) delete cfg[g.wlacznik];
+      }
+    }
+    if (cfg.stars && typeof cfg.stars === 'object') {
+      for (const pod of ['flares', 'meteors']) {
+        const o = cfg.stars[pod];
+        if (o && typeof o === 'object' && !Object.keys(o).length) delete cfg.stars[pod];
+      }
+      if (!Object.keys(cfg.stars).length) delete cfg.stars;
+    }
+    if (Array.isArray(cfg.azimuth) && cfg.azimuth[0] === 50 && cfg.azimuth[1] === 310) {
+      delete cfg.azimuth;
+    }
+    if (cfg.rays && typeof cfg.rays === 'object' && !Object.keys(cfg.rays).length) delete cfg.rays;
+  }
+
+  class SunCycleBgCardEditor extends HTMLElement {
+    setConfig(config) {
+      this._cfg = JSON.parse(JSON.stringify(config || {}));
+      this._pamiec = this._pamiec || {};
+      if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+      this._buduj();
+    }
+
+    set hass(h) { this._hass = h; }
+
+    _wlaczona(g) {
+      if (!g.wlacznik) return true;
+      const b = edytorSciezka(this._cfg, g.wlacznik);
+      if (b === false) return false;
+      if (b === undefined || b === null) return !!g.domWl;
+      return true;
+    }
+
+    _emit() {
+      edytorSprzataj(this._cfg, EDYTOR_GRUPY);
+      this.dispatchEvent(new CustomEvent('config-changed', {
+        detail: { config: this._cfg }, bubbles: true, composed: true,
+      }));
+    }
+
+    _buduj() {
+      const r = this.shadowRoot;
+      const otwarta = r.querySelector('.scb-grupa[open] .scb-tyt');
+      const byla = otwarta ? otwarta.textContent : EDYTOR_GRUPY[0].tytul;
+      r.textContent = '';
+      const st = document.createElement('style');
+      st.textContent = EDYTOR_CSS;
+      r.appendChild(st);
+
+      const bledy = edytorSprawdzDomyslne();
+      if (bledy.length) {
+        const b = document.createElement('div');
+        b.className = 'scb-blad';
+        b.textContent = 'The editor and the card disagree about a default, so it may '
+          + 'leave a key out of the config: ' + bledy.join('; ');
+        r.appendChild(b);
+      }
+
+      for (const g of EDYTOR_GRUPY) {
+        if (g.zalezyOd && !this._wlaczona(EDYTOR_GRUPY.find((x) => x.wlacznik === g.zalezyOd))) {
+          continue;
+        }
+        const det = document.createElement('details');
+        det.className = 'scb-grupa';
+        det.open = g.tytul === byla;
+        const sum = document.createElement('summary');
+        sum.innerHTML = '<span class="scb-tyt"></span><span class="scb-odznaka"></span>';
+        sum.querySelector('.scb-tyt').textContent = g.tytul;
+        det.appendChild(sum);
+
+        const wl = this._wlaczona(g);
+        const glowne = g.pola.find((p) => p.glowna);
+        if (glowne) {
+          const sw = document.createElement('input');
+          sw.type = 'checkbox'; sw.className = 'scb-p'; sw.checked = wl;
+          sw.addEventListener('click', (e) => e.stopPropagation());
+          sw.addEventListener('change', () => this._przelacz(g, sw.checked));
+          sum.appendChild(sw);
+        }
+        const zmian = g.pola.filter((p) => !p.glowna && p.typ !== 'tekst' &&
+          !edytorRowne(edytorCzytaj(this._cfg, p.k, p.dom), p.dom)).length;
+        sum.querySelector('.scb-odznaka').textContent =
+          !wl ? 'off' : zmian ? zmian + (zmian === 1 ? ' change' : ' changes') : '';
+
+        const cialo = document.createElement('div');
+        cialo.className = 'scb-cialo';
+        det.appendChild(cialo);
+        if (!wl) det.setAttribute('data-off', '');
+
+        for (const p of g.pola) {
+          if (p.glowna) {
+            if (p.o) cialo.appendChild(edytorOpis(p.o));
+            continue;
+          }
+          const w = document.createElement('div');
+          w.className = 'scb-w';
+          const lab = document.createElement('label');
+          lab.textContent = p.et;
+          w.appendChild(lab);
+          const v = edytorCzytaj(this._cfg, p.k, p.dom);
+          const licz = document.createElement('span');
+          licz.className = 'scb-n';
+          let pole;
+          if (p.typ === 'bool') {
+            // label | spacer | switch, so every value in the panel lines up
+            pole = document.createElement('input');
+            pole.type = 'checkbox'; pole.className = 'scb-p'; pole.checked = !!v;
+            w.appendChild(document.createElement('span'));
+            w.appendChild(pole);
+          } else {
+            if (p.typ === 'tekst') {
+              pole = document.createElement('input');
+              pole.type = 'text'; pole.value = v || ''; pole.placeholder = p.hint || '';
+            } else if (p.typ === 'wybor') {
+              pole = document.createElement('select');
+              for (const o of p.opcje) {
+                const opt = document.createElement('option');
+                opt.value = o; opt.textContent = o;
+                pole.appendChild(opt);
+              }
+              pole.value = String(v);
+            } else {
+              pole = document.createElement('input');
+              pole.type = 'range';
+              pole.min = p.min; pole.max = p.max; pole.step = p.krok; pole.value = String(v);
+              licz.textContent = String(v);
+            }
+            w.appendChild(pole);
+            w.appendChild(licz);
+          }
+          pole.dataset.k = p.k;
+          const zapisz = () => {
+            let nowa;
+            if (p.typ === 'bool') nowa = pole.checked;
+            else if (p.typ === 'tekst') nowa = pole.value.trim();
+            else if (p.typ === 'wybor') nowa = pole.value;
+            else nowa = Number(pole.value);
+            if (p.typ === 'zakres') licz.textContent = String(nowa);
+            if (p.k === '__az0' || p.k === '__az1') {
+              // one option, two sliders: the window is a pair and is written
+              // whole, or dropped whole when both ends are back at default
+              const czytajSuwak = (k, dom) => {
+                const el = this.shadowRoot.querySelector('[data-k="' + k + '"]');
+                return el ? Number(el.value) : dom;
+              };
+              const a0 = czytajSuwak('__az0', 50), a1 = czytajSuwak('__az1', 310);
+              if (a0 === 50 && a1 === 310) delete this._cfg.azimuth;
+              else this._cfg.azimuth = [a0, a1];
+            } else {
+              edytorPisz(this._cfg, p.k, nowa, p.dom);
+            }
+            this._emit();
+            const od = det.querySelector('.scb-odznaka');
+            const ile = g.pola.filter((q) => !q.glowna && q.typ !== 'tekst' &&
+              !edytorRowne(edytorCzytaj(this._cfg, q.k, q.dom), q.dom)).length;
+            od.textContent = ile ? ile + (ile === 1 ? ' change' : ' changes') : '';
+          };
+          pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', zapisz);
+          if (p.o) w.appendChild(edytorOpis(p.o));
+          cialo.appendChild(w);
+        }
+        r.appendChild(det);
+      }
+    }
+
+    _przelacz(g, wl) {
+      const klucz = g.wlacznik;
+      const stary = edytorSciezka(this._cfg, klucz);
+      if (stary && typeof stary === 'object') this._pamiec[klucz] = stary;
+      if (wl) {
+        const wroc = this._pamiec[klucz];
+        edytorUstawBlok(this._cfg, klucz, wroc || (g.domWl ? undefined : g.skrotWl));
+      } else {
+        edytorUstawBlok(this._cfg, klucz, g.domWl ? false : undefined);
+      }
+      this._emit();
+      this._buduj();
+    }
+  }
+
+  function edytorOpis(tekst) {
+    const p = document.createElement('span');
+    p.className = 'scb-o';
+    p.textContent = tekst;
+    return p;
+  }
+
+  function edytorRowne(a, b) {
+    if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 1e-9;
+    return a === b;
+  }
+
+  function edytorSciezka(cfg, klucz) {
+    const czesci = klucz.split('.');
+    let o = cfg;
+    for (const k of czesci) {
+      if (!o || typeof o !== 'object') return undefined;
+      o = o[k];
+    }
+    return o;
+  }
+
+  function edytorUstawBlok(cfg, klucz, wartosc) {
+    const czesci = klucz.split('.');
+    let o = cfg;
+    for (let i = 0; i < czesci.length - 1; i++) {
+      const k = czesci[i];
+      if (o[k] === true || o[k] === undefined || o[k] === null) o[k] = {};
+      if (typeof o[k] !== 'object') return;
+      o = o[k];
+    }
+    const ost = czesci[czesci.length - 1];
+    if (wartosc === undefined) delete o[ost]; else o[ost] = wartosc;
+  }
+
+  /* The editor's table and the card's readers must agree, or the editor will
+     leave out a key that is not the default after all. Checked on open, not
+     assumed. */
+  function edytorSprawdzDomyslne() {
+    const bledy = [];
+    const zrodla = { s: readStarConfig({}), p: readPlanetConfig(true), m: readMilkyConfig({}) };
+    for (const g of EDYTOR_GRUPY) for (const pole of g.pola) {
+      for (const [znacznik, blok] of [['s', 's'], ['p', 'p'], ['m', 'm']]) {
+        if (!pole[znacznik]) continue;
+        let v = zrodla[blok];
+        for (const k of String(pole[znacznik]).split('.')) v = v && v[k];
+        if (!edytorRowne(v, pole.dom)) {
+          bledy.push(pole.k + ' (editor ' + JSON.stringify(pole.dom) +
+                     ', card ' + JSON.stringify(v) + ')');
+        }
+      }
+    }
+    return bledy;
+  }
+
+  customElements.define('sun-cycle-bg-card-editor', SunCycleBgCardEditor);
+
   customElements.define('sun-cycle-bg-card', SunCycleBgCard);
 
   // A tuning page builds star layers directly, with its own frames and configs.
@@ -1907,6 +2406,9 @@
   window.customCards.push({
     type: 'sun-cycle-bg-card',
     name: 'Sun Cycle Background',
+    // the picker renders the card itself instead of a grey placeholder
+    preview: true,
+    documentationURL: 'https://github.com/jrx-code/ha-sun-cycle-bg',
     description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, the planets where the Sol integration puts them, and a star field with flares, meteors and the real ISS.',
   });
 })();
