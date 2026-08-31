@@ -187,6 +187,8 @@ stars:                  # `stars: false` disables the built-in field
   count: 90             # stars visible on screen
   drift: 1800           # seconds per screen-width of drift, 0 = static
   rotate: false         # true = rotate about the celestial pole instead
+  pivot: 2.2            # where that pole sits, in frame heights below the top
+                        # edge; only used when `rotate` is on
   sizes: flat           # mixed = three diameters, a crude magnitude ladder
   size: 1               # scales the star dot (0.25–2)
   glow: 1               # scales the blur around it (0–2); 0 = hard pixels
