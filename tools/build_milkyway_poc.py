@@ -358,6 +358,7 @@ __KARTA__
   }
 
   const SIATKA_U = 32, SIATKA_V = 22;
+  const SIATKA_WIDOCZNA = new URLSearchParams(location.search).has('siatka');
   let BUFOR = null;                      // pomocniczy kadr, zeby szwy nie sumowaly sie dwa razy
   function rysujPas(cv, godz, opcje, pr, okno) {
     const r = cv.getBoundingClientRect();
@@ -427,6 +428,14 @@ __KARTA__
         gb.clip();
         gb.drawImage(obraz, 0, 0);
         gb.restore();
+        if (SIATKA_WIDOCZNA) {            // ?siatka=1 — obrys oczek do diagnozy
+          gb.save();
+          gb.strokeStyle = 'rgba(255,80,80,.9)'; gb.lineWidth = 0.6;
+          gb.beginPath();
+          gb.moveTo(wx[a], wy[a]); gb.lineTo(wx[b2], wy[b2]);
+          gb.moveTo(wx[a], wy[a]); gb.lineTo(wx[c2], wy[c2]);
+          gb.stroke(); gb.restore();
+        }
         oczek++;
       }
     }

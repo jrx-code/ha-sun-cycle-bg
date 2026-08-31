@@ -21,6 +21,13 @@ Two knobs decide how it reads:
   --gamma   how fast alpha rises above that floor. Above 1 the faint dust goes
             quieter and the bright clouds keep their weight, which is what
             keeps the layer from looking like fog.
+  --vignette
+            where the elliptical fade to nothing starts, in half-widths. The
+            sky has no straight edges, so neither can the layer: fading each
+            side separately leaves a visible vertical line where the stars stop.
+            The fade ends at --vignette-end, inside the file rather than on its
+            border, because the last visible star is what draws the edge and a
+            star is still visible at 5 % opacity.
 
 Colour is left alone. The card dims and tints the whole layer anyway, and a
 photograph that has been colour-managed twice looks like a print.
@@ -48,8 +55,10 @@ def main() -> int:
     ap.add_argument("--out", default=str(OUT))
     ap.add_argument("--floor", type=float, default=None, help="0-1; default: measured")
     ap.add_argument("--gamma", type=float, default=1.4)
-    ap.add_argument("--feather", type=float, default=0.15,
-                    help="0-0.5; szerokosc wygaszania brzegow w ulamku boku")
+    ap.add_argument("--vignette", type=float, default=0.30,
+                    help="0-1; promien (w polowach boku), od ktorego zaczyna sie zanik")
+    ap.add_argument("--vignette-end", type=float, default=0.88,
+                    help="0-1.4; promien, przy ktorym krycie jest juz zerem")
     ap.add_argument("--width", type=int, default=0, help="resize, 0 = keep")
     a = ap.parse_args()
 
@@ -62,22 +71,29 @@ def main() -> int:
     floor = a.floor if a.floor is not None else float(np.percentile(lum, 35))
     alpha = np.clip((lum - floor) / max(1e-6, 1.0 - floor), 0.0, 1.0) ** a.gamma
 
-    # Wygaszenie brzegow. Zdjecie jest kadrem, a niebo nie ma kadru: bez tego
-    # na panelu widac prostokat tam, gdzie plik sie konczy — sprawdzone, widac
-    # go wyraznie. Rampa cosinusowa na kazdym boku, mnozona, wiec rogi gasna
-    # dwa razy szybciej niz boki, co jest wlasnie tym, czego oko oczekuje.
-    if a.feather > 0:
+    # Wygaszenie brzegow. Zdjecie jest kadrem, a niebo nie ma kadru — i nie ma
+    # tez prostych krawedzi. Rampy na czterech bokach (pierwsza wersja) daly
+    # dokladnie to, co widac na mapie alfy: pionowa krawedz po lewej i prawej,
+    # pozioma u gory, bo gwiazdy sa punktami i przy dodawaniu swiatla widac je
+    # jeszcze przy kryciu 0,1 — wiec rampa czyta sie jako „gwiazdy sie koncza",
+    # nie jako zanik.
+    #
+    # Wiec winieta eliptyczna: promien liczony wzgledem polowy boku, zanik
+    # smoothstep od `vignette` do krawedzi wpisanej elipsy i dalej. Zaden brzeg
+    # pliku nie jest wtedy linia prosta, a gestosc gwiazd rzednie stopniowo
+    # przez jedna trzecia kadru zamiast urywac sie na ostatnich procentach.
+    if a.vignette < a.vignette_end:
         h, w = alpha.shape
-        def rampa(n, ile):
-            r = np.ones(n, np.float32)
-            k = max(1, int(round(n * ile)))
-            t = np.linspace(0, 1, k, dtype=np.float32)
-            gladko = 0.5 - 0.5 * np.cos(np.pi * t)
-            r[:k] = gladko
-            r[-k:] = gladko[::-1]
-            return r
-        alpha *= rampa(h, a.feather)[:, None] * rampa(w, a.feather)[None, :]
-
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        rx = (xx - (w - 1) / 2) / ((w - 1) / 2)
+        ry = (yy - (h - 1) / 2) / ((h - 1) / 2)
+        r = np.sqrt(rx * rx + ry * ry)
+        t = np.clip((a.vignette_end - r) / max(1e-6, a.vignette_end - a.vignette), 0.0, 1.0)
+        # smoothstep do potegi: gwiazda to punkt i widac ja jeszcze przy 0,05,
+        # wiec zanik musi schodzic do zera szybciej, niz podpowiada oko na
+        # gladkim tle — i konczyc sie WEWNATRZ pliku, nie na jego krawedzi,
+        # inaczej ostatnie gwiazdy ukladaja sie w prosta linie brzegu kadru
+        alpha *= (t * t * (3 - 2 * t)) ** 1.6
     out = np.zeros((*lum.shape, 4), np.uint8)
     out[..., :3] = np.clip(rgb * 255, 0, 255).astype(np.uint8)
     out[..., 3] = np.clip(alpha * 255, 0, 255).astype(np.uint8)
@@ -96,6 +112,9 @@ def main() -> int:
     print(f"{webp} {webp.stat().st_size // 1024} kB")
     print(f"prog tla: {floor:.4f} (35. centyl kadru), gamma {a.gamma}")
     print(f"w pelni kryjace: {kryje:.1f} % powierzchni, w pelni przezroczyste: {puste:.1f} %")
+    kraw = max(float(alpha[0].max()), float(alpha[-1].max()),
+               float(alpha[:, 0].max()), float(alpha[:, -1].max()))
+    print(f"najjasniejszy piksel na krawedzi pliku: {kraw:.4f} (ma byc 0)")
     return 0
 
 
