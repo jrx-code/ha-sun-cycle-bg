@@ -10,9 +10,14 @@ result adds light without ever pasting a black rectangle on it.
 
 Two knobs decide how it reads:
 
-  --floor   the level treated as empty sky (below it: fully transparent). Set
-            it from the picture's own background, not by taste — the default
-            is measured off the darkest 2 % of the frame.
+  --floor   the level treated as empty sky (below it: fully transparent).
+            Measured, not chosen: on this photograph the band's core sits at
+            0.35, the corners between 0.02 and 0.08, and the 35th percentile
+            (0.055) sits just above the brightest corner — which is where the
+            veil stops and the band starts. The median, 0.079, is already
+            inside the band and eats its faint outer parts. A floor at the 2nd percentile (0.012, the first
+            attempt) leaves everything up to 0.08 faintly lit, and over a
+            night sky that reads as a grey rectangle where the file is.
   --gamma   how fast alpha rises above that floor. Above 1 the faint dust goes
             quieter and the bright clouds keep their weight, which is what
             keeps the layer from looking like fog.
@@ -42,8 +47,8 @@ def main() -> int:
     ap.add_argument("src")
     ap.add_argument("--out", default=str(OUT))
     ap.add_argument("--floor", type=float, default=None, help="0-1; default: measured")
-    ap.add_argument("--gamma", type=float, default=1.35)
-    ap.add_argument("--feather", type=float, default=0.12,
+    ap.add_argument("--gamma", type=float, default=1.4)
+    ap.add_argument("--feather", type=float, default=0.15,
                     help="0-0.5; szerokosc wygaszania brzegow w ulamku boku")
     ap.add_argument("--width", type=int, default=0, help="resize, 0 = keep")
     a = ap.parse_args()
@@ -54,7 +59,7 @@ def main() -> int:
     rgb = np.asarray(im).astype(np.float32) / 255.0
     lum = rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
-    floor = a.floor if a.floor is not None else float(np.percentile(lum, 2))
+    floor = a.floor if a.floor is not None else float(np.percentile(lum, 35))
     alpha = np.clip((lum - floor) / max(1e-6, 1.0 - floor), 0.0, 1.0) ** a.gamma
 
     # Wygaszenie brzegow. Zdjecie jest kadrem, a niebo nie ma kadru: bez tego
@@ -89,7 +94,7 @@ def main() -> int:
     puste = float((alpha < 0.02).mean()) * 100
     print(f"{dst} {im.size} {dst.stat().st_size // 1024} kB")
     print(f"{webp} {webp.stat().st_size // 1024} kB")
-    print(f"prog tla: {floor:.4f} (zmierzony na 2. centylu), gamma {a.gamma}")
+    print(f"prog tla: {floor:.4f} (35. centyl kadru), gamma {a.gamma}")
     print(f"w pelni kryjace: {kryje:.1f} % powierzchni, w pelni przezroczyste: {puste:.1f} %")
     return 0
 
