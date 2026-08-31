@@ -7,6 +7,8 @@ demo/tlo-planety.html
 demo/tlo-planety.meta.json
 demo/droga-mleczna.html
 demo/droga-mleczna.meta.json
+demo/konfigurator.html
+demo/konfigurator.meta.json
 
 # wycinek w PNG to material posredni (1,7 MB); strona i karta biora .webp
 demo/assets/milky-way-cutout.png

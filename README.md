@@ -648,6 +648,25 @@ documentation cannot drift away from the code.
 were tuned on: four ways of drawing the discs on one shared instant, with
 sliders for disc size and blur.
 
+[`tools/build_config_poc.py`](tools/build_config_poc.py) builds the
+configurator (in Polish, generated rather than committed because the card is
+pasted into it): every option as a control, over a preview the card itself
+draws, with the YAML fragment underneath — **only the keys that differ from
+the defaults**, so a working setup is three lines and not forty. The sun is
+simulated by hour, day of year and latitude; the planets are not pinned to the
+snapshot they came from but carried back to equatorial coordinates and
+re-projected, so they travel with the sky as the clock moves. The page reads
+the card's own `readStarConfig({})`, `readPlanetConfig(true)` and
+`readMilkyConfig({})` and compares them against its control table on load: if
+the two disagree it says so in red rather than quietly leaving a key out of the
+fragment. It also measures how much of the frame the Milky Way layer actually
+lit, which is how the difference between `frame` and `equirect` stops being an
+argument and becomes a number.
+
+```bash
+python3 tools/build_config_poc.py       # -> demo/konfigurator.html
+```
+
 [`tools/build_planets_poc.py`](tools/build_planets_poc.py) builds the same kind
 of page for the planets (in Polish; the page itself is generated, not committed,
 because the card is pasted into it). It inlines this very `sun-cycle-bg.js` and draws every scene
