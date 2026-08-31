@@ -184,11 +184,21 @@ STRONA = r"""<meta charset="utf-8">
           <span class="n" id="lat-n"></span>
           <span class="podpowiedz">Szerokość geograficzna. Bliżej równika łuk słońca staje
           pionowo, bliżej bieguna kładzie się płasko.</span></div>
-        <div class="row" style="grid-template-columns:auto 1fr">
-          <button id="graj">▶ doba w 60 s</button>
-          <span class="podpowiedz" style="grid-column:auto; margin:0">Planety jadą razem
-          z niebem: pozycje z migawki <code>sensor.sol_*</code>
-          (<span id="o-migawka">—</span>) są przeliczane na wybraną chwilę.</span></div>
+        <div class="row"><label for="anim">animacja</label>
+          <select id="tempo">
+            <option value="30">doba w 30 s</option>
+            <option value="60" selected>doba w 60 s</option>
+            <option value="120">doba w 120 s</option>
+            <option value="300">doba w 5 min</option>
+            <option value="900">doba w 15 min</option>
+          </select>
+          <input type="checkbox" class="przel" id="anim">
+          <span class="podpowiedz">Przewija dobę w kółko. Tempo można zmieniać w biegu —
+          suwak godziny idzie po prawdziwym zegarze, więc doba trwa dokładnie tyle,
+          ile wybrane.</span></div>
+        <p class="podpowiedz" style="margin:2px 0 0">Planety jadą razem z niebem: pozycje
+        z migawki <code>sensor.sol_*</code> (<span id="o-migawka">—</span>) są przeliczane
+        na wybraną chwilę.</p>
       </div>
 
       <div class="card" style="margin-top:16px">
@@ -504,7 +514,67 @@ __KARTA__
 
   /* ---------- podglad ---------- */
   const karta = $("karta");
-  let graTimer = null;
+  let graTimer = 0;
+
+  /* Niebo osobno od konfiguracji. Animacja rusza tylko zegar, a `setConfig`
+     przy każdej klatce budowałby config od nowa i zakładał nowy `new Image()`
+     na tarczę księżyca — sześćdziesiąt razy na sekundę za nic. Kontrolki
+     wołają zastosuj(), animacja tylko odswiezNiebo(). */
+  let pasOstatnio = 0;
+  function odswiezNiebo(mierzPas) {
+    const t = Number($("t").value), d = Number($("d").value), lat = Number($("lat").value);
+    $("t-n").textContent = String(Math.floor(t / 60)).padStart(2, "0") + ":" +
+                           String(t % 60).padStart(2, "0");
+    const data = new Date(Date.UTC(2026, 0, 1) + d * 86400000 + t * 60000);
+    $("d-n").textContent = String(data.getUTCDate()).padStart(2, "0") + "." +
+                           String(data.getUTCMonth() + 1).padStart(2, "0");
+    $("lat-n").textContent = lat + "°";
+    const J = julian(data);
+    const se = sunEq(J), sp = altaz(se.ra, se.dec, J, lat, __LON__);
+    const stany = { "sun.sun": { attributes: { elevation: sp.alt, azimuth: sp.az } } };
+    let nadHoryzontem = 0;
+    for (const [b, eq] of Object.entries(PLANETY_EQ)) {
+      const p = altaz(eq.ra, eq.dec, J, lat, __LON__);
+      if (p.alt > 0) nadHoryzontem++;
+      stany["sensor.sol_" + b + "_azimuth"] = { state: p.az.toFixed(1) };
+      stany["sensor.sol_" + b + "_elevation"] = { state: p.alt.toFixed(1) };
+    }
+    // Karta sama dławi przemalowania: maluje dopiero, gdy słońce ruszy się
+    // o 0,15° wysokości albo 0,6° azymutu. Na dashboardzie to niewidoczne, bo
+    // `sun.sun` i tak przychodzi co pół minuty — ale przy animacji doby w dwie
+    // minuty próg wypada raz na kilkanaście klatek i ruch skacze. Tutaj każda
+    // klatka ma być namalowana, więc jeśli setter sam nie namalował, malujemy
+    // wprost. `_painted` dostaje nowy obiekt przy każdym malowaniu, więc
+    // porównanie tożsamości mówi, czy setter już to zrobił — bez tego karta
+    // malowałaby dwa razy na tej samej klatce.
+    const przedMalowaniem = karta._painted;
+    karta.hass = { states: stany, config: { latitude: lat, longitude: __LON__ } };
+    if (karta._painted === przedMalowaniem && typeof karta._apply === "function") {
+      karta._apply();
+    }
+
+    $("o-elev").textContent = sp.alt.toFixed(1);
+    $("o-az").textContent = sp.az.toFixed(0);
+    $("o-planet").textContent = nadHoryzontem;
+
+    // Pas mierzony, nie deklarowany: przy `frame` krycie bywa 1, a w oknie
+    // nieba nie ma ani piksela zdjęcia, bo ten kawałek nieba jest pod Ziemią.
+    // Kanwa rysuje się przy przemalowaniu karty, więc pomiar idzie po nim.
+    // W animacji nie co klatkę: odczyt kanwy kosztuje ~1,4 ms i i tak nikt nie
+    // czyta procentów sześćdziesiąt razy na sekundę.
+    if (mierzPas === false && performance.now() - pasOstatnio < 400) return;
+    pasOstatnio = performance.now();
+    setTimeout(() => {
+      const mw = document.querySelector(".sun-cycle-milky");
+      if (!mw || !mw.width) { $("o-pas").textContent = "wyłączony"; return; }
+      const g = mw.getContext("2d");
+      const dane = g.getImageData(0, 0, mw.width, mw.height).data;
+      let n = 0; for (let i = 3; i < dane.length; i += 4) if (dane[i] > 2) n++;
+      const proc = (100 * n / (mw.width * mw.height)).toFixed(0);
+      $("o-pas").textContent = "krycie " + (mw.style.opacity || "0") +
+        ", " + proc + "% kadru";
+    }, 140);
+  }
 
   function zastosuj() {
     for (const g of GRUPY) {
@@ -528,43 +598,7 @@ __KARTA__
     const pelny = pelnyConfig();
     pelny.assets = ZASOBY;
     karta.setConfig(pelny);
-
-    const t = Number($("t").value), d = Number($("d").value), lat = Number($("lat").value);
-    $("t-n").textContent = String(Math.floor(t / 60)).padStart(2, "0") + ":" +
-                           String(t % 60).padStart(2, "0");
-    const data = new Date(Date.UTC(2026, 0, 1) + d * 86400000 + t * 60000);
-    $("d-n").textContent = String(data.getUTCDate()).padStart(2, "0") + "." +
-                           String(data.getUTCMonth() + 1).padStart(2, "0");
-    $("lat-n").textContent = lat + "°";
-    const J = julian(data);
-    const se = sunEq(J), sp = altaz(se.ra, se.dec, J, lat, __LON__);
-    const stany = { "sun.sun": { attributes: { elevation: sp.alt, azimuth: sp.az } } };
-    let nadHoryzontem = 0;
-    for (const [b, eq] of Object.entries(PLANETY_EQ)) {
-      const p = altaz(eq.ra, eq.dec, J, lat, __LON__);
-      if (p.alt > 0) nadHoryzontem++;
-      stany["sensor.sol_" + b + "_azimuth"] = { state: p.az.toFixed(1) };
-      stany["sensor.sol_" + b + "_elevation"] = { state: p.alt.toFixed(1) };
-    }
-    karta.hass = { states: stany, config: { latitude: lat, longitude: __LON__ } };
-
-    $("o-elev").textContent = sp.alt.toFixed(1);
-    $("o-az").textContent = sp.az.toFixed(0);
-    $("o-planet").textContent = nadHoryzontem;
-    // Pas mierzony, nie deklarowany: przy `frame` krycie bywa 1, a w oknie
-    // nieba nie ma ani piksela zdjęcia, bo ten kawałek nieba jest pod Ziemią.
-    // Kanwa rysuje się przy przemalowaniu karty, więc pomiar idzie po nim.
-    setTimeout(() => {
-      const mw = document.querySelector(".sun-cycle-milky");
-      if (!mw || !mw.width) { $("o-pas").textContent = "wyłączony"; return; }
-      const g = mw.getContext("2d");
-      const d = g.getImageData(0, 0, mw.width, mw.height).data;
-      let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 2) n++;
-      const proc = (100 * n / (mw.width * mw.height)).toFixed(0);
-      $("o-pas").textContent = "krycie " + (mw.style.opacity || "0") +
-        ", " + proc + "% kadru";
-    }, 140);
-
+    odswiezNiebo(true);
 
     const przyciety = yamlConfig();
     $("yaml").textContent = yaml(przyciety);
@@ -600,15 +634,36 @@ __KARTA__
     const m = $("skopiowane"); m.classList.add("jest");
     setTimeout(() => m.classList.remove("jest"), 1400);
   });
-  $("graj").addEventListener("click", () => {
-    if (graTimer) { clearInterval(graTimer); graTimer = null; $("graj").textContent = "▶ doba w 60 s"; return; }
-    $("graj").textContent = "■ stop";
-    graTimer = setInterval(() => {
-      const t = $("t");
-      t.value = String((Number(t.value) + 6) % 1440);
-      zastosuj();
-    }, 250);
-  });
+  /* Animacja liczy się z prawdziwego zegara, a nie z „tyle minut na tyknięcie”.
+     Tyknięcie potrafi się spóźnić — karta przelicza niebo, mierzy pas i składa
+     YAML — więc doliczanie stałego kroku rozjechałoby tempo o tyle, ile trwa
+     przemalowanie. Z zegara doba trwa dokładnie tyle, ile mówi wybór, a wolniejsza
+     maszyna po prostu rysuje mniej klatek. */
+  let animStart = 0, animOd = 0;
+  function przewijaj() {
+    if (!graTimer) return;
+    const tempo = Number($("tempo").value);           // sekund na dobę
+    const minelo = (performance.now() - animStart) / 1000;
+    $("t").value = String(Math.round((animOd + minelo / tempo * 1440) % 1440));
+    odswiezNiebo(false);
+    graTimer = requestAnimationFrame(przewijaj);
+  }
+  function animacja(wl) {
+    if (graTimer) { cancelAnimationFrame(graTimer); graTimer = 0; }
+    if (!wl) return;
+    animStart = performance.now();
+    animOd = Number($("t").value);
+    // requestAnimationFrame, nie setInterval: klatki idą w takt odświeżania
+    // ekranu, więc ruch jest płynny, a karta i tak sama dławi przemalowania
+    // (repaint dopiero przy 0,15° wysokości albo 0,6° azymutu).
+    graTimer = requestAnimationFrame(przewijaj);
+  }
+  $("anim").addEventListener("change", (e) => animacja(e.target.checked));
+  // zmiana tempa w biegu: przelicz punkt startu, żeby godzina nie skoczyła
+  $("tempo").addEventListener("change", () => { if (graTimer) animacja(true); });
+  // ręczne ruszenie suwaka godziny w trakcie animacji przestawia ją, nie zrywa
+  $("t").addEventListener("input", () => { if (graTimer) { animStart = performance.now();
+                                                           animOd = Number($("t").value); } });
   zastosuj();
 })();
 </script>
