@@ -1,0 +1,66 @@
+# What this guards: dist/ is a copy, and nothing but discipline keeps a copy in
+# step with its original. HACS installs dist/, so a stale copy means a fresh
+# install silently gets the *previous* card under the new version number — the
+# repository looks right, the tuning pages look right, and only somebody's
+# clean install is broken. The zip_release attempt in 1.10.0 was the same class
+# of mistake: a publishing mechanism with nothing checking it.
+#
+# So: rebuild dist/ here and fail if that changes anything, and on a tag check
+# that the version in the card is the version being tagged.
+name: release
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: shell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dist/ is what tools/make_dist.py produces
+        run: |
+          python3 tools/make_dist.py
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is stale — run 'python3 tools/make_dist.py' and commit it"
+            git --no-pager diff --stat -- dist/
+            exit 1
+          fi
+          echo "dist/ matches the sources"
+
+      - name: the card in dist/ is the card in the repository
+        run: cmp dist/sun-cycle-bg.js sun-cycle-bg.js
+
+      - name: the tag is the version the card announces
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          KARTA=$(sed -n '1s/.*sun-cycle-bg \([0-9][0-9.]*\).*/\1/p' sun-cycle-bg.js)
+          TAG=${GITHUB_REF#refs/tags/v}
+          echo "card: $KARTA, tag: $TAG"
+          [ "$KARTA" = "$TAG" ] || { echo "::error::card says $KARTA, tag says $TAG"; exit 1; }
+
+      - name: every file dist/ names is actually there
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          d = pathlib.Path("dist")
+          brak = [str(p) for p in
+                  [d / "sun-cycle-bg.js", d / "sun.png", d / "moon.png",
+                   d / "milky-way.jpg", d / "milky-way-cutout.webp",
+                   d / "CREDITS.md"]
+                  + [d / "planets" / f"{c}.png" for c in
+                     ("mercury", "venus", "earth", "mars", "jupiter",
+                      "saturn", "uranus", "neptune", "pluto")]
+                  if not p.exists()]
+          if brak:
+              sys.exit("missing from dist/: " + ", ".join(brak))
+          print(f"dist/: {len(list(d.rglob('*')))} entries, all present")
+          PY
+
+      # The smoke suite needs a browser (test/smoke.html + tools/run_smoke.py).
+      # The runner has neither chromium nor playwright — checked on LXC 131,
+      # not assumed — so it stays a local step: `python3 tools/run_smoke.py`,
+      # expect ERRORS: [].
