@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.12.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.12.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -2176,6 +2176,11 @@
       this._cfg = JSON.parse(JSON.stringify(config || {}));
       this._pamiec = this._pamiec || {};
       if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+      // Lovelace hands the config straight back after every config-changed.
+      // Rebuilding the form on that echo is what collapsed a second open
+      // group and dropped the slider mid-drag: the form must only be rebuilt
+      // for a config that came from somewhere else.
+      if (edytorOdcisk(this._cfg) === this._wyslany) return;
       this._buduj();
     }
 
@@ -2191,6 +2196,7 @@
 
     _emit() {
       edytorSprzataj(this._cfg, EDYTOR_GRUPY);
+      this._wyslany = edytorOdcisk(this._cfg);
       this.dispatchEvent(new CustomEvent('config-changed', {
         detail: { config: this._cfg }, bubbles: true, composed: true,
       }));
@@ -2198,8 +2204,9 @@
 
     _buduj() {
       const r = this.shadowRoot;
-      const otwarta = r.querySelector('.scb-grupa[open] .scb-tyt');
-      const byla = otwarta ? otwarta.textContent : EDYTOR_GRUPY[0].tytul;
+      // every open group, not the first one: the form allows several
+      const byly = [...r.querySelectorAll('.scb-grupa[open] .scb-tyt')].map((e) => e.textContent);
+      if (!r.querySelector('.scb-grupa')) byly.push(EDYTOR_GRUPY[0].tytul);
       r.textContent = '';
       const st = document.createElement('style');
       st.textContent = EDYTOR_CSS;
@@ -2220,7 +2227,7 @@
         }
         const det = document.createElement('details');
         det.className = 'scb-grupa';
-        det.open = g.tytul === byla;
+        det.open = byly.indexOf(g.tytul) >= 0;
         const sum = document.createElement('summary');
         sum.innerHTML = '<span class="scb-tyt"></span><span class="scb-odznaka"></span>';
         sum.querySelector('.scb-tyt').textContent = g.tytul;
@@ -2334,6 +2341,21 @@
       this._emit();
       this._buduj();
     }
+  }
+
+  /* Key order and a `type` the editor never writes are not a difference. The
+     echo has to compare equal to what was just sent, or the form rebuilds. */
+  function edytorOdcisk(cfg) {
+    const uporzadkuj = (v) => {
+      if (Array.isArray(v)) return v.map(uporzadkuj);
+      if (v && typeof v === 'object') {
+        const out = {};
+        for (const k of Object.keys(v).sort()) { if (k !== 'type') out[k] = uporzadkuj(v[k]); }
+        return out;
+      }
+      return v;
+    };
+    return JSON.stringify(uporzadkuj(cfg || {}));
   }
 
   function edytorOpis(tekst) {
