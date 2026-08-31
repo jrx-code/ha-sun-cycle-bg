@@ -87,6 +87,22 @@ STRONA = r"""<meta charset="utf-8">
     border-radius:7px; padding:4px 8px; font:inherit; font-size:13px; }
   fieldset[data-wylaczone] .row:not(.glowna) { opacity:.38; pointer-events:none; }
 
+  /* dymek: pytajnik siedzi w etykiecie, więc nie dokłada kolumny do siatki */
+  .pyt { position:relative; display:inline-flex; align-items:center; justify-content:center;
+    width:15px; height:15px; margin-left:5px; border-radius:50%; cursor:help;
+    border:1px solid rgba(255,255,255,.22); color:var(--muted);
+    font-size:10px; font-weight:700; line-height:1; vertical-align:middle; user-select:none; }
+  .pyt:hover, .pyt:focus { color:var(--text); border-color:var(--accent); outline:none; }
+  .dymek { position:absolute; right:-2px; top:22px; width:270px; z-index:9;
+    background:#0a0c10; color:var(--text); border:1px solid var(--accent);
+    border-radius:9px; padding:9px 11px; font-size:12.5px; line-height:1.45;
+    font-weight:400; text-align:left; cursor:auto;
+    box-shadow:0 10px 26px rgba(0,0,0,.55); display:none; }
+  .pyt:hover .dymek, .pyt:focus .dymek, .pyt:focus-within .dymek { display:block; }
+  /* przy lewej krawędzi dymek otwiera się w prawo, inaczej wychodzi poza okno */
+  .dymek.lewa { right:auto; left:-2px; }
+  .dymek b { color:var(--accent); font-weight:650; }
+
   .yamlglowa { display:flex; align-items:center; justify-content:space-between; gap:10px; }
   pre.yaml { margin:10px 0 0; background:#0a0c10; border:1px solid var(--line);
     border-radius:10px; padding:12px 14px; overflow:auto; font:13px/1.5 ui-monospace,
@@ -285,6 +301,20 @@ __KARTA__
           row.innerHTML = `<label for="${id}">${p.etykieta}</label>` +
             `<input type="range" id="${id}" min="${p.min}" max="${p.max}" step="${p.krok}">` +
             `<span class="n" id="${id}_n"></span>`;
+        }
+        if (p.pomoc) {
+          const gniazdo = row.querySelector("label") || row;
+          const pyt = document.createElement("span");
+          pyt.className = "pyt"; pyt.tabIndex = 0; pyt.textContent = "?";
+          pyt.setAttribute("role", "note");
+          pyt.setAttribute("aria-label", "wyjaśnienie: " + p.etykieta);
+          const dymek = document.createElement("span");
+          dymek.className = "dymek"; dymek.textContent = p.pomoc;
+          pyt.appendChild(dymek);
+          // pytajnik siedzi w <label for=...>, więc bez tego klik przełączałby
+          // pole, do którego etykieta należy
+          pyt.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+          gniazdo.appendChild(pyt);
         }
         fs.appendChild(row);
         POLA[p.klucz] = { def: p, el: null, id, fs };
@@ -486,6 +516,40 @@ __KARTA__
       bledy.map((b) => "• " + b).join("<br>");
   }
 
+  // te trzy suwaki nie są konfiguracją karty, więc nie ma ich w tabeli — dymek
+  // dostają osobno
+  for (const [id, tekst] of Object.entries({
+    t: "Godzina symulowanej doby. Steruje tylko podglądem: karta dostaje wyliczoną " +
+       "pozycję słońca zamiast prawdziwej encji sun.sun.",
+    d: "Dzień roku. Widać po nim, jak łuk słońca kładzie się zimą i staje latem — " +
+       "paleta jest kluczowana wysokością słońca, więc pory roku wychodzą same.",
+    lat: "Szerokość geograficzna. Przy równiku łuk staje pionowo, przy biegunie kładzie " +
+         "się płasko. Domyślnie tyle, ile ma prawdziwy dashboard.",
+  })) {
+    const el = document.getElementById(id);
+    const lab = el && el.parentElement.querySelector("label");
+    if (!lab) continue;
+    const pyt = document.createElement("span");
+    pyt.className = "pyt"; pyt.tabIndex = 0; pyt.textContent = "?";
+    pyt.setAttribute("aria-label", "wyjaśnienie");
+    const dymek = document.createElement("span");
+    dymek.className = "dymek"; dymek.textContent = tekst;
+    pyt.appendChild(dymek);
+    pyt.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+    lab.appendChild(pyt);
+  }
+
+  // Dymek jest kotwiczony prawą krawędzią, więc pytajnik stojący blisko lewej
+  // krawędzi okna wypchnąłby go poza ekran. Mierzone, nie zgadywane.
+  function stronyDymkow() {
+    document.querySelectorAll(".pyt").forEach((pyt) => {
+      const d = pyt.querySelector(".dymek");
+      if (d) d.classList.toggle("lewa", pyt.getBoundingClientRect().left < 300);
+    });
+  }
+  stronyDymkow();
+  window.addEventListener("resize", stronyDymkow);
+
   document.addEventListener("input", (e) => { if (e.target.tagName !== "TEXTAREA") zastosuj(); });
   document.addEventListener("change", zastosuj);
   $("zeruj").addEventListener("click", zeruj);
@@ -509,9 +573,122 @@ __KARTA__
 """
 
 
+# Dymki. Treść z nagłówka karty i z tego, co robi kod — nie z domysłów:
+# _project() faktycznie dociska pozycje spoza okna tuż za krawędź (clamp do
+# -0.05..1.05), readStarConfig faktycznie kasuje ISS razem z polem gwiazd.
+POMOC = {
+    "__az0": "Wycinek nieba rozciągnięty na całą szerokość kadru. 50 → 310 to widok "
+             "na południe: wschód po lewej, zachód po prawej. Co wypada poza oknem, "
+             "karta dociska tuż za krawędź, nie kasuje.",
+    "__az1": "Drugi koniec tego samego okna. Węższe okno = większe kroki słońca i "
+             "planet po ekranie, bo ten sam ruch po niebie rozkłada się na mniej stopni.",
+    "twilight_palette": "Cieplejsze, bursztynowe kotwice zmierzchu zamiast malwowych. "
+                        "Rusza wyłącznie paletę nieba, nic więcej.",
+    "moon": "Wyłączenie chowa księżyc całkiem. Włączony liczy sobie pozycję i fazę z "
+            "zegara oraz współrzędnych dashboardu, niezależnie od słońca — potrafi "
+            "stać nad horyzontem 8 godzin w dobie, w której słońce stało 14.",
+    "rays.blur": "Rozmycie wachlarza promieni w pikselach. 0 zdejmuje filtr rozmycia "
+                 "całkiem, co jest też najtańsze.",
+    "rays.strength": "Szczytowe krycie promieni, przy samym horyzoncie. Wyżej wachlarz "
+                     "i tak przechodzi płynnie w zwykłą aureolę.",
+
+    "stars": "Wyłączenie gasi całe pole gwiazd, a razem z nim rozbłyski, meteory i ISS — "
+             "one wszystkie mieszkają w tej warstwie.",
+    "stars.count": "Ile gwiazd widać na ekranie. Przy obrocie wokół bieguna warstwa musi "
+                   "pokryć cały zataczany pierścień, więc realnie rysowanych jest ich "
+                   "kilka razy więcej niż ta liczba.",
+    "stars.drift": "Sekundy na przejechanie szerokości ekranu. 0 = nieruchome. To tani "
+                   "dryf liniowy, nie prawdziwe łuki.",
+    "stars.rotate": "Obrót wokół bieguna niebieskiego zamiast dryfu: prawdziwe łuki, "
+                    "droższe, bo warstwa musi pokryć cały pierścień zataczany przez kadr.",
+    "stars.pivot": "Jak daleko pod kadrem leży biegun, w wielokrotnościach wysokości "
+                   "kadru. Ma znaczenie tylko przy obrocie.",
+    "stars.sizes": "flat = jedna średnica dla wszystkich. mixed = trzy, zgrubna drabinka "
+                   "jasności.",
+    "stars.size": "Skaluje średnicę każdej gwiazdy, 0,25–2.",
+    "stars.glow": "Skaluje rozmycie wokół gwiazdy, 0–2. Zero daje twarde piksele.",
+    "stars.twinkle": "Amplituda migotania, 0–1,4. Zero = spokojne punkty.",
+
+    "stars.flares.count": "Ile gwiazd dostaje własny błysk. 0 wyłącza rozbłyski.",
+    "stars.flares.every": "Sekundy na cykl błysku; każda gwiazda dostaje własne ±25 %, "
+                          "żeby nie błyskały równo.",
+    "stars.flares.strength": "Siła błysku, 0–1.",
+    "stars.flares.spikes": "Krzyż dyfrakcyjny na błysku — to, co robi obiektyw, nie oko.",
+
+    "stars.meteors.rate": "Smug na godzinę, odstępy z rozkładu Poissona. 0 wyłącza. "
+                          "Rój z jednego radiantu ustawia się tylko z YAML-a "
+                          "(`radiant: [x%, y%]`).",
+    "stars.meteors.length": "Długość smugi w pikselach.",
+    "stars.meteors.speed": "Ile sekund leci jedna smuga.",
+    "stars.meteors.angle": "Kąt poniżej poziomu, każda smuga losuje ±8°.",
+    "stars.meteors.pair": "Szansa 0–1, że zaraz po smudze poleci druga.",
+
+    "stars.iss": "Prawdziwe przeloty z integracji Satellite Tracker (N2YO), z sensorów "
+                 "sensor.iss_visual_pass_0..4. Bez tych sensorów nic nie leci i karta "
+                 "nie zgłasza błędu — opcja jest wtedy nieszkodliwa.",
+    "stars.iss.trail": "Smuga ciągnąca się za stacją, w pikselach. 0 = bez smugi.",
+    "stars.iss.label": "Podpis „ISS” obok punktu.",
+    "stars.iss.every": "Tryb pokazowy: co tyle sekund leci przelot po zapasowym łuku, "
+                       "niezależnie od tego, co mówią sensory. 0 = tylko prawdziwe przeloty.",
+
+    "planets": "Osiem ciał z integracji Sol — po dwa sensory na ciało, azimuth i "
+               "elevation. Bez integracji nic się nie rysuje.",
+    "planets.size": "Średnica Jowisza w procentach szerokości kadru; reszta wychodzi z "
+                    "wybranego szeregu. To godła, nie skala: prawdziwy Jowisz ma 45 "
+                    "sekund łuku, czyli jedną dwudziestą piksela na tym kadrze.",
+    "planets.scale": "Czym różnią się wielkości tarcz. brightness = jasnością na niebie "
+                     "(domyślne), diameters = prawdziwymi średnicami, logarytmicznie, "
+                     "equal = niczym.",
+    "planets.glow": "Odrobina poświaty, 0–2, żeby tarcza nie czytała się jak naklejka "
+                    "przyklejona do nieba.",
+    "planets.points": "W dzień planeta przestaje być tarczą i staje się punktem światła — "
+                      "tak, jak wygląda Wenus znaleziona w niebieskim niebie. To bazowa "
+                      "średnica punktu w px, skalowana per ciało jasnością. 0 zostawia obrazek.",
+    "planets.day": "Ile z planety zostaje w pełnym dniu, 0–1. Zero znaczy, że decyduje "
+                   "samo niebo, i to jest wersja uczciwa: planety blakną razem z jasnością "
+                   "nieba i po wschodzie słońca ich nie ma.",
+    "planets.min_elevation": "Poniżej tej wysokości nad horyzontem planeta wygasza się do zera.",
+    "planets.labels": "Nazwa pod tarczą. Podpisy są po angielsku; `names:` w YAML-u je tłumaczy.",
+
+    "milky_way": "Fotografia pasa wklejona w to miejsce nieba, w którym należy. Z kartą "
+                 "jadą dwa zdjęcia: kadr okolic centrum Galaktyki i panorama całego nieba.",
+    "milky_way.projection": "frame = jedno zdjęcie tam, gdzie powstało: ostre, ale widoczne "
+                            "tylko wtedy, gdy ten rejon nieba jest nad horyzontem. "
+                            "equirect = panorama; płaszczyzna Galaktyki i horyzont to dwa "
+                            "koła wielkie, więc zawsze przecinają się i zawsze dokładnie "
+                            "połowa pasa jest w górze. Odczyt „% kadru” pod podglądem mierzy "
+                            "różnicę na żywo.",
+    "milky_way.strength": "Krycie w szczycie, 0–1. Niżej pas i tak blaknie razem z jasnością "
+                          "nieba, tą samą krzywą co pole gwiazd.",
+    "milky_way.horizon": "Wysokość, od której zaczyna się wygaszanie przy horyzoncie — "
+                         "namiastka ekstynkcji atmosferycznej.",
+    "milky_way.mesh": "Ile oczek siatki w poprzek kadru. Więcej znaczy gładziej i wolniej; "
+                      "przy 32 przemalowanie kosztuje jakieś 9 ms.",
+    "milky_way.l": "Długość galaktyczna środka kadru. Domyślne −5° nie jest z oka: wyszło "
+                   "z dopasowania korelacją do panoramy ESO, r = 0,64. Działa tylko przy frame.",
+    "milky_way.b": "Szerokość galaktyczna środka kadru. Tylko przy frame — panorama jest już "
+                   "w galaktycznych i karta czyta z niej wprost.",
+    "milky_way.rot": "Obrót kadru wokół jego środka. Tylko przy frame.",
+    "milky_way.fov": "Ile stopni nieba obejmuje zdjęcie w poprzek. Zmierzone: 62°. Większa "
+                     "liczba powiększa zdjęcie na niebie — zabieg plastyczny, ale kupuje "
+                     "widoczność, bo kadr rośnie też do góry. Tylko przy frame.",
+
+    "sun_image_width": "Średnica tarczy słońca w procentach szerokości kadru.",
+    "sun_image_blur": "Rozmycie brzegu tarczy, w procentach jej średnicy. 0 daje ostrą "
+                      "krawędź, a ostra tarcza czyta się jak naklejka na niebie.",
+    "moon_image_width": "Średnica tarczy księżyca w procentach szerokości kadru.",
+    "sun_image": "Własny plik zamiast tego, który instaluje karta. Puste = domyślny. "
+                 "Uwaga: własny plik traci zmierzone położenie tarczy w kadrze, więc bywa "
+                 "potrzebne `sun_image_disc` z YAML-a.",
+    "moon_image": "Własny plik księżyca. Puste = ten, który instaluje karta.",
+    "sun_entity": "Encja, z której karta bierze `elevation` i `azimuth`. Puste = sun.sun. "
+                  "Zadziała każda encja z tymi dwoma atrybutami.",
+}
+
+
 def grupy():
     """Tabela kontrolek. `spr` wskazuje, skąd karta podaje tę samą domyślną."""
-    return [
+    tabela = [
         {"tytul": "Niebo", "pola": [
             {"klucz": "__az0", "etykieta": "okno: wschód", "typ": "zakres",
              "min": 0, "max": 360, "krok": 1, "dom": 50},
@@ -545,8 +722,7 @@ def grupy():
             {"klucz": "stars.twinkle", "etykieta": "migotanie", "typ": "zakres",
              "min": 0, "max": 1.4, "krok": 0.05, "dom": 1, "spr": "stars.twinkle"},
         ]},
-        {"tytul": "Rozbłyski", "zalezyOd": "stars",
-         "opis": "Kilka gwiazd, które co jakiś czas błyskają.", "pola": [
+        {"tytul": "Rozbłyski", "zalezyOd": "stars", "pola": [
             {"klucz": "stars.flares.count", "etykieta": "ile gwiazd", "typ": "zakres",
              "min": 0, "max": 12, "krok": 1, "dom": 0, "spr": "stars.flares.count"},
             {"klucz": "stars.flares.every", "etykieta": "co ile s", "typ": "zakres",
@@ -556,8 +732,7 @@ def grupy():
             {"klucz": "stars.flares.spikes", "etykieta": "promienie dyfrakcyjne",
              "typ": "bool", "dom": True, "spr": "stars.flares.spikes"},
         ]},
-        {"tytul": "Meteory", "zalezyOd": "stars",
-         "opis": "Rate 0 wyłącza. Radiant (rój) tylko z YAML-a.", "pola": [
+        {"tytul": "Meteory", "zalezyOd": "stars", "pola": [
             {"klucz": "stars.meteors.rate", "etykieta": "na godzinę", "typ": "zakres",
              "min": 0, "max": 120, "krok": 1, "dom": 0, "spr": "stars.meteors.rate"},
             {"klucz": "stars.meteors.length", "etykieta": "długość (px)", "typ": "zakres",
@@ -570,9 +745,7 @@ def grupy():
              "min": 0, "max": 1, "krok": 0.05, "dom": 0, "spr": "stars.meteors.pair"},
         ]},
         {"tytul": "ISS", "wlacznik": "stars.iss", "domWl": False, "skrotWl": True,
-         "zalezyOd": "stars",
-         "opis": "Prawdziwe przeloty z Satellite Tracker; `co ile s` to tryb pokazowy.",
-         "pola": [
+         "zalezyOd": "stars", "pola": [
             {"klucz": "stars.iss", "etykieta": "ISS", "typ": "bool", "dom": False,
              "glowna": True},
             {"klucz": "stars.iss.trail", "etykieta": "smuga (px)", "typ": "zakres",
@@ -601,8 +774,6 @@ def grupy():
              "spr": "planets.labels"},
         ]},
         {"tytul": "Droga Mleczna", "wlacznik": "milky_way", "domWl": False, "skrotWl": {},
-         "opis": "frame = jedno zdjęcie tam, gdzie powstało (l/b/rot/fov mają sens tylko tu); "
-                 "equirect = panorama całego nieba, zawsze połowa pasa nad horyzontem.",
          "pola": [
             {"klucz": "milky_way", "etykieta": "pas", "typ": "bool", "dom": False,
              "start": True, "glowna": True},
@@ -625,9 +796,8 @@ def grupy():
              "min": 20, "max": 150, "krok": 1, "dom": 62, "spr": "milky_way.fov"},
         ]},
         {"tytul": "Tarcze i pliki",
-         "opis": "Puste pole = zostaje to, co karta instaluje. `assets` przesuwa wszystkie "
-                 "domyślne ścieżki naraz; na tej stronie jest ustawione na "
-                 "/local/sun-cycle/ i dlatego nie ma go w YAML-u.",
+         "opis": "`assets` przesuwa wszystkie domyślne ścieżki naraz. Ta strona ma je "
+                 "ustawione na /local/sun-cycle/, dlatego nie ma ich w YAML-u.",
          "pola": [
             {"klucz": "sun_image_width", "etykieta": "słońce: szer. (%)", "typ": "zakres",
              "min": 3, "max": 25, "krok": 0.5, "dom": 10.5},
@@ -643,6 +813,19 @@ def grupy():
              "hint": "sun.sun"},
         ]},
     ]
+    brak = []
+    for g in tabela:
+        for pole in g["pola"]:
+            if pole["klucz"] in POMOC:
+                pole["pomoc"] = POMOC[pole["klucz"]]
+            else:
+                brak.append(pole["klucz"])
+    if brak:
+        sys.exit("kontrolki bez dymka: " + ", ".join(brak))
+    nadmiar = set(POMOC) - {pole["klucz"] for g in tabela for pole in g["pola"]}
+    if nadmiar:
+        sys.exit("dymki bez kontrolki: " + ", ".join(sorted(nadmiar)))
+    return tabela
 
 
 def main() -> int:
