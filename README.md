@@ -1,5 +1,11 @@
 # Sun Cycle Background
 
+![The whole card at night: sky, star field, Milky Way, moon and the planets that were up](docs/hero.png)
+
+*One frame, everything switched on: 2026-08-30 just after midnight at 53.5° N.
+The band, the moon's phase and its place are computed for that clock; Saturn,
+Neptune, Uranus and Pluto are where the Sol integration said they were.*
+
 ![Full day cycle — 24 h in 4 s](docs/cycle.gif)
 
 *The sun on its real arc: night, dawn, noon, sunset (52° N, early September):*
@@ -35,11 +41,12 @@ moon**, and keeps it gently moving around the clock:
   was up for 14), and it is drawn as the actual crescent / half / gibbous
   shape, bright limb facing the sun.
 - **The Milky Way** — a photograph of the band, put back on the sky where it
-  was taken and rotating with it through the night. Nothing about the band can
+  belongs and rotating with it through the night. Nothing about the band can
   be computed — it is resolved star clouds and torn dust, and every analytic
-  model of it comes out a grey smear — so the light is a picture of yours and
-  the card only decides where each piece of it belongs. See
-  [The Milky Way](#the-milky-way).
+  model of it comes out a grey smear — so the light is a photograph and the
+  card only decides where each piece of it goes. Two ship with the card: one
+  framed shot of the galactic centre, and an all-sky panorama that always has
+  half the band above the horizon. See [The Milky Way](#the-milky-way).
 - **Planets** — the other eight bodies of the solar system stand where they
   really stand. The [Sol](https://github.com/okkine/HA-Sol) integration
   publishes `sensor.sol_<body>_azimuth` and `_elevation`; the card puts each
@@ -671,6 +678,14 @@ python3 tools/render_walk_doc.py            # -> docs/planets-walk.gif
 
 It records the page as video (Playwright captures at a constant frame rate, so
 the walk is sampled evenly) and converts it with ffmpeg.
+
+The picture at the very top is one card at one instant with everything on,
+built from the `sensor.sol_*` snapshot in `demo/sol_snapshot.json` and the clock
+frozen to the moment it was taken:
+
+```bash
+python3 tools/render_hero_doc.py            # -> docs/hero.png
+```
 
 The strip in [The Milky Way](#the-milky-way) is the same card again, with the
 clock frozen at an instant when the band is actually up — a picture taken at

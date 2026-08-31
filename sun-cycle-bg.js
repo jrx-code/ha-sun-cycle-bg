@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.11.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.11.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -990,16 +990,24 @@
     const alt0 = okno.min, alt1 = okno.max;
     const px = new Float64Array((U + 1) * (V + 1)), py = new Float64Array((U + 1) * (V + 1));
     const su = new Float64Array(px.length), sv = new Float64Array(px.length);
+    // The window occupies 6..92 % of the frame's height, so a mesh that stops
+    // at the window stops in mid-sky: the panorama came out as a rectangle with
+    // a hard edge along the top and a second one, at about a fifth opacity,
+    // across the bottom. The mesh runs past the window at both ends instead,
+    // just far enough to reach both edges of the frame (0 % of the height sits
+    // at 92/86 of the window, 100 % at -8/86 of it).
+    const S0 = -0.10, S1 = 1.08;
     for (let j = 0; j <= V; j++) {
       for (let i = 0; i <= U; i++) {
         const n = j * (U + 1) + i;
         const az = az0 + (az1 - az0) * (i / U);
-        const alt = alt1 + (alt0 - alt1) * (j / V);
+        const s = S1 + (S0 - S1) * (j / V);
+        const alt = alt0 + (alt1 - alt0) * s;
         const gl = altazToGal(alt, az, jd, lat, lon);
         su[n] = (((180 - gl.l) % 360 + 360) % 360) / 360 * iw;
         sv[n] = (0.5 - gl.b / 180) * ih;
         px[n] = (az - az0) / (az1 - az0) * W;
-        py[n] = (92 - (alt - alt0) / (alt1 - alt0) * 86) / 100 * H;
+        py[n] = (92 - s * 86) / 100 * H;
       }
     }
     let quads = 0;
@@ -1011,16 +1019,21 @@
         // picture, so it is also drawn with the image shifted a width either
         // way; the clip keeps whichever copy lands inside. Skipping these was
         // the first cut, and it left a notch down the seam.
+        //
+        // The unwrap works on a copy of the four corners. It used to write back
+        // into su[], which every neighbouring quad also reads: one seam quad
+        // shifted its neighbours a whole width off the picture, they sampled
+        // nothing, and a blank column dropped down the frame beside the seam.
         let szew = 0;
-        if (Math.abs(su[b2] - su[a]) > iw * 0.5 || Math.abs(su[c2] - su[a]) > iw * 0.5) {
+        const ua = su[a]; let ub = su[b2], uc = su[c2];
+        if (Math.abs(ub - ua) > iw * 0.5 || Math.abs(uc - ua) > iw * 0.5) {
           szew = 1;
-          for (const n of [b2, c2, c2 + 1]) {
-            if (su[n] - su[a] > iw * 0.5) su[n] -= iw;
-            else if (su[n] - su[a] < -iw * 0.5) su[n] += iw;
-          }
+          const naOkrag = (u) => (u - ua > iw * 0.5 ? u - iw
+                                : u - ua < -iw * 0.5 ? u + iw : u);
+          ub = naOkrag(ub); uc = naOkrag(uc);
         }
-        const dx1 = su[b2] - su[a], dy1 = sv[b2] - sv[a];
-        const dx2 = su[c2] - su[a], dy2 = sv[c2] - sv[a];
+        const dx1 = ub - ua, dy1 = sv[b2] - sv[a];
+        const dx2 = uc - ua, dy2 = sv[c2] - sv[a];
         const det = dx1 * dy2 - dy1 * dx2;
         if (!isFinite(det) || Math.abs(det) < 1e-6) continue;
         const ex1 = px[b2] - px[a], ey1 = py[b2] - py[a];
@@ -1045,8 +1058,8 @@
         q = roz(px[c2], py[c2]); gb.lineTo(q[0], q[1]);
         gb.closePath(); gb.clip();
         gb.transform(m11, m12, m21, m22,
-                     px[a] - (m11 * su[a] + m21 * sv[a]),
-                     py[a] - (m12 * su[a] + m22 * sv[a]));
+                     px[a] - (m11 * ua + m21 * sv[a]),
+                     py[a] - (m12 * ua + m22 * sv[a]));
         gb.drawImage(img, 0, 0);
         if (szew) { gb.drawImage(img, -iw, 0); gb.drawImage(img, iw, 0); }
         gb.restore();
