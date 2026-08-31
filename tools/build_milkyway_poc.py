@@ -119,7 +119,12 @@ STRONA = r"""<meta charset="utf-8">
 
   <section class="card">
     <h2>Na żywo</h2>
-    <p>Kadr w proporcji panelu salonu (16:5), okno azymutu jak na panelu (50°–310°).
+    <p>Zdjęcie trafia na niebo jako <em>zdjęcie</em>: siatka 32×22 czworokątów, każdy
+    z własnym przekształceniem policzonym z prawdziwej geometrii nieba, próbkowanie w pełnej
+    rozdzielczości źródła, składanie przez <strong>dodawanie światła</strong> — ciemny pył
+    nie dokłada nic, obłok dokłada swoją jasność. Wygaszanie przy horyzoncie idzie
+    gradientem po całym kadrze. Kadr w proporcji panelu salonu (16:5), okno azymutu jak
+    na panelu (50°–310°).
     Suwak godziny przesuwa noc z __DATA__ na __DATA_DO__ — widać, jak pas obraca się
     wraz z niebem: wieczorem centrum Galaktyki nisko na południu, nad ranem pas staje
     dęba na wschodzie.</p>
@@ -134,9 +139,9 @@ STRONA = r"""<meta charset="utf-8">
       <label class="pole"><b>Godzina — <span id="v-godz"></span></b>
         <input type="range" id="godz" min="18" max="30" step="0.25" value="23.5"></label>
       <label class="pole"><b>Jasność pasa — <span id="v-jasn"></span></b>
-        <input type="range" id="jasn" min="0" max="2.5" step="0.05" value="1.8"></label>
+        <input type="range" id="jasn" min="0" max="1" step="0.02" value="0.9"></label>
       <label class="pole"><b>Rozmycie — <span id="v-rozm"></span> px</b>
-        <input type="range" id="rozm" min="0" max="16" step="1" value="1"></label>
+        <input type="range" id="rozm" min="0" max="8" step="1" value="0"></label>
       <label class="pole"><b>Noc</b>
         <select id="noc">__NOCE__</select></label>
       <label class="pole"><b>Okno wysokości</b>
@@ -146,17 +151,9 @@ STRONA = r"""<meta charset="utf-8">
         </select></label>
       <label class="pole"><b>Źródło światła</b>
         <select id="zrodlo">
-          <option value="kadr">zdjęcie z Pobranych (kadr __KADR_FOV__°)</option>
+          <option value="kadr">własne zdjęcie (kadr)</option>
           <option value="panorama">panorama całego nieba (ESO)</option>
         </select></label>
-      <label class="pole"><b>Szczegół — <span id="v-szcz"></span></b>
-        <input type="range" id="szcz" min="1" max="5" step="1" value="2"></label>
-      <label class="pole"><b>Nasycenie — <span id="v-nas"></span></b>
-        <input type="range" id="nas" min="0" max="1" step="0.05" value="0.45"></label>
-      <label class="pole"><b>Próg czerni — <span id="v-prog"></span></b>
-        <input type="range" id="prog" min="0" max="0.4" step="0.01" value="0.05"></label>
-      <label class="pole"><b>Gamma — <span id="v-gam"></span></b>
-        <input type="range" id="gam" min="0.4" max="2.5" step="0.1" value="0.7"></label>
       <label class="pole"><b>Wysokość Słońca — <span id="v-slonce"></span>°</b>
         <input type="range" id="slonce" min="-25" max="6" step="0.5" value="-18"></label>
     </div>
@@ -167,8 +164,8 @@ STRONA = r"""<meta charset="utf-8">
         <input type="range" id="kb" min="-25" max="25" step="1" value="__KADR_B__"></label>
       <label class="pole"><b>Kadr: obrót — <span id="v-krot"></span>°</b>
         <input type="range" id="krot" min="-90" max="90" step="1" value="__KADR_ROT__"></label>
-      <label class="pole"><b>Kadr: pole widzenia — <span id="v-kfov"></span>°</b>
-        <input type="range" id="kfov" min="30" max="120" step="1" value="__KADR_FOV__"></label>
+      <label class="pole"><b>Kadr: rozpiętość — <span id="v-kfov"></span>° nieba</b>
+        <input type="range" id="kfov" min="30" max="150" step="2" value="110"></label>
     </div>
     <div class="ptaszki">
       <label><input type="checkbox" id="gwiazdy" checked> pole gwiazd karty</label>
@@ -192,8 +189,14 @@ STRONA = r"""<meta charset="utf-8">
     godzina po godzinie. Z __LAT__° N centrum nigdy nie wznosi się wyżej niż ~7° — pas jest
     tu przede wszystkim letnim Łabędziem nad głową, a nie Strzelcem nad horyzontem.</p>
     <table id="tabela"></table>
+    <p class="note" style="margin-top:12px"><strong>O rozpiętości:</strong> prawdziwe pole
+    widzenia tego zdjęcia to <strong>62°</strong> — tyle wyszło z dopasowania. Suwak stoi
+    domyślnie na 110°, czyli zdjęcie jest <em>powiększone</em> prawie dwukrotnie, bo w skali
+    1:1 zajmuje na panelu mały placek nisko nad horyzontem. To świadomy zabieg plastyczny,
+    nie astronomia: kierunek, obrót i pora są prawdziwe, sama skala nie. Ustaw 62°, jeśli
+    ma się zgadzać co do stopnia.</p>
     <p class="note" style="margin-top:12px"><strong>Kadr kontra panorama:</strong> zdjęcie
-    z Pobranych obejmuje 62° nieba wokół centrum Galaktyki — czyli najładniejszy kawałek pasa,
+    obejmuje jeden rejon nieba wokół centrum Galaktyki — czyli najładniejszy kawałek pasa,
     ale tylko ten jeden. Poza jego krawędzią nie ma nic i widać to, gdy pas powinien biec
     dalej przez kadr. Panorama ESO pokrywa całe niebo, kosztem tego, że jest przeciętną
     z całej sfery, a nie ostrym zdjęciem jednego rejonu. Przełącznik „źródło światła" pokazuje
@@ -298,134 +301,150 @@ __KARTA__
      wypadaja tam, gdzie maja katalogowe wspolrzedne (LMC 34,5 przy 12,9 dla
      pustego nieba obok).
          x = ((180 - l) mod 360) / 360 * W        y = (0,5 - b / 180) * H  */
-  /* Dwa zrodla swiatla pasa, oba fotograficzne:
-       - panorama calego nieba (rownoprostokatna, wspolrzedne galaktyczne),
-       - kadr ze zdjecia z przezroczystym tlem, wklejony w to miejsce nieba,
-         w ktorym naprawde zostal zrobiony (rzut gnomoniczny wokol l0, b0). */
+  /* Zdjecie trafia na niebo jako ZDJECIE, nie jako chmura probek.
+
+     Pierwsza wersja liczyla kazdy piksel kadru osobno, w buforze dwa razy
+     mniejszym, i jeszcze rozmywala wynik — z ostrej fotografii zostawala
+     ziarnista breja. Teraz obraz rysuje przegladarka: siatka 24 x 16 czworokatow,
+     kazdy z wlasnym przeksztalceniem afinicznym policzonym z prawdziwej
+     geometrii nieba. Geometria jest wiec dokladna co do oczka siatki, a
+     probkowanie robi GPU w pelnej rozdzielczosci zrodla.
+
+     Skladanie jest dodawanie ('lighter'), bo tak dziala swiatlo: ciemny pyl na
+     zdjeciu nie dokłada nic, oblok dokłada swoja jasnosc. Malowanie alfa robilo
+     z tego szara mgle. */
   const OBRAZY = {};
   function wczytaj(nazwa, url, gotowe) {
     const im = new Image();
     im.crossOrigin = 'anonymous';
-    im.onload = () => {
-      const c = document.createElement('canvas');
-      c.width = im.naturalWidth; c.height = im.naturalHeight;
-      const g = c.getContext('2d', { willReadFrequently: true });
-      g.drawImage(im, 0, 0);
-      OBRAZY[nazwa] = { w: c.width, h: c.height,
-                        dane: g.getImageData(0, 0, c.width, c.height).data };
-      gotowe();
-    };
+    im.onload = () => { OBRAZY[nazwa] = im; gotowe(); };
     im.onerror = () => { OBRAZY[nazwa] = 'blad'; gotowe(); };
     im.src = url;
   }
   function wczytajTeksture(gotowe) {
     let zostalo = 2;
     const krok = () => { if (--zostalo === 0) gotowe(); };
-    wczytaj('panorama', TEX_URL, krok);
     wczytaj('kadr', KADR_URL, krok);
+    wczytaj('panorama', TEX_URL, krok);
   }
 
-  /* Panorama jest rownoprostokatna we wspolrzednych galaktycznych. Mapowanie
-     zmierzone na samym pliku, nie zalozone: probki w znanych miejscach dajaz
-     centrum Galaktyki 140, antycentrum 62, biegun 9, a oba Obloki Magellana
-     wypadaja tam, gdzie maja katalogowe wspolrzedne (LMC 34,5 przy 12,9 dla
-     pustego nieba obok).
-         x = ((180 - l) mod 360) / 360 * W        y = (0,5 - b / 180) * H  */
-  function probkaPanoramy(T, l, b, out) {
-    const x = Math.round((((180 - l) % 360 + 360) % 360) / 360 * T.w) % T.w;
-    const y = Math.max(0, Math.min(T.h - 1, Math.round((0.5 - b / 180) * T.h)));
-    const i = (y * T.w + x) * 4;
-    out[0] = T.dane[i]; out[1] = T.dane[i + 1]; out[2] = T.dane[i + 2];
-    out[3] = 255;
-    return true;
-  }
-
-  /* Kadr: odwrotny rzut gnomoniczny. Punkt nieba (l, b) wraca na piksel
-     zdjecia; poza kadrem — nic. Kamera patrzy w (l0, b0), obrocona o rot,
-     o poziomym polu widzenia fov. */
-  function probkaKadru(T, l, b, out, k) {
-    const lr = l * D2R, br = b * D2R;
-    const ux = Math.cos(br) * Math.cos(lr), uy = Math.cos(br) * Math.sin(lr), uz = Math.sin(br);
-    const cl = Math.cos(k.l * D2R), sl = Math.sin(k.l * D2R);
-    const cb = Math.cos(k.b * D2R), sb = Math.sin(k.b * D2R);
-    const x1 = ux * cl + uy * sl, y1 = -ux * sl + uy * cl, z1 = uz;
-    const vx = x1 * cb + z1 * sb, vz = -x1 * sb + z1 * cb, vy = y1;
-    if (vx <= 0.05) return false;                 // za plecami kamery
-    const Xr = vy / vx, Yr = -vz / vx;
-    const c = Math.cos(k.rot * D2R), s = Math.sin(k.rot * D2R);
-    const X = Xr * c + Yr * s, Y = -Xr * s + Yr * c;
+  /* Piksel zdjecia -> punkt nieba. Kadr jest rzutem gnomonicznym wokol
+     (l0, b0), obroconym o rot, o poziomym polu widzenia fov — parametry
+     dopasowane korelacja do panoramy ESO, nie na oko. */
+  function kadrDoGal(u, v, k) {
     const t = Math.tan(k.fov * D2R / 2);
-    const px = (X / t + 1) / 2 * T.w;
-    const py = (Y / (t * T.h / T.w) + 1) / 2 * T.h;
-    if (px < 0 || py < 0 || px >= T.w || py >= T.h) return false;
-    const i = ((py | 0) * T.w + (px | 0)) * 4;
-    out[0] = T.dane[i]; out[1] = T.dane[i + 1]; out[2] = T.dane[i + 2];
-    out[3] = T.dane[i + 3];                       // przezroczyste tlo zdjecia
-    return true;
+    const X = (u * 2 - 1) * t, Y = (v * 2 - 1) * t * k.ar;
+    const c = Math.cos(k.rot * D2R), s = Math.sin(k.rot * D2R);
+    const Xr = X * c - Y * s, Yr = X * s + Y * c;
+    let vx = 1, vy = Xr, vz = -Yr;
+    const n = Math.hypot(vx, vy, vz); vx /= n; vy /= n; vz /= n;
+    const cb = Math.cos(k.b * D2R), sb = Math.sin(k.b * D2R);
+    const cl = Math.cos(k.l * D2R), sl = Math.sin(k.l * D2R);
+    const x1 = vx * cb - vz * sb, z1 = vx * sb + vz * cb, y1 = vy;
+    const x2 = x1 * cl - y1 * sl, y2 = x1 * sl + y1 * cl;
+    return { l: ((Math.atan2(y2, x2) * R2D) % 360 + 360) % 360,
+             b: Math.asin(Math.max(-1, Math.min(1, z1))) * R2D };
+  }
+  function galDoEq2(l, b) {
+    const lr = l * D2R, br = b * D2R;
+    const rp = NGP_RA * D2R, dp = NGP_DEC * D2R, ln = L_NCP * D2R;
+    const dec = Math.asin(Math.max(-1, Math.min(1,
+      Math.sin(dp) * Math.sin(br) + Math.cos(dp) * Math.cos(br) * Math.cos(ln - lr))));
+    const y = Math.cos(br) * Math.sin(ln - lr);
+    const x = Math.cos(dp) * Math.sin(br) - Math.sin(dp) * Math.cos(br) * Math.cos(ln - lr);
+    return { ra: (((Math.atan2(y, x) + rp) * R2D) % 360 + 360) % 360, dec: dec * R2D };
   }
 
-  /* Rysunek: maly bufor (kadr / SKALA), rozciagany przez przegladarke. Pas
-     nie ma ostrych krawedzi, wiec nikt tego nie zobaczy, a praca spada
-     kilkunastokrotnie. */
-  const SKALA = 2;   // domyslny dzielnik rozdzielczosci bufora
+  const SIATKA_U = 32, SIATKA_V = 22;
+  let BUFOR = null;                      // pomocniczy kadr, zeby szwy nie sumowaly sie dwa razy
   function rysujPas(cv, godz, opcje, pr, okno) {
     const r = cv.getBoundingClientRect();
     const W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
-    const sk = opcje.skala || SKALA;
-    const w = Math.max(2, Math.round(W / sk)), h = Math.max(2, Math.round(H / sk));
-    cv.width = w; cv.height = h;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     const g = cv.getContext('2d');
-    const T = OBRAZY[opcje.zrodlo === 'kadr' ? 'kadr' : 'panorama'];
-    if (!T || T === 'blad') return { ms: 0, pikseli: 0, brak: true };
-    const kadr = opcje.zrodlo === 'kadr';
-    const kam = { l: opcje.kl, b: opcje.kb, rot: opcje.krot, fov: opcje.kfov };
-    const img = g.createImageData(w, h);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    const obraz = OBRAZY[opcje.zrodlo === 'panorama' ? 'panorama' : 'kadr'];
+    if (!obraz || obraz === 'blad') return { ms: 0, oczek: 0, brak: true };
     const J = julian(czas(godz));
-    const o = OKNA[okno], zakres = o.max - o.min;
     const start = performance.now();
-    const rgb = [0, 0, 0, 255];
-    let ile = 0;
-    for (let py = 0; py < h; py++) {
-      const yp = (py + 0.5) / h * 100;
-      const alt = o.min + (92 - yp) / 86 * zakres;
-      // ekstynkcja: przy horyzoncie patrzymy przez kilkanascie razy grubsza
-      // warstwe powietrza, wiec pas gasnie, zanim go dotknie
-      const ekst = Math.max(0, Math.min(1, (alt - 1) / 12));
-      for (let px = 0; px < w; px++) {
-        const i = (py * w + px) * 4;
-        if (alt <= -1 || ekst <= 0) { img.data[i + 3] = 0; continue; }
-        const az = AZ0 + (px + 0.5) / w * (AZ1 - AZ0);
-        const eq = altazDoEq(alt, az, J);
-        const gl = eqDoGal(eq.ra, eq.dec);
-        const jest = kadr ? probkaKadru(T, gl.l, gl.b, rgb, kam)
-                          : probkaPanoramy(T, gl.l, gl.b, rgb);
-        if (!jest) { img.data[i + 3] = 0; continue; }
-        // Jasnosc panoramy jest fotograficzna: rozciagnieta, zeby bylo widac
-        // pyl. Na tle nieba panelu trzeba ja sciagnac krzywa gamma, inaczej
-        // czarne niebo miedzy gwiazdami swieci szarym mlekiem.
-        const l0 = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-        // Kadr ma juz zdjete tlo, wiec jego kanal alfa JEST krzywa tonalna —
-        // przepuszczanie go jeszcze raz przez prog czerni dusilo obraz dwa
-        // razy i pas rozpadal sie na plamy. Panorama tla nie ma, wiec prog
-        // liczy sie tam z luminancji.
-        const baza = kadr ? rgb[3] / 255
-                          : Math.max(0, l0 - opcje.prog) / (1 - opcje.prog);
-        const a = Math.pow(baza, opcje.gamma) * opcje.jasnosc * ekst;
-        if (a <= 0.004) { img.data[i + 3] = 0; continue; }
-        // barwa ze zdjecia, ale przyciagnieta do bieli: goly oko widzi pas
-        // prawie bezbarwnie, a mocno kolorowy pas na panelu wyglada jak druk
-        const s = opcje.nasycenie;
-        const sr = l0 * 255;
-        img.data[i] = rgb[0] * s + sr * (1 - s);
-        img.data[i + 1] = rgb[1] * s + sr * (1 - s);
-        img.data[i + 2] = rgb[2] * s + sr * (1 - s);
-        img.data[i + 3] = Math.max(0, Math.min(255, Math.round(a * 255)));
-        ile++;
+    const kam = { l: opcje.kl, b: opcje.kb, rot: opcje.krot, fov: opcje.kfov,
+                  ar: obraz.naturalHeight / obraz.naturalWidth };
+    const panorama = opcje.zrodlo === 'panorama';
+
+    if (!BUFOR) BUFOR = document.createElement('canvas');
+    BUFOR.width = cv.width; BUFOR.height = cv.height;
+    const gb = BUFOR.getContext('2d');
+    gb.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gb.clearRect(0, 0, W, H);
+
+    // wezly siatki: rog zrodla -> niebo -> kadr
+    const N = (SIATKA_U + 1) * (SIATKA_V + 1);
+    const wx = new Float64Array(N), wy = new Float64Array(N);
+    const ok = new Uint8Array(N);
+    for (let j = 0; j <= SIATKA_V; j++) {
+      for (let i = 0; i <= SIATKA_U; i++) {
+        const n = j * (SIATKA_U + 1) + i;
+        const u = i / SIATKA_U, v = j / SIATKA_V;
+        const gl = panorama
+          ? { l: ((180 - u * 360) % 360 + 360) % 360, b: (0.5 - v) * 180 }
+          : kadrDoGal(u, v, kam);
+        const eq = galDoEq2(gl.l, gl.b);
+        const p = altaz(eq.ra, eq.dec, J);
+        const q = pr(p.alt, p.az);
+        wx[n] = q.x / 100 * W; wy[n] = q.y / 100 * H;
+        ok[n] = p.alt > -6 ? 1 : 0;
       }
     }
-    g.putImageData(img, 0, 0);
+
+    // Warp idzie do bufora zwyklym rysowaniem, nie dodawaniem: przy dodawaniu
+    // zakladka na szwach sumuje sie dwa razy i siatka wychodzi na wierzch
+    // jasnymi kreskami. Dodawanie jest raz, na koncu, dla calego kadru.
+    const sw = obraz.naturalWidth / SIATKA_U, sh = obraz.naturalHeight / SIATKA_V;
+    let oczek = 0;
+    for (let j = 0; j < SIATKA_V; j++) {
+      for (let i = 0; i < SIATKA_U; i++) {
+        const a = j * (SIATKA_U + 1) + i, b2 = a + 1, c2 = a + SIATKA_U + 1;
+        if (!ok[a] || !ok[b2] || !ok[c2]) continue;
+        const szer = Math.max(Math.abs(wx[b2] - wx[a]), Math.abs(wx[c2] - wx[a]));
+        if (szer > W * 0.4) continue;        // oczko rozerwane przez zawijanie azymutu
+        const m11 = (wx[b2] - wx[a]) / sw, m12 = (wy[b2] - wy[a]) / sw;
+        const m21 = (wx[c2] - wx[a]) / sh, m22 = (wy[c2] - wy[a]) / sh;
+        gb.save();
+        gb.transform(m11, m12, m21, m22, wx[a], wy[a]);
+        gb.translate(-i * sw, -j * sh);
+        gb.beginPath();
+        gb.rect(i * sw, j * sh, sw + 0.6, sh + 0.6);
+        gb.clip();
+        gb.drawImage(obraz, 0, 0);
+        gb.restore();
+        oczek++;
+      }
+    }
+
+    // Ekstynkcja: pas gasnie przy horyzoncie, bo patrzymy przez kilkanascie
+    // razy grubsza warstwe powietrza. Gradientem po calym kadrze, nie na
+    // oczko — na oczko wychodzily schodki.
+    const o = OKNA[okno], zakres = o.max - o.min;
+    const yDla = (a) => (92 - (a - o.min) / zakres * 86) / 100 * H;
+    const grad = gb.createLinearGradient(0, yDla(16), 0, yDla(0));
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.45)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    gb.globalCompositeOperation = 'destination-in';
+    gb.fillStyle = grad;
+    gb.fillRect(0, 0, W, H);
+    gb.globalCompositeOperation = 'source-over';
+
+    // jedno dodanie swiatla na kadr
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = Math.max(0, Math.min(1, opcje.jasnosc));
+    g.drawImage(BUFOR, 0, 0, BUFOR.width, BUFOR.height, 0, 0, W, H);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
     cv.style.filter = opcje.rozmycie > 0 ? `blur(${opcje.rozmycie}px)` : '';
-    return { ms: performance.now() - start, pikseli: ile };
+    return { ms: performance.now() - start, oczek };
   }
 
   /* --- scena: warstwy karty + pas --- */
@@ -476,7 +495,7 @@ __KARTA__
   /* --- panel --- */
   const G = document.getElementById('glowna');
   const el = {};
-  ['godz','jasn','rozm','szcz','nas','prog','gam','zrodlo','kl','kb','krot','kfov',
+  ['godz','jasn','rozm','zrodlo','kl','kb','krot','kfov',
    'noc','okno','slonce','gwiazdy','planety','tylkopas']
     .forEach(id => el[id] = document.getElementById(id));
   const fmt = (v, n) => Number(v).toFixed(n).replace('.', ',');
@@ -487,8 +506,7 @@ __KARTA__
   function opcje() {
     BAZA = el.noc.value;
     return { jasnosc: +el.jasn.value, rozmycie: +el.rozm.value,
-             nasycenie: +el.nas.value, prog: +el.prog.value, gamma: +el.gam.value,
-             skala: +el.szcz.value, zrodlo: el.zrodlo.value,
+             zrodlo: el.zrodlo.value,
              kl: +el.kl.value, kb: +el.kb.value, krot: +el.krot.value, kfov: +el.kfov.value,
              okno: el.okno.value, slonce: +el.slonce.value,
              gwiazdy: el.gwiazdy.checked, planety: el.planety.checked,
@@ -501,7 +519,6 @@ __KARTA__
     document.getElementById('v-godz').textContent = godzTekst(godz);
     document.getElementById('v-jasn').textContent = fmt(o.jasnosc, 2);
     document.getElementById('v-rozm').textContent = o.rozmycie;
-    document.getElementById('v-szcz').textContent = o.skala + '× mniejszy bufor';
     document.getElementById('v-kl').textContent = o.kl;
     document.getElementById('v-kb').textContent = o.kb;
     document.getElementById('v-krot').textContent = o.krot;
@@ -509,9 +526,6 @@ __KARTA__
     // suwaki kadru maja sens tylko dla kadru
     document.getElementById('panel-kadr').style.display =
       o.zrodlo === 'kadr' ? '' : 'none';
-    document.getElementById('v-nas').textContent = fmt(o.nasycenie, 2);
-    document.getElementById('v-prog').textContent = fmt(o.prog, 2);
-    document.getElementById('v-gam').textContent = fmt(o.gamma, 1);
     document.getElementById('v-slonce').textContent = fmt(o.slonce, 1);
     const pad = (s) => (s + '                ').slice(0, 16);
     document.getElementById('przepis').textContent = [
@@ -522,16 +536,12 @@ __KARTA__
       pad('zrodlo') + el.zrodlo.options[el.zrodlo.selectedIndex].text,
       pad('kadr l/b') + o.kl + ' / ' + o.kb + ' stopni',
       pad('kadr obrot') + o.krot + ' stopni, pole ' + o.kfov + ' stopni',
-      pad('szczegol') + o.skala + '× mniejszy bufor',
-      pad('nasycenie') + fmt(o.nasycenie, 2),
-      pad('prog czerni') + fmt(o.prog, 2),
-      pad('gamma') + fmt(o.gamma, 1),
       pad('noc') + el.noc.options[el.noc.selectedIndex].text,
       pad('okno') + el.okno.options[el.okno.selectedIndex].text,
       pad('slonce') + fmt(o.slonce, 1) + ' stopni',
       pad('gwiazdy') + (o.gwiazdy ? 'tak' : 'nie'),
       pad('planety') + (o.planety ? 'tak' : 'nie'),
-      pad('rysowanie') + fmt(ostatni.ms, 1) + ' ms, ' + ostatni.pikseli + ' pikseli pasa',
+      pad('rysowanie') + fmt(ostatni.ms, 1) + ' ms, ' + ostatni.oczek + ' oczek siatki',
     ].join('\n');
   }
   Object.values(el).forEach(e => e.addEventListener('input', () => { rysuj(); przerysujGodziny(); }));
@@ -599,10 +609,11 @@ META = {
     "grupa": "Tło (sun-cycle-bg)",
     "status": "aktualne",
     "kolejnosc": 106,
-    "opis": ("Prawdziwe zdjęcie nieba (panorama ESO/S. Brunier, CC BY 4.0) rzutowane dla "
-             "53,5182° N i 14,4570° E: każdy piksel kadru wraca na niebo i czyta próbkę "
-             "z panoramy. Panel na żywo: godzina nocy, jasność, próg czerni, gamma, "
-             "nasycenie, rozmycie, wysokość Słońca, "
+    "opis": ("Własne zdjęcie Drogi Mlecznej ze zdjętym tłem, wklejone w to miejsce nieba, "
+             "w którym naprawdę zostało zrobione (dopasowane korelacją do panoramy ESO: "
+             "l = −5°, b = −2°, obrót −24°). Warp siatkowy w pełnej rozdzielczości, "
+             "dodawanie światła. Panel na żywo: godzina nocy, jasność, powiększenie kadru, "
+             "położenie i obrót, wysokość Słońca, "
              "z gwiazdami i planetami karty pod spodem. Niżej ta sama noc w czterech "
              "godzinach i tabela: wysokość centrum Galaktyki i najwyższego punktu pasa "
              "godzina po godzinie. Jasność pasa jest modelem (grubość, spadek od centrum, "
