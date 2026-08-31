@@ -159,6 +159,9 @@ out.push(['GWIAZDY readStarConfig({})', window.sunCycleBg.readStarConfig({})]);
 // 1.5.0: planets. The card ships no artwork, and a missing file would log a
 // console error the runner counts, so every body points at a 1x1 transparent
 // PNG — the geometry under test is the placement, not the picture.
+// biale, kryjace 8x8 — scena Drogi Mlecznej sprawdza, czy warp cokolwiek
+// namalowal, wiec przezroczysty piksel by tego nie pokazal
+const BIALY = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFklEQVR4nGP8////fwY8gAmf5PBRAAAbbgQMid1tCwAAAABJRU5ErkJggg==';
 const PIKSEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const SOL = (() => {
   // one planet high in the south, one low in the east, one below the horizon,
@@ -254,6 +257,12 @@ out.push(['PLANETY dzien day:true (podloga 0.35)', scenaPlanet(49, { day: true }
 out.push(['PLANETY dzien day:0.15', scenaPlanet(49, { day: 0.15 })]);
 out.push(['PLANETY zmierzch day:true elev=-4', scenaPlanet(-4, { day: true })]);
 out.push(['PLANETY szereg diameters', scenaPlanet(-16.18, { scale: 'diameters', size: 1.2 })]);
+// 1.9.0: planety gasna razem z niebem, nie na prog
+out.push(['PLANETY noc -16 (niebo 1.0)', scenaPlanet(-16.18)]);
+out.push(['PLANETY zmierzch -9 (niebo 0.65)', scenaPlanet(-9)]);
+out.push(['PLANETY zmierzch -4 (niebo 0.2)', scenaPlanet(-4)]);
+out.push(['PLANETY slonce 0 (niebo 0)', scenaPlanet(0)]);
+out.push(['PLANETY slonce +20 (niebo 0)', scenaPlanet(20)]);
 out.push(['PLANETY punkt: dzien +20', scenaPlanet(20, { day: 0.35 })]);
 out.push(['PLANETY punkt: swit +2', scenaPlanet(2, { day: 0.35 })]);
 out.push(['PLANETY punkt wylaczony', scenaPlanet(20, { day: 0.35, points: false })]);
@@ -263,11 +272,61 @@ out.push(['PLANETY chod przez polnoc', scenaChod(120, true)]);
 out.push(['PLANETY wylaczone', planety(buduj(-16.18, 321.56, { planets: false }))]);
 out.push(['PLANETY readPlanetConfig(true)', window.sunCycleBg.readPlanetConfig(true)]);
 
+// 1.9.0: Droga Mleczna — jeden kanwowy kadr pod gwiazdami. Zdjecie podstawiam
+// jednopikselowe, bo tu chodzi o geometrie i wpiecie warstwy, nie o obrazek.
+function mleczna(elev, extra) {
+  const cont = buduj(elev, 321.56, { stars: { count: 20 }, moon: false,
+    milky_way: Object.assign({ image: BIALY, l: -5, b: -2, rot: -24, fov: 110 }, extra || {}) });
+  const mw = cont.querySelector('.sun-cycle-milky');
+  if (!mw) return { warstwa: false };
+  return {
+    warstwa: true,
+    poBackdropie: !!(mw.previousElementSibling &&
+      mw.previousElementSibling.tagName === 'HUI-VIEW-BACKGROUND'),
+    przedGwiazdami: !!(mw.nextElementSibling &&
+      mw.nextElementSibling.classList.contains('sun-cycle-stars')),
+    krycie: mw.style.opacity,
+    kanwa: mw.width + 'x' + mw.height,
+  };
+}
+out.push(['MLECZNA noc -16', mleczna(-16.18)]);
+out.push(['MLECZNA zmierzch -4', mleczna(-4)]);
+out.push(['MLECZNA dzien +20', mleczna(20)]);
+out.push(['MLECZNA bez obrazka', mleczna(-16.18, { image: '' })]);
+out.push(['MLECZNA panorama (equirect)', mleczna(-16.18, { projection: 'equirect' })]);
+out.push(['MLECZNA readMilkyConfig', window.sunCycleBg.readMilkyConfig(
+  { image: '/local/x.webp', l: -5, b: -2, rot: -24, fov: 110 })]);
+// geometria: centrum Galaktyki i Oblok Magellana wg katalogu
+out.push(['MLECZNA galToEq(0,0)', window.sunCycleBg.galToEq(0, 0)]);
+out.push(['MLECZNA galToEq(280.5,-32.9) = LMC', window.sunCycleBg.galToEq(280.5, -32.9)]);
+
 const contNoc = buduj(-16.18, 321.56, OBRAZKI);
 out.push(['OBRAZKI noc  przed wczytaniem pliku', czytaj(contNoc, -16.18, 321.56)]);
 setTimeout(() => {
   out.push(['OBRAZKI noc  po wczytaniu pliku', czytaj(contNoc, -16.18, 321.56)]);
-  document.title = JSON.stringify(out);
-  window.__smokeDone = true;
+  // Kanwa dostaje rozmiar dopiero, gdy obrazek sie wczyta — a `buduj()`
+  // czysci #host, wiec scena Drogi Mlecznej musi byc ostatnia i przez chwile
+  // zostac w dokumencie, inaczej rysuje w kontenerze bez wymiarow.
+  const contMleczna = buduj(-16.18, 321.56, { stars: { count: 20 }, moon: false,
+    milky_way: { image: BIALY, l: -5, b: -2, rot: -24, fov: 110 } });
+  setTimeout(() => {
+    const mw = contMleczna.querySelector('.sun-cycle-milky');
+    out.push(['MLECZNA po wczytaniu pliku', {
+      kanwa: mw.width + 'x' + mw.height,
+      kadr: mw.clientWidth + 'x' + mw.clientHeight,
+      poBackdropie: mw.previousElementSibling.tagName === 'HUI-VIEW-BACKGROUND',
+      przedGwiazdami: !!(mw.nextElementSibling &&
+        mw.nextElementSibling.classList.contains('sun-cycle-stars')),
+      // ile pikseli kanwy dostalo swiatlo — zero znaczy, ze warp nic nie narysowal
+      zapisane: (() => {
+        const g = mw.getContext('2d');
+        const d = g.getImageData(0, 0, mw.width, mw.height).data;
+        let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 2) n++;
+        return n;
+      })(),
+    }]);
+    document.title = JSON.stringify(out);
+    window.__smokeDone = true;
+  }, 300);
 }, 400);
 </script>

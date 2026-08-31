@@ -34,6 +34,12 @@ moon**, and keeps it gently moving around the clock:
   mirroring the sun (on a given night it may be up for 8 hours while the sun
   was up for 14), and it is drawn as the actual crescent / half / gibbous
   shape, bright limb facing the sun.
+- **The Milky Way** — a photograph of the band, put back on the sky where it
+  was taken and rotating with it through the night. Nothing about the band can
+  be computed — it is resolved star clouds and torn dust, and every analytic
+  model of it comes out a grey smear — so the light is a picture of yours and
+  the card only decides where each piece of it belongs. See
+  [The Milky Way](#the-milky-way).
 - **Planets** — the other eight bodies of the solar system stand where they
   really stand. The [Sol](https://github.com/okkine/HA-Sol) integration
   publishes `sensor.sol_<body>_azimuth` and `_elevation`; the card puts each
@@ -198,6 +204,20 @@ stars:                  # `stars: false` disables the built-in field
     radiant: null       # [x%, y%] = a shower, every streak runs from there
     pair: 0             # chance (0–1) of a second streak right after
   iss: false            # true = the real ISS from sensor.iss_visual_pass_0..4
+# A photograph of the Milky Way. None ships with the card.
+# milky_way:
+#   image: /local/sun-cycle/milky-way.webp
+#   projection: frame     # frame = one photograph, put back where it was taken
+#                         # (needs l/b/rot/fov); equirect = an all-sky panorama
+#                         # in galactic coordinates, 2:1
+#   l: -5                 # centre of the frame, galactic degrees
+#   b: -2
+#   rot: -24              # roll of the frame
+#   fov: 110              # how much sky it spans across
+#   strength: 0.9         # 0–1 at its brightest; it fades with the sky
+#   horizon: 22           # elevation where the horizon fade begins
+#   mesh: 32              # quads across; more is smoother and slower
+
 planets: false          # true = the eight from the Sol integration, or:
 # planets:
 #   entities: sensor.sol_   # prefix, + <body>_azimuth / _elevation
@@ -215,8 +235,9 @@ planets: false          # true = the eight from the Sol integration, or:
 #   labels: false         # name under the disc
 #   glow: 0.5             # 0–2; a hair of halo so it is not a sticker
 #   min_elevation: 0      # fade out below this altitude
-#   day: false            # daylight opacity floor: false = invisible by day,
-#                         # true = 0.35, or a number 0-1 of your own
+#   day: false            # daylight opacity floor. By default there is none:
+#                         # planets fade with the sky and are gone once the sun
+#                         # is up. true = keep 0.35, or a number of your own
 
 # Optional artwork for the two discs — see below. Left out, both stay drawn.
 sun_image: null         # e.g. /local/sun-cycle/sun.png
@@ -341,7 +362,15 @@ walk is written in pixels, so the discs sit on the old geometry until the next
 repaint — at most half a minute, since `sun.sun` keeps ticking. The star field
 has always behaved the same way.
 
-**By day they are points, not discs.** A planet in a blue sky is a point of
+**They fade with the sky, and in sunlight they are gone.** Not on a threshold —
+a planet drowns as the sky brightens, so the fade *is* the sky: the card uses
+the same curve the star field rides, interpolated from the palette (full below
+−18°, 0.65 at −9°, 0.2 at −4°, nothing from the moment the sun touches the
+horizon). Measured on a live instance: 0.93 at −16°, 0.38 at −6°, 0.10 at −2°,
+0 at +25°. `day` sets a floor under that for anyone who wants planets on a
+daylit dashboard; it is 0 by default.
+
+**Through dusk they are points, not discs.** A planet in a blue sky is a point of
 light — that is what Venus looks like when you find it in daylight — and a
 photographic disc pasted on a noon sky reads as a sticker no matter how faint
 it is made. So as the sun climbs past the horizon the picture crossfades into a
@@ -350,13 +379,6 @@ are measured off the shipped cutouts (`tints:` overrides them), and the dot is
 sized by naked-eye brightness whatever ladder the discs use, so Venus is the
 biggest dot even when Jupiter is the biggest disc. `points: false` keeps the
 picture around the clock.
-
-**When they are visible.** They ride the same curve as the stars: fully out in
-daylight, fully in once the sun is about 9° below the horizon. `day` raises the
-daylight end of that curve instead of switching it off — `day: true` leaves 35 %
-opacity at noon, `day: 0.15` a whisper, and the fade in and out of dusk still
-happens on top of it. Planets in a blue sky are not astronomy, but a dashboard
-that only shows them after dark shows them to nobody.
 
 **How big.** Not to scale, and it cannot be: Jupiter is at best 45 arcseconds
 across, which on a 1280 px view spanning 260° of azimuth is a twentieth of a
@@ -404,6 +426,63 @@ night side stays dark instead of showing sky through it, while the rings stay
 translucent. The script prints — and writes to `discs.json` — the
 `[diameter, cx, cy]` triples; the card ships those numbers for these files as
 its defaults, and `discs:` overrides them for your own.
+
+## The Milky Way
+
+```yaml
+milky_way:
+  image: /local/sun-cycle/milky-way.webp
+  l: -5
+  b: -2
+  rot: -24
+  fov: 110
+```
+
+**Why a photograph.** The band is resolved star clouds and torn dust lanes. A
+brightness function smooth in galactic longitude and latitude — which is what
+an analytic model is — produces a grey smear and nothing else, however the
+numbers are tuned. That was tried first and thrown out. So the light comes from
+a picture, and the card supplies only the half that *can* be computed: where
+each piece of that picture belongs at this minute, from this latitude.
+
+**Two kinds of picture.** `projection: frame` (the default) takes one
+photograph and puts it back where it was taken — sharp, but present only while
+that part of the sky is up; a shot of the galactic centre from 53° N is a
+summer-evening thing, and at noon it is fifty degrees under the Earth and the
+layer is legitimately empty. `projection: equirect` takes an all-sky panorama,
+2:1, in galactic coordinates: always something overhead, at the cost of being
+an average of the whole sphere rather than one good exposure.
+
+**Placing a frame.** `l`, `b`, `rot` and `fov` say where the camera pointed,
+how it was rolled and how much sky it covered. Guessing them by eye is
+unnecessary: correlate the photograph against an all-sky panorama and read the
+numbers off the best fit — that is how the values in this README were obtained
+(r = 0.64, and at those numbers the band angle, the bright core and the Great
+Rift line up). A larger `fov` than the true one enlarges the picture on the
+sky: a liberty with the scale, and nothing else, but say so if you take it.
+
+**How it is drawn.** A mesh of quads, each with an affine transform computed
+from the real geometry, sampled by the browser at full source resolution, added
+to the view with `lighter` — dark dust adds nothing, a star cloud adds its
+brightness. It is repainted only when the card repaints anyway (about every
+half minute) and costs about 9 ms; between repaints it is a static bitmap the
+compositor moves. Painting it per pixel or with alpha instead of light was
+tried, and both turn a sharp photograph into speckle.
+
+**Preparing the file.** It wants a transparent sky and edges that fade on an
+ellipse — a rectangle of stars ending mid-sky is the one thing that gives the
+trick away. `tools/cutout_milkyway.py` does both:
+
+```bash
+python3 tools/cutout_milkyway.py ~/Pictures/milky-way.jpg
+```
+
+Alpha comes from brightness (the band has no silhouette to cut around), with
+the floor measured off the frame rather than chosen — the 35th percentile,
+which on a typical shot sits just above the brightest empty corner. The fade to
+nothing ends *inside* the file, not on its border: a star is a point and is
+still visible at five per cent opacity, so a fade that reaches zero only at the
+edge leaves the last row of stars drawing a straight line.
 
 ## Flares, meteors and the ISS
 
@@ -564,7 +643,9 @@ The card renders nothing itself. On every sun update it:
 2. maintains three absolutely-positioned layers in `hui-view-container`,
    above the background and below every card: the star field right after
    `hui-view-background` (the farthest thing in the sky), then — inserted
-   before `hui-view` — the ray fan, the planets and the moon (an inline SVG
+   before `hui-view` — the ray fan, the planets and the moon; the Milky Way,
+   when configured, is a canvas below the star field (nothing on the view is
+   farther away), (an inline SVG
    whose lit path is the real terminator). Flares live inside the star field;
    a meteor or the ISS is one extra element appended to it for the length of
    its flight; the planet layer is one `<img>` per body, moved and faded, and

@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.8.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.9.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -230,6 +230,8 @@
     // travel inside the layer, scoped to a per-instance class — see starCSS()
     '.sun-cycle-stars{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
     'transition:opacity 2s linear;}' +
+    '.sun-cycle-milky{position:absolute;inset:0;width:100%;height:100%;' +
+    'pointer-events:none;transition:opacity 2s linear;}' +
     // the planet layer carries its own rules inside it — see PLANET_CSS
     '.sun-cycle-planets{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
     'transition:opacity 2s linear;}';
@@ -771,12 +773,13 @@
         : Object.assign({}, PLANET_SCALE, c.scale || {}),
       names: Object.assign({}, PLANET_NAMES, c.names || {}),
       tints: Object.assign({}, PLANET_TINTS, c.tints || {}),
-      // By day a planet is not a disc — it is a point of light, and that is
-      // exactly what Venus looks like when you find it in a blue sky. So the
-      // picture crossfades to a dot as the sun climbs. `points: false` keeps
-      // the picture around the clock; a number sets the dot's base diameter
-      // in px (it is scaled per body by naked-eye brightness, so Venus is the
-      // biggest dot whatever ladder the discs are drawn on).
+      // Through dusk a planet stops being a disc long before it disappears —
+      // it becomes a point of light, which is exactly what Venus looks like
+      // when you find it in a still-blue sky. So the picture crossfades to a
+      // dot as the sun climbs, and the dot then fades out with the sky.
+      // `points: false` keeps the picture; a number sets the dot's base
+      // diameter in px (scaled per body by naked-eye brightness, so Venus is
+      // the biggest dot whatever ladder the discs are drawn on).
       points: c.points === false ? 0 : num(c.points, 3.5),
       size: num(c.size, 2.4),
       glow: num(c.glow, 0.5),
@@ -785,6 +788,7 @@
       // true = the default floor, or a number 0-1 of your own. A planet at
       // full opacity against a noon sky reads as a sticker, but at nothing it
       // is a feature you only ever see in the dark.
+      // 0 = the sky decides alone (the default, and the honest one)
       day: c.day === true ? 0.35 : (c.day === false || c.day === undefined
         ? 0 : clamp(num(c.day, 0), 0, 1)),
       min_elevation: num(c.min_elevation, 0),
@@ -849,6 +853,178 @@
     };
   }
 
+  // --- the Milky Way ------------------------------------------------------
+  /* A photograph of the band, put back on the sky where it was taken.
+
+     Nothing about the band can be computed: it is resolved star clouds and
+     torn dust, and every analytic model of it comes out a grey smear. So the
+     light is a picture of yours, and the card only decides where each piece of
+     it belongs — galactic coordinates to equatorial to horizontal, the same
+     chain the moon already runs on.
+
+     The picture is drawn as a picture: a mesh of quads, each with an affine
+     transform from the real geometry, sampled by the browser at full
+     resolution. Compositing is additive, because that is what light does —
+     dark dust adds nothing, a star cloud adds its brightness. Per-pixel
+     resampling and alpha painting were both tried and both turn a sharp
+     photograph into speckle.
+
+     The file wants a transparent sky and edges that fade on an ellipse; the
+     repository's tools/cutout_milkyway.py makes one from a photograph. */
+  const NGP_RA = 192.85948, NGP_DEC = 27.12825, L_NCP = 122.93192;
+
+  function galToEq(l, b) {
+    const lr = l * D2R, br = b * D2R;
+    const rp = NGP_RA * D2R, dp = NGP_DEC * D2R, ln = L_NCP * D2R;
+    const dec = Math.asin(clamp(Math.sin(dp) * Math.sin(br) +
+      Math.cos(dp) * Math.cos(br) * Math.cos(ln - lr), -1, 1));
+    const y = Math.cos(br) * Math.sin(ln - lr);
+    const x = Math.cos(dp) * Math.sin(br) - Math.sin(dp) * Math.cos(br) * Math.cos(ln - lr);
+    return { ra: (((Math.atan2(y, x) + rp) * R2D) % 360 + 360) % 360, dec: dec * R2D };
+  }
+
+  /* Pixel of the photograph -> point of the sky. The frame is a gnomonic view
+     centred on (l, b), rolled by `rot`, spanning `fov` degrees across. */
+  function frameToGal(u, v, k) {
+    const t = Math.tan(k.fov * D2R / 2);
+    const X = (u * 2 - 1) * t, Y = (v * 2 - 1) * t * k.ar;
+    const c = Math.cos(k.rot * D2R), sn = Math.sin(k.rot * D2R);
+    const Xr = X * c - Y * sn, Yr = X * sn + Y * c;
+    let vx = 1, vy = Xr, vz = -Yr;
+    const n = Math.hypot(vx, vy, vz); vx /= n; vy /= n; vz /= n;
+    const cb = Math.cos(k.b * D2R), sb = Math.sin(k.b * D2R);
+    const cl = Math.cos(k.l * D2R), sl = Math.sin(k.l * D2R);
+    const x1 = vx * cb - vz * sb, z1 = vx * sb + vz * cb, y1 = vy;
+    return {
+      l: ((Math.atan2(x1 * sl + y1 * cl, x1 * cl - y1 * sl) * R2D) % 360 + 360) % 360,
+      b: Math.asin(clamp(z1, -1, 1)) * R2D,
+    };
+  }
+
+  function readMilkyConfig(m) {
+    if (!m || typeof m !== 'object' || !m.image) return null;
+    const num = (v, def) => (isFinite(v) ? Number(v) : def);
+    return {
+      image: String(m.image),
+      // 'frame'    — a photograph of one part of the sky, put back where it
+      //              was taken (gnomonic, needs l/b/rot/fov). Sharp, but only
+      //              there: when that region is under the Earth the layer is
+      //              empty, which for a picture of the galactic centre means
+      //              most of the night for half the year.
+      // 'equirect' — an all-sky panorama in galactic coordinates, 2:1. Always
+      //              has something up, at the cost of being an average of the
+      //              whole sphere rather than one good exposure.
+      projection: m.projection === 'equirect' ? 'equirect' : 'frame',
+      l: num(m.l, 0), b: num(m.b, 0), rot: num(m.rot, 0), fov: num(m.fov, 110),
+      strength: clamp(num(m.strength, 0.9), 0, 1),
+      horizon: num(m.horizon, 22),
+      mesh: Math.round(clamp(num(m.mesh, 32), 6, 64)),
+    };
+  }
+
+  function buildMilky(cfg) {
+    const layer = document.createElement('canvas');
+    layer.className = 'sun-cycle-milky';
+    const im = new Image();
+    im.decoding = 'async';
+    im.onload = () => { layer._img = im; layer._draw && layer._draw(); };
+    im.src = cfg.image;
+    return layer;
+  }
+
+  /* One repaint of the band. Runs when the card repaints anyway — every half
+     minute or so — and nothing at all in between. */
+  function drawMilky(layer, cfg, proj, jd, lat, lon, alpha, okno) {
+    const img = layer._img;
+    const W = layer.clientWidth, H = layer.clientHeight;
+    if (!img || !W || !H) return 0;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    layer.width = Math.round(W * dpr); layer.height = Math.round(H * dpr);
+    const g = layer.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+    if (alpha <= 0.004) return 0;
+
+    let buf = layer._buf;
+    if (!buf) { buf = layer._buf = document.createElement('canvas'); }
+    buf.width = layer.width; buf.height = layer.height;
+    const gb = buf.getContext('2d');
+    gb.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gb.clearRect(0, 0, W, H);
+
+    const rownik = cfg.projection === 'equirect';
+    // an all-sky panorama needs a taller mesh: it spans 180 degrees of
+    // declination against the frame's few dozen
+    const U = rownik ? cfg.mesh * 2 : cfg.mesh;
+    const V = Math.max(4, Math.round(U * 0.55));
+    const kam = { l: cfg.l, b: cfg.b, rot: cfg.rot, fov: cfg.fov,
+                  ar: img.naturalHeight / img.naturalWidth };
+    const N = (U + 1) * (V + 1);
+    const wx = new Float64Array(N), wy = new Float64Array(N);
+    const ok = new Uint8Array(N);
+    for (let j = 0; j <= V; j++) {
+      for (let i = 0; i <= U; i++) {
+        const n = j * (U + 1) + i;
+        const u = i / U, v = j / V;
+        const gl = rownik
+          ? { l: ((180 - u * 360) % 360 + 360) % 360, b: (0.5 - v) * 180 }
+          : frameToGal(u, v, kam);
+        const eq = galToEq(gl.l, gl.b);
+        const pos = altaz(eq.ra, eq.dec, jd, lat, lon);
+        const q = proj(pos.alt, pos.az);
+        wx[n] = q.x / 100 * W; wy[n] = q.y / 100 * H;
+        // culling only far under the horizon: the fade has taken the opacity
+        // to nothing long before, so no boundary can show. Culling at the
+        // horizon itself drew a polygonal edge across the view.
+        ok[n] = pos.alt > -25 ? 1 : 0;
+      }
+    }
+
+    const sw = img.naturalWidth / U, sh = img.naturalHeight / V;
+    let quads = 0;
+    for (let j = 0; j < V; j++) {
+      for (let i = 0; i < U; i++) {
+        const a = j * (U + 1) + i, b2 = a + 1, c2 = a + U + 1;
+        if (!ok[a] || !ok[b2] || !ok[c2]) continue;
+        // a quad torn by the azimuth wrap or stretched over the zenith would
+        // smear the picture across the frame
+        if (Math.max(Math.abs(wx[b2] - wx[a]), Math.abs(wx[c2] - wx[a])) > W * 0.4) continue;
+        if (Math.max(Math.abs(wy[b2] - wy[a]), Math.abs(wy[c2] - wy[a])) > H * 0.6) continue;
+        gb.save();
+        gb.transform((wx[b2] - wx[a]) / sw, (wy[b2] - wy[a]) / sw,
+                     (wx[c2] - wx[a]) / sh, (wy[c2] - wy[a]) / sh, wx[a], wy[a]);
+        gb.translate(-i * sw, -j * sh);
+        gb.beginPath();
+        gb.rect(i * sw, j * sh, sw + 0.6, sh + 0.6);   // 0.6 px of overlap: no seams
+        gb.clip();
+        gb.drawImage(img, 0, 0);
+        gb.restore();
+        quads++;
+      }
+    }
+
+    // Extinction: near the horizon we look through many times the air, so the
+    // band dims and is gone before it gets there. A gradient over the frame,
+    // ending at the bottom edge — ending it at 0 deg left the band stopping in
+    // mid-air, a sixth of the frame above the bottom.
+    const yFor = (alt) => (92 - (alt - okno.min) / (okno.max - okno.min) * 86) / 100 * H;
+    const grad = gb.createLinearGradient(0, yFor(cfg.horizon), 0, H);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(0.45, 'rgba(0,0,0,0.72)');
+    grad.addColorStop(0.78, 'rgba(0,0,0,0.28)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    gb.globalCompositeOperation = 'destination-in';
+    gb.fillStyle = grad;
+    gb.fillRect(0, 0, W, H);
+
+    g.globalCompositeOperation = 'lighter';
+    g.globalAlpha = alpha;
+    g.drawImage(buf, 0, 0, buf.width, buf.height, 0, 0, W, H);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    return quads;
+  }
+
   /* One <div><img></div> per body, built once and then only moved. */
   function buildPlanets(cfg) {
     const layer = document.createElement('div');
@@ -894,9 +1070,15 @@
      stars are, so they ride the same curve. */
   function placePlanets(layer, cfg, states, proj, sunElev) {
     if (!states) return;
-    // deep enough into the night for a planet to hold its own against the sky,
-    // never below the daylight floor
-    const night = lerp(cfg.day, 1, clamp((-sunElev - 1) / 8, 0, 1));
+    // A planet is not visible in daylight, and it does not switch off at some
+    // threshold either: it drowns as the sky brightens. So the fade is the sky
+    // itself — the very curve the star field rides, interpolated from the
+    // palette table (1 below -18 deg, 0.65 at -9, 0.2 at -4, nothing from the
+    // moment the sun touches the horizon). `day` only raises the floor for
+    // anyone who wants planets on a daylit dashboard anyway; it is 0 by
+    // default, which is what the sky does.
+    const niebo = paletteFor(sunElev, false).stars;
+    const night = Math.max(cfg.day, niebo);
     // The glide is written in pixels, so the layer has to have a size. It is
     // inset:0 in the view container, so this is the frame. A detached or
     // zero-sized layer (a page that never laid it out) falls back to placing
@@ -1076,6 +1258,7 @@
       this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
       this._showMoon = this._cfg.moon !== false;
       this._planetCfg = readPlanetConfig(this._cfg.planets);
+      this._milkyCfg = readMilkyConfig(this._cfg.milky_way);
       this._warmDusk = this._cfg.twilight_palette === true;
 
       // --- optional artwork for the two discs ----------------------------
@@ -1409,6 +1592,25 @@
         }
       }
 
+      // --- the Milky Way ---------------------------------------------------
+      // Farther than anything else on the view, so it goes in first, right on
+      // top of the painted backdrop and under the star field.
+      if (this._milkyCfg && isFinite(this._lat) && isFinite(this._lon)) {
+        let mw = c.querySelector('.sun-cycle-milky');
+        if (!mw) {
+          mw = buildMilky(this._milkyCfg);
+          if (bg && bg.parentNode === c) c.insertBefore(mw, bg.nextSibling);
+          else this._before(c, mw);
+        }
+        const cfg = this._milkyCfg;
+        // the band drowns in the sky exactly as the stars do
+        const moc = cfg.strength * p.stars;
+        mw.style.opacity = moc > 0.004 ? '1' : '0';
+        mw._draw = () => drawMilky(mw, cfg, (alt, az) => this._project(alt, az),
+          julian(new Date()), this._lat, this._lon, moc, { min: -6, max: 54 });
+        mw._draw();
+      }
+
       // --- planets ---------------------------------------------------------
       if (this._planetCfg) {
         let pl = c.querySelector('.sun-cycle-planets');
@@ -1435,8 +1637,13 @@
           const H = Math.round(r.height) || window.innerHeight;
           stars = buildStars(this._starCfg, W, H, (alt, az) => this._project(alt, az));
           // right above the painted backdrop, under the sun, the rays and the
-          // moon — stars are the farthest thing in the sky
-          if (bg && bg.parentNode === c) c.insertBefore(stars, bg.nextSibling);
+          // moon. The one thing farther than the stars is the Milky Way, so
+          // the field goes after it when it is there — anchoring both to the
+          // backdrop alone put whichever was built second underneath.
+          const mw = c.querySelector('.sun-cycle-milky');
+          const kotwica = (mw && mw.parentNode === c) ? mw
+            : ((bg && bg.parentNode === c) ? bg : null);
+          if (kotwica) c.insertBefore(stars, kotwica.nextSibling);
           else this._before(c, stars);
         }
         stars.style.opacity = p.stars.toFixed(2);
@@ -1460,6 +1667,7 @@
 
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
+                       buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,
                        PLANET_NAMES };
