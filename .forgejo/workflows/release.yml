@@ -19,7 +19,23 @@ jobs:
   release:
     runs-on: shell
     steps:
-      - uses: actions/checkout@v4
+      # Not actions/checkout@v4. Using an action means the runner first fetches
+      # it from github.com, and from this runner that fetch fails about as often
+      # as it works ("could not read Username for 'https://github.com'"), which
+      # turns a green pipeline into a coin toss for reasons that have nothing to
+      # do with the card. The repository is a few commands away on the Forgejo
+      # instance that started the job, with the token the job already carries.
+      - name: check out this commit from Forgejo
+        run: |
+          git init -q .
+          git remote | grep -qx origin ||
+            git remote add origin "${{ github.server_url }}/${{ github.repository }}.git"
+          git -c http.extraHeader="Authorization: basic $(printf '%s' \
+                'x-access-token:${{ secrets.GITHUB_TOKEN }}' | base64 -w0)" \
+              fetch -q --depth 1 origin "${{ github.sha }}"
+          git checkout -qf FETCH_HEAD
+          git clean -qxdff          # last run's leftovers are not this commit
+          git log -1 --oneline
 
       - name: dist/ is what tools/make_dist.py produces
         run: |
