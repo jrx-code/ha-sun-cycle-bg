@@ -162,7 +162,11 @@ worse than no editor:
   YAML can express survive opening and using the editor.
 
 At the bottom of the form is a **YAML** panel: everything the controls add up
-to, as text, with a Copy button. A storage-mode dashboard is written by the
+to, as text, with a Copy button, in either of the two shapes the same card
+needs. *card editor* is the config on its own, which is what HA's own code
+editor takes. *dashboard file* is the same card as an item of a view's `cards:`
+list, indented to sit in a dashboard kept in YAML — a flat block pasted there
+does not parse, which is the whole reason there are two. A storage-mode dashboard is written by the
 form itself and needs none of it; a dashboard kept in YAML needs exactly this,
 and HA's own code editor swaps the form out to show it. The panel stays in step
 with the controls above it, and includes the keys the editor does not model, so

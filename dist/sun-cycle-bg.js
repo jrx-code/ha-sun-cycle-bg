@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.14.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.14.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -2173,6 +2173,13 @@
       'color:var(--primary-color,#03a9f4);background:transparent;' +
       'border:1px solid var(--divider-color,rgba(255,255,255,.2));}' +
     '.scb-kopiuj:hover{border-color:var(--primary-color,#03a9f4);}' +
+    '.scb-wariant{font:inherit;font-size:12.5px;padding:4px 10px;cursor:pointer;' +
+      'color:var(--secondary-text-color);background:transparent;' +
+      'border:1px solid var(--divider-color,rgba(255,255,255,.2));}' +
+    '.scb-wariant:first-of-type{border-radius:6px 0 0 6px;}' +
+    '.scb-wariant:last-of-type{border-radius:0 6px 6px 0;border-left:none;}' +
+    '.scb-wariant[aria-pressed=true]{color:var(--primary-color,#03a9f4);' +
+      'border-color:var(--primary-color,#03a9f4);background:rgba(3,169,244,.10);}' +
     '.scb-stan{font-size:12px;color:var(--secondary-text-color);}' +
     '.scb-blad{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;' +
       'background:rgba(224,87,74,.15);border:1px solid var(--error-color,#e0574a);}';
@@ -2444,15 +2451,38 @@
       yd.appendChild(ys);
       const yc = document.createElement('div');
       yc.className = 'scb-cialo';
-      yc.appendChild(edytorOpis('Everything the controls above add up to, ready to paste '
-        + 'into a dashboard kept in YAML. A storage-mode dashboard is written by the form '
-        + 'itself and needs none of this.'));
+      const opisYaml = edytorOpis('');
+      yc.appendChild(opisYaml);
       const pasek = document.createElement('div');
       pasek.className = 'scb-pasek';
+      // Two shapes of the same thing. The card's own code editor wants the
+      // config flat; a dashboard kept in a YAML file wants it as an item of
+      // the view's `cards:` list, and a flat block pasted there does not parse.
+      const wybor = document.createElement('span');
+      const wKarte = document.createElement('button');
+      wKarte.type = 'button'; wKarte.className = 'scb-wariant'; wKarte.textContent = 'card editor';
+      const wPlik = document.createElement('button');
+      wPlik.type = 'button'; wPlik.className = 'scb-wariant'; wPlik.textContent = 'dashboard file';
+      wybor.appendChild(wKarte); wybor.appendChild(wPlik);
+      pasek.appendChild(wybor);
+      const ustawWariant = (w) => {
+        this._wariant = w;
+        wKarte.setAttribute('aria-pressed', String(w === 'karta'));
+        wPlik.setAttribute('aria-pressed', String(w === 'plik'));
+        opisYaml.textContent = w === 'karta'
+          ? 'The card on its own, for the code editor behind "Show code editor". A '
+            + 'storage-mode dashboard is written by the form itself and needs none of this.'
+          : 'The same card as an item of a view\'s cards: list, indented for a dashboard '
+            + 'kept in a YAML file. Paste it under the cards: of the view you want painted — '
+            + 'the card paints the view it stands in, so every view needs its own.';
+        this._odswiezYaml();
+      };
       const przycisk = document.createElement('button');
       przycisk.type = 'button';
       przycisk.className = 'scb-kopiuj';
       przycisk.textContent = 'Copy';
+      wKarte.addEventListener('click', () => ustawWariant('karta'));
+      wPlik.addEventListener('click', () => ustawWariant('plik'));
       const stan = document.createElement('span');
       stan.className = 'scb-stan';
       pasek.appendChild(przycisk);
@@ -2479,11 +2509,19 @@
       });
       r.appendChild(yd);
       this._pre = pre;
-      this._odswiezYaml();
+      ustawWariant(this._wariant || 'karta');
     }
 
     _odswiezYaml() {
-      if (this._pre) this._pre.textContent = edytorYaml(this._cfg);
+      if (!this._pre) return;
+      const tekst = edytorYaml(this._cfg);
+      if (this._wariant !== 'plik') { this._pre.textContent = tekst; return; }
+      // six spaces is where a card sits in views: -> cards: -> - ; the rest of
+      // the block lines up under the dash
+      const linie = tekst.split('\n');
+      this._pre.textContent = linie
+        .map((l, i) => (i === 0 ? '      - ' : '        ') + l)
+        .join('\n');
     }
 
     _przelacz(g, wl) {
