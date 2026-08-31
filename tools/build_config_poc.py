@@ -78,8 +78,24 @@ STRONA = r"""<meta charset="utf-8">
             margin-top:8px; font-variant-numeric:tabular-nums; }
   .odczyt b { color:var(--text); font-weight:650; }
 
-  fieldset { border:1px solid var(--line); border-radius:12px; margin:0 0 12px; padding:10px 12px 12px; }
-  legend { padding:0 6px; font-size:13px; font-weight:650; color:var(--accent); letter-spacing:.02em; }
+  /* Grupy się zwijają, bo z podpowiedzią pod każdą kontrolką panel ma cztery
+     ekrany, a przy suwaku trzeba widzieć podgląd. Otwarta jest zawsze jedna:
+     wtedy panel mieści się w oknie i nie trzeba niczego domykać ręcznie. */
+  .grupa { border:1px solid var(--line); border-radius:12px; margin:0 0 10px; }
+  .grupa[open] { background:rgba(255,255,255,.02); }
+  .grupa > summary { list-style:none; cursor:pointer; display:flex; align-items:center;
+    gap:9px; padding:10px 12px; font-size:13px; font-weight:650; color:var(--accent);
+    letter-spacing:.02em; user-select:none; }
+  .grupa > summary::-webkit-details-marker { display:none; }
+  .grupa > summary::before { content:"›"; display:inline-block; width:9px; font-size:15px;
+    color:var(--muted); transition:transform .15s ease; }
+  .grupa[open] > summary::before { transform:rotate(90deg); }
+  .grupa > summary:hover { color:var(--text); }
+  .tytul-grupy { flex:1; }
+  .odznaka { font-weight:500; font-size:11px; color:var(--muted); white-space:nowrap; }
+  .odznaka.zmieniona { color:var(--accent); }
+  .cialo { padding:0 12px 10px; }
+  details[data-wylaczone] .cialo .row { opacity:.38; pointer-events:none; }
   .row { display:grid; grid-template-columns:150px minmax(0,1fr) 54px; gap:8px 8px;
          align-items:center; margin:6px 0 2px; font-size:13.5px; }
   .row label { color:var(--muted); }
@@ -89,7 +105,6 @@ STRONA = r"""<meta charset="utf-8">
     border:1px solid var(--line); border-radius:7px; padding:5px 8px; font:inherit; font-size:13px; }
   .row select { background:#0a0c10; color:var(--text); border:1px solid var(--line);
     border-radius:7px; padding:4px 8px; font:inherit; font-size:13px; }
-  fieldset[data-wylaczone] .row:not(.glowna) { opacity:.38; pointer-events:none; }
 
   /* Podpowiedź pod kontrolką, przez całą szerokość wiersza. Dymek na (?) był
      gorszy z dwóch powodów: trzeba na niego najechać, żeby się w ogóle
@@ -286,20 +301,58 @@ __KARTA__
 
   /* ---------- budowa panelu ---------- */
   const POLA = {};
+  function polePrzelacznika(id) {
+    const el = document.createElement("input");
+    el.type = "checkbox"; el.className = "przel"; el.id = id;
+    // przełącznik siedzi w <summary>, a klik w summary zwija grupę — bez tego
+    // nie dałoby się go ruszyć bez zamykania tego, co się właśnie ustawia
+    el.addEventListener("click", (e) => e.stopPropagation());
+    return el;
+  }
+
   function zbudujPanel() {
     const host = $("kontrolki");
-    for (const g of GRUPY) {
-      const fs = document.createElement("fieldset");
-      fs.innerHTML = `<legend>${g.tytul}</legend>`;
-      if (g.opis) {
-        const p = document.createElement("p");
-        p.className = "note"; p.style.margin = "0 0 6px"; p.textContent = g.opis;
-        fs.appendChild(p);
+    GRUPY.forEach((g, nr) => {
+      const det = document.createElement("details");
+      det.className = "grupa";
+      if (nr === 0) det.open = true;
+      const sum = document.createElement("summary");
+      sum.innerHTML = `<span class="tytul-grupy">${g.tytul}</span>` +
+                      `<span class="odznaka"></span>`;
+      det.appendChild(sum);
+      g._det = det;
+      g._odznaka = sum.querySelector(".odznaka");
+
+      // główny przełącznik grupy idzie do nagłówka: włączenie planet czy pasa
+      // nie wymaga wtedy rozwijania niczego
+      const glowne = g.pola.find((x) => x.glowna);
+      if (glowne) {
+        const id = "f_" + glowne.klucz.replace(/[^a-z0-9]/gi, "_");
+        sum.appendChild(polePrzelacznika(id));
+        POLA[glowne.klucz] = { def: glowne, el: null, id, det };
       }
+
+      const cialo = document.createElement("div");
+      cialo.className = "cialo";
+      det.appendChild(cialo);
+      if (glowne && glowne.pomoc) {
+        const pod = document.createElement("p");
+        pod.className = "podpowiedz"; pod.style.margin = "0 0 8px";
+        pod.textContent = glowne.pomoc;
+        cialo.appendChild(pod);
+      }
+      if (g.opis) {
+        const pod = document.createElement("p");
+        pod.className = "podpowiedz"; pod.style.margin = "0 0 8px";
+        pod.textContent = g.opis;
+        cialo.appendChild(pod);
+      }
+
       for (const p of g.pola) {
+        if (p.glowna) continue;
         const id = "f_" + p.klucz.replace(/[^a-z0-9]/gi, "_");
         const row = document.createElement("div");
-        row.className = "row" + (p.glowna ? " glowna" : "");
+        row.className = "row";
         if (p.typ === "bool") {
           // etykieta z lewej, przełącznik w tej samej kolumnie co liczby, więc
           // wszystkie wartości w panelu stoją w jednej pionowej linii
@@ -323,12 +376,17 @@ __KARTA__
           pod.className = "podpowiedz"; pod.textContent = p.pomoc;
           row.appendChild(pod);
         }
-        fs.appendChild(row);
-        POLA[p.klucz] = { def: p, el: null, id, fs };
+        cialo.appendChild(row);
+        POLA[p.klucz] = { def: p, el: null, id, det };
       }
-      host.appendChild(fs);
-      g._fs = fs;
-    }
+
+      // jedna otwarta naraz — inaczej zwijanie nie skraca panelu
+      det.addEventListener("toggle", () => {
+        if (!det.open) return;
+        for (const inna of GRUPY) if (inna !== g && inna._det) inna._det.open = false;
+      });
+      host.appendChild(det);
+    });
     for (const k of Object.keys(POLA)) POLA[k].el = $(POLA[k].id);
     zeruj();
   }
@@ -450,7 +508,18 @@ __KARTA__
 
   function zastosuj() {
     for (const g of GRUPY) {
-      if (g.wlacznik) g._fs.toggleAttribute("data-wylaczone", !czytaj(g.wlacznik));
+      if (g.wlacznik) g._det.toggleAttribute("data-wylaczone", !czytaj(g.wlacznik));
+      // na zwiniętym nagłówku widać, czy w środku coś ruszone — inaczej trzeba
+      // rozwinąć osiem grup, żeby znaleźć jedną zmianę
+      if (g._odznaka) {
+        const wyl = g.wlacznik && !czytaj(g.wlacznik);
+        const ile = g.pola.filter((p) => !p.glowna &&
+          !(p.typ === "tekst" && czytaj(p.klucz) === "") &&
+          !rowneDomyslnej(czytaj(p.klucz), p.dom)).length;
+        g._odznaka.textContent = wyl ? "wyłączone"
+          : ile ? ile + (ile === 1 ? " zmiana" : ile < 5 ? " zmiany" : " zmian") : "";
+        g._odznaka.classList.toggle("zmieniona", !wyl && ile > 0);
+      }
     }
     for (const k of Object.keys(POLA)) {
       const n = $(POLA[k].id + "_n");
