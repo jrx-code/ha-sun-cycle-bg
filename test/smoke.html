@@ -28,7 +28,10 @@ function buduj(elev, azim, extra) {
   cont.appendChild(document.createElement('hui-view'));
   document.getElementById('host').appendChild(cont);
   const card = document.createElement('sun-cycle-bg-card');
-  card.setConfig(Object.assign({ stars: { count: 40 } }, extra || {}));
+  // `assets:` przesuwa wszystkie domyslne sciezki naraz — tu na repo, bo
+  // domyslnie karta bierze obrazki z /hacsfiles/, ktorego pod file:// nie ma
+  card.setConfig(Object.assign({ assets: '../demo/assets/', stars: { count: 40 } },
+                               extra || {}));
   cont.insertBefore(card, cont.firstChild);
   card.hass = {
     states: { 'sun.sun': { attributes: { elevation: elev, azimuth: azim } } },

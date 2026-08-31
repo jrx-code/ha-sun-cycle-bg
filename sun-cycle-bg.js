@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.9.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.10.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -111,6 +111,15 @@
  */
 (() => {
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+  /* Where the artwork lives. HACS unpacks the release archive into
+     /config/www/community/<repo>/, served from here, and the archive carries
+     the pictures next to the card — so on a fresh install the defaults below
+     already point at real files and nothing has to be copied by hand.
+     A manual install puts the same files wherever it likes and says so:
+     every path is a plain option (`planets.images`, `milky_way.image`,
+     `sun_image`, `moon_image`), and `assets:` moves them all at once. */
+  const HACS_BASE = '/hacsfiles/ha-sun-cycle-bg/';
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const lerpA = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
@@ -754,16 +763,17 @@
     pluto: 'Pluto',
   };
 
-  function readPlanetConfig(p) {
+  function readPlanetConfig(p, assets) {
     if (p === false || p === undefined || p === null) return null;
     const c = p === true ? {} : (p || {});
     const num = (v, def) => (isFinite(v) ? Number(v) : def);
+    const baza = typeof assets === 'string' ? assets : HACS_BASE;
     const bodies = Array.isArray(c.bodies) && c.bodies.length
       ? c.bodies.map((b) => String(b).toLowerCase()) : PLANET_BODIES.slice();
     return {
       entities: typeof c.entities === 'string' ? c.entities : 'sensor.sol_',
       bodies,
-      images: typeof c.images === 'string' ? c.images : '/local/sun-cycle/planets/',
+      images: typeof c.images === 'string' ? c.images : baza + 'planets/',
       files: c.files && typeof c.files === 'object' ? c.files : {},
       discs: Object.assign({}, PLANET_DISCS, c.discs || {}),
       // a name picks one of the shipped ladders; an object overrides body by
@@ -922,9 +932,13 @@
     return { l: (((ln - Math.atan2(y, x)) * R2D) % 360 + 360) % 360, b: b * R2D };
   }
 
-  function readMilkyConfig(m) {
-    if (!m || typeof m !== 'object' || !m.image) return null;
+  function readMilkyConfig(m, assets) {
+    if (!m || typeof m !== 'object') return null;
     const num = (v, def) => (isFinite(v) ? Number(v) : def);
+    const baza = typeof assets === 'string' ? assets : HACS_BASE;
+    // no `image` given: the photograph that ships in the release archive,
+    // with the placement it was measured at
+    const domyslny = !m.image;
     return {
       image: String(m.image),
       // 'frame'    — a photograph of one part of the sky, put back where it
@@ -1385,19 +1399,33 @@
       this._rayBlur = r && r.blur !== undefined ? r.blur : 28;
       this._rayPeak = r && r.strength !== undefined ? r.strength : 0.5;
       this._showMoon = this._cfg.moon !== false;
-      this._planetCfg = readPlanetConfig(this._cfg.planets);
-      this._milkyCfg = readMilkyConfig(this._cfg.milky_way);
+      // `assets:` moves every default path at once — for a manual install, or
+      // for anyone keeping their own pictures somewhere else
+      const assets = typeof this._cfg.assets === 'string'
+        ? (this._cfg.assets.endsWith('/') ? this._cfg.assets : this._cfg.assets + '/')
+        : null;
+      this._planetCfg = readPlanetConfig(this._cfg.planets, assets);
+      this._milkyCfg = readMilkyConfig(this._cfg.milky_way, assets);
       this._warmDusk = this._cfg.twilight_palette === true;
 
       // --- optional artwork for the two discs ----------------------------
       const num = (v, def) => (isFinite(v) ? Number(v) : def);
-      this._sunImg = typeof this._cfg.sun_image === 'string' ? this._cfg.sun_image : null;
+      // The shipped discs come with their own measurements: a file placed by
+      // its own centre would put the sun beside its aureole, and the render
+      // that ships has the rays sticking out on one side.
+      const wlasneSlonce = typeof this._cfg.sun_image === 'string';
+      this._sunImg = wlasneSlonce ? this._cfg.sun_image
+        : (this._cfg.sun_image === false ? null : (assets || HACS_BASE) + 'sun.png');
       this._sunImgW = num(this._cfg.sun_image_width, 10.5);
       this._sunImgBlur = num(this._cfg.sun_image_blur, 11.5);
-      this._sunDisc = discSpec(this._cfg.sun_image_disc);
-      this._moonImg = typeof this._cfg.moon_image === 'string' ? this._cfg.moon_image : null;
-      this._moonImgW = num(this._cfg.moon_image_width, 0);
-      this._moonDisc = discSpec(this._cfg.moon_image_disc);
+      this._sunDisc = discSpec(this._cfg.sun_image_disc
+        || (wlasneSlonce ? null : [0.78878, 0.50816, 0.48469]));
+      const wlasnyKsiezyc = typeof this._cfg.moon_image === 'string';
+      this._moonImg = wlasnyKsiezyc ? this._cfg.moon_image
+        : (this._cfg.moon_image === false ? null : (assets || HACS_BASE) + 'moon.png');
+      this._moonImgW = num(this._cfg.moon_image_width, wlasnyKsiezyc ? 0 : 13);
+      this._moonDisc = discSpec(this._cfg.moon_image_disc
+        || (wlasnyKsiezyc ? null : [0.4287, 0.5, 0.5]));
       // The moon SVG needs the file's aspect ratio to place the <image>, and
       // that is only known once the file is decoded. Until then the drawn moon
       // stays up; the repaint on load swaps it in.

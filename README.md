@@ -120,11 +120,31 @@ sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
    **Dashboard** (Lovelace).
 2. Install **Sun Cycle Background**, reload resources when prompted.
 
+The release is a zip, so HACS unpacks the card **and its artwork** into
+`/config/www/community/ha-sun-cycle-bg/` — the sun, the moon, nine planets and
+a photograph of the Milky Way. Every default path in the card points there, so
+on a fresh system this already draws something:
+
+```yaml
+type: custom:sun-cycle-bg-card
+stars: true
+planets: true
+milky_way: {}
+```
+
+Point `sun_image`, `moon_image`, `planets.images` or `milky_way.image` at your
+own files whenever you have better ones; `assets: /local/my-sky/` moves all the
+defaults at once. `sun_image: false` and `moon_image: false` go back to the
+drawn discs.
+
 ### Manual
 
 1. Copy `sun-cycle-bg.js` to `/config/www/`.
 2. Add a dashboard resource: URL `/local/sun-cycle-bg.js`, type
    **JavaScript module**.
+3. The artwork does not come along this way. Either take `demo/assets/` from
+   this repository (or the release zip) and point `assets:` at wherever you put
+   it, or set the paths one by one.
 
 ### Optional: the real ISS
 
@@ -176,6 +196,8 @@ All options, with defaults:
 
 ```yaml
 type: custom:sun-cycle-bg-card
+assets: /hacsfiles/ha-sun-cycle-bg/   # where the shipped pictures live; every
+                        # default path below hangs off this
 sun_entity: sun.sun     # any entity with `elevation` (and ideally `azimuth`)
 twilight_palette: false # true = warmer amber dusk anchors instead of mauve
 azimuth: [50, 310]      # sky window mapped across the frame, degrees
@@ -208,7 +230,7 @@ stars:                  # `stars: false` disables the built-in field
   iss: false            # true = the real ISS from sensor.iss_visual_pass_0..4
 # A photograph of the Milky Way. None ships with the card.
 # milky_way:
-#   image: /local/sun-cycle/milky-way.webp
+#   image: <assets>/milky-way-cutout.webp
 #   projection: frame     # frame = one photograph, put back where it was taken
 #                         # (needs l/b/rot/fov); equirect = an all-sky panorama
 #                         # in galactic coordinates, 2:1
@@ -224,7 +246,7 @@ planets: false          # true = the eight from the Sol integration, or:
 # planets:
 #   entities: sensor.sol_   # prefix, + <body>_azimuth / _elevation
 #   bodies: [mercury, venus, mars, jupiter, saturn, uranus, neptune, pluto]
-#   images: /local/sun-cycle/planets/   # + <body>.png
+#   images: <assets>/planets/   # + <body>.png
 #   files: {}             # per-body override: {saturn: /local/mine.png}
 #   size: 2.4             # Jupiter's disc, % of the view width
 #   scale: brightness     # ladder: brightness | diameters | equal, or
@@ -242,12 +264,12 @@ planets: false          # true = the eight from the Sol integration, or:
 #                         # is up. true = keep 0.35, or a number of your own
 
 # Optional artwork for the two discs — see below. Left out, both stay drawn.
-sun_image: null         # e.g. /local/sun-cycle/sun.png
+sun_image: <assets>/sun.png    # false = the drawn disc (no picture)
 sun_image_width: 10.5   # disc diameter, % of the view width
 sun_image_blur: 11.5    # % of that diameter, not px; 0 disables the blur
 sun_image_disc: [1, 0.5, 0.5]
-moon_image: null
-moon_image_width: 0     # 0 keeps the CSS default (15%, capped at 190 px)
+moon_image: <assets>/moon.png  # false = the drawn crescent
+moon_image_width: 13    # 0 keeps the CSS default (15%, capped at 190 px)
 moon_image_disc: [1, 0.5, 0.5]
 ```
 
@@ -259,9 +281,10 @@ moon is drawn as a circle with the real terminator. Point `sun_image` and
 while every glow stays rendered — the twilight band, the disc aureole, the ray
 fan and the moon halo. The two options are independent.
 
-**No artwork ships with the card.** These are paths to your files (`/local/...`),
-so the card itself carries no images and you keep whatever licence your own
-artwork has. The PNGs under `demo/assets/` — the two discs and the nine
+**Artwork ships in the release, not in the card file.** The zip HACS installs
+carries the sun, the moon, the planets and the Milky Way beside
+`sun-cycle-bg.js`, and the defaults point at them; these options replace them
+with files of yours. The PNGs under `demo/assets/` — the two discs and the nine
 planets — are the repository owner's own artwork and fall under this
 repository's MIT licence like the rest of it; HACS installs only
 `sun-cycle-bg.js`, so they are there to drive the demo pages and the
