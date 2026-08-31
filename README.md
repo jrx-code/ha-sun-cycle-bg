@@ -168,7 +168,19 @@ drop a key that is not the default after all.
 
 Outside a dashboard view — in the card picker, and in the editor's own live
 preview — the card has no view to paint, so it paints a 16:9 box of its own
-with the same layers. That is what the thumbnail is.
+with the same layers. That is what the thumbnail is, and it is a sample rather
+than a live view: the sun is held at one chosen twilight, because following the
+real clock would show a blank blue rectangle for most of the working day, and
+the eight planets are stood in at plausible positions **only where the Sol
+sensors are missing**, so a system that has the integration previews its own
+sky.
+
+A card added from the picker starts on `stars`, `planets` and
+`milky_way: {projection: equirect}`. The band starts on the panorama rather
+than the card's own default of one framed photograph, because that frame is
+centred on declination −34°: from most of Europe it culminates near the horizon
+and spends half the year under it, so a new card would start with an empty
+layer.
 
 ### Manual
 

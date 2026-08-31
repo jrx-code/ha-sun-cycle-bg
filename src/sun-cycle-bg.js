@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.12.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.13.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1434,10 +1434,18 @@
       return document.createElement('sun-cycle-bg-card-editor');
     }
 
-    // What a freshly added card starts as. Everything else is a default, and
-    // the two blocks named here are the ones that are off unless asked for.
+    // What a freshly added card starts as. Stars are on by default; planets
+    // and the band are the two blocks that are off unless asked for, and a new
+    // card is more use with them on than without.
+    //
+    // The band starts on the panorama rather than the card's own default of
+    // one framed photograph. The frame is centred on the galactic centre,
+    // declination -34: from most of Europe it culminates near the horizon and
+    // is under it for half the year, so a card that starts there starts with
+    // an empty layer. Half the panorama is above the horizon on every night of
+    // every year.
     static getStubConfig() {
-      return { stars: true, milky_way: {} };
+      return { stars: true, planets: true, milky_way: { projection: 'equirect' } };
     }
 
     setConfig(config) {
@@ -1496,6 +1504,7 @@
     }
 
     set hass(h) {
+      if (this._demo) h = this._demoStany(h);
       this._hass = h;
       const sun = h.states && h.states[this._sunEntity];
       if (!sun) return;
@@ -1584,6 +1593,12 @@
     _podglad() {
       let box = this.querySelector('.sun-cycle-standalone');
       if (box) return box;
+      // A sample, not a live view. Now is usually daylight, and a card whose
+      // whole subject is the night sky would introduce itself with an empty
+      // blue rectangle — so outside a view it draws one chosen twilight, with
+      // the planets stood in where the Sol integration is not there to place
+      // them, and the moon taken from the next night it is actually up.
+      this._demo = true;
       this.style.display = 'block';
       box = document.createElement('div');
       box.className = 'sun-cycle-standalone';
@@ -1594,6 +1609,49 @@
       box.appendChild(bg);
       this.appendChild(box);
       return box;
+    }
+
+    /* The sun is always the chosen twilight here, on any system: a preview
+       that followed the real clock would be a blank blue rectangle for most of
+       the working day, and the point of it is to show what the settings do.
+       The planet positions below are stood in only where the real sensors are
+       missing, so a system that has Sol previews its own sky. */
+    _demoStany(h) {
+      const DEMO = { mercury: [286, 4], venus: [270, 10], mars: [246, 18],
+                     jupiter: [203, 36], saturn: [156, 30], uranus: [118, 25],
+                     neptune: [78, 15], pluto: [176, 22] };
+      const st = Object.assign({}, (h && h.states) || {});
+      st[this._sunEntity] = { attributes: { elevation: -9.5, azimuth: 292 } };
+      const cfg = this._planetCfg;
+      if (cfg) {
+        for (const b of cfg.bodies) {
+          const kaz = cfg.entities + b + '_azimuth', kel = cfg.entities + b + '_elevation';
+          if (!st[kaz] && DEMO[b]) {
+            st[kaz] = { state: String(DEMO[b][0]) };
+            st[kel] = { state: String(DEMO[b][1]) };
+          }
+        }
+      }
+      const conf = Object.assign({}, (h && h.config) || {});
+      if (!isFinite(conf.latitude)) { conf.latitude = 52; conf.longitude = 14.5; }
+      return { states: st, config: conf };
+    }
+
+    /* The moon runs on the clock, and on a given evening it may be under the
+       Earth. For the sample, step forward in half-hours until it is up. */
+    _demoChwila() {
+      if (this._demoData !== undefined) return this._demoData;
+      this._demoData = null;
+      if (!isFinite(this._lat) || !isFinite(this._lon)) return null;
+      const teraz = Date.now();
+      for (let i = 0; i < 96; i++) {
+        const d = new Date(teraz + i * 1800000);
+        const J = julian(d);
+        const me = moonEq(J);
+        const mp = altaz(me.ra, me.dec, J, this._lat, this._lon);
+        if (mp.alt > 14) { this._demoData = d; break; }
+      }
+      return this._demoData;
     }
 
     _before(c, node) {
@@ -1779,7 +1837,7 @@
       // --- moon: own position and phase -----------------------------------
       if (!this._showMoon) zdejmij(c, '.sun-cycle-moon');
       if (this._showMoon && isFinite(this._lat) && isFinite(this._lon)) {
-        const J = julian(new Date());
+        const J = julian(this._demo ? (this._demoChwila() || new Date()) : new Date());
         const se = sunEq(J), me = moonEq(J);
         const mp = altaz(me.ra, me.dec, J, this._lat, this._lon);
         const elong = ((me.lam - se.lam) % 360 + 360) % 360;
