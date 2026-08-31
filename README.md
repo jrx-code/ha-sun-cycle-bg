@@ -120,7 +120,7 @@ sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
    **Dashboard** (Lovelace).
 2. Install **Sun Cycle Background**, reload resources when prompted.
 
-The release is a zip, so HACS unpacks the card **and its artwork** into
+HACS installs everything in `dist/` — the card **and its artwork** — into
 `/config/www/community/ha-sun-cycle-bg/` — the sun, the moon, nine planets and
 a photograph of the Milky Way. Every default path in the card points there, so
 on a fresh system this already draws something:
@@ -142,9 +142,9 @@ drawn discs.
 1. Copy `sun-cycle-bg.js` to `/config/www/`.
 2. Add a dashboard resource: URL `/local/sun-cycle-bg.js`, type
    **JavaScript module**.
-3. The artwork does not come along this way. Either take `demo/assets/` from
-   this repository (or the release zip) and point `assets:` at wherever you put
-   it, or set the paths one by one.
+3. The artwork does not come along this way. Either copy `dist/` from this
+   repository to `/config/www/sun-cycle/` and set `assets: /local/sun-cycle/`,
+   or point each path individually.
 
 ### Optional: the real ISS
 

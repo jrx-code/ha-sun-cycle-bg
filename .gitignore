@@ -10,6 +10,3 @@ demo/droga-mleczna.meta.json
 
 # wycinek w PNG to material posredni (1,7 MB); strona i karta biora .webp
 demo/assets/milky-way-cutout.png
-
-# archiwum wydania budowane przez tools/make_release_zip.py
-dist/
