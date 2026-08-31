@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.11.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.11.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -120,6 +120,27 @@
      every path is a plain option (`planets.images`, `milky_way.image`,
      `sun_image`, `moon_image`), and `assets:` moves them all at once. */
   const HACS_BASE = '/hacsfiles/ha-sun-cycle-bg/';
+
+  /* A layer is built once and then only driven. That is right while the config
+     stands still, and wrong the moment it does not: Lovelace calls setConfig
+     again every time the card is edited, and the view kept the old star field,
+     the old photograph and the old planet discs until the page was reloaded.
+     So each layer carries a signature of the part of the config it was built
+     from, and is rebuilt when that changes. Values the layer reads on every
+     repaint (a size, an opacity, a threshold) are not in the signature — those
+     have always followed. */
+  const podpis = (o) => { try { return JSON.stringify(o); } catch (e) { return String(o); } };
+
+  /* And a feature switched off has to leave. Turning `stars: false` or
+     `planets: false` in the editor used to change nothing on screen, because
+     the block that draws them is simply skipped and nobody took the layer
+     down. */
+  const zdejmij = (c, klasa) => {
+    const el = c.querySelector(klasa);
+    if (!el) return;
+    if (typeof el.scsStop === 'function') el.scsStop();
+    el.remove();
+  };
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const lerpA = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
@@ -1225,7 +1246,6 @@
       }
       layer.appendChild(el);
     });
-    layer.scsPlanetPrint = '';
     return layer;
   }
 
@@ -1683,11 +1703,14 @@
       }
 
       // --- sun disc, when artwork is supplied ------------------------------
+      if (!this._sunImg) zdejmij(c, '.sun-cycle-sun');
       if (this._sunImg) {
         let disc = c.querySelector('.sun-cycle-sun');
+        if (disc && disc._scsPodpis !== this._sunImg) { disc.remove(); disc = null; }
         if (!disc) {
           disc = document.createElement('div');
           disc.className = 'sun-cycle-sun';
+          disc._scsPodpis = this._sunImg;
           const im = document.createElement('img');
           im.src = this._sunImg;
           im.alt = '';
@@ -1717,6 +1740,7 @@
       }
 
       // --- moon: own position and phase -----------------------------------
+      if (!this._showMoon) zdejmij(c, '.sun-cycle-moon');
       if (this._showMoon && isFinite(this._lat) && isFinite(this._lon)) {
         const J = julian(new Date());
         const se = sunEq(J), me = moonEq(J);
@@ -1738,9 +1762,12 @@
           this._before(c, moon);
         }
         const svg = moon.firstElementChild;
-        if (!svg || svg.dataset.mode !== tryb) {
+        const plik = useImg ? this._moonImg : '';
+        if (!svg || svg.dataset.mode !== tryb || svg.dataset.plik !== plik) {
           moon.textContent = '';
-          moon.appendChild(moonSVG(useImg ? this._moonImg : null, this._moonDisc, this._moonAR));
+          const nowy = moonSVG(useImg ? this._moonImg : null, this._moonDisc, this._moonAR);
+          nowy.dataset.plik = plik;
+          moon.appendChild(nowy);
         }
         if (this._moonImgW > 0) {
           moon.style.width = this._moonImgW + '%';
@@ -1775,8 +1802,12 @@
       // top of the painted backdrop and under the star field.
       if (this._milkyCfg && isFinite(this._lat) && isFinite(this._lon)) {
         let mw = c.querySelector('.sun-cycle-milky');
+        // buildMilky bakes one thing: which file is loaded. Everything else is
+        // read by _draw on every repaint.
+        if (mw && mw._scsPodpis !== this._milkyCfg.image) { mw.remove(); mw = null; }
         if (!mw) {
           mw = buildMilky(this._milkyCfg);
+          mw._scsPodpis = this._milkyCfg.image;
           if (bg && bg.parentNode === c) c.insertBefore(mw, bg.nextSibling);
           else this._before(c, mw);
         }
@@ -1790,11 +1821,21 @@
         mw._draw();
       }
 
+      if (!this._milkyCfg) zdejmij(c, '.sun-cycle-milky');
+
       // --- planets ---------------------------------------------------------
       if (this._planetCfg) {
+        const pc = this._planetCfg;
+        // what buildPlanets bakes into the elements: which bodies, which files,
+        // whether there is a daylight dot and how big, its colour, the caption.
+        // size / glow / scale / day / min_elevation are applied by _planetSync.
+        const kluczPlanet = podpis([pc.bodies, pc.images, pc.files, pc.points,
+                                    pc.tints, pc.labels, pc.names]);
         let pl = c.querySelector('.sun-cycle-planets');
+        if (pl && pl._scsPodpis !== kluczPlanet) { pl.remove(); pl = null; }
         if (!pl) {
           pl = buildPlanets(this._planetCfg);
+          pl._scsPodpis = kluczPlanet;
           // above the stars (a planet is nearer than the field behind it) and
           // below the moon, which is nearer still — the moon layer is built
           // earlier in this same pass, so it is already there to sit under
@@ -1803,11 +1844,19 @@
           else this._before(c, pl);
         }
         this._planetSync();
+      } else {
+        zdejmij(c, '.sun-cycle-planets');
       }
 
       // --- star field ------------------------------------------------------
       if (this._starCfg) {
+        const kluczGwiazd = podpis(this._starCfg);
         let stars = c.querySelector('.sun-cycle-stars');
+        if (stars && stars._scsPodpis !== kluczGwiazd) {
+          if (typeof stars.scsStop === 'function') stars.scsStop();
+          stars.remove();
+          stars = null;
+        }
         if (!stars) {
           // sized to the container, not the window: a view narrower than the
           // window would otherwise get stars laid out beyond its edge
@@ -1822,12 +1871,15 @@
           const mw = c.querySelector('.sun-cycle-milky');
           const kotwica = (mw && mw.parentNode === c) ? mw
             : ((bg && bg.parentNode === c) ? bg : null);
+          stars._scsPodpis = kluczGwiazd;
           if (kotwica) c.insertBefore(stars, kotwica.nextSibling);
           else this._before(c, stars);
         }
         stars.style.opacity = p.stars.toFixed(2);
         this._issSync();
       }
+      if (!this._starCfg) zdejmij(c, '.sun-cycle-stars');
+
       // external star layer (e.g. a separate star-twinkle card): drive opacity
       const ext = c.querySelector('#star-twinkle-layer');
       if (ext) {
