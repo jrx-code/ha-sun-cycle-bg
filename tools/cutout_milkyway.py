@@ -21,6 +21,10 @@ Colour is left alone. The card dims and tints the whole layer anyway, and a
 photograph that has been colour-managed twice looks like a print.
 
     python3 tools/cutout_milkyway.py ~/Pobrane/milky-way.jpg
+
+The result is committed as demo/assets/milky-way-cutout.webp — the owner's own
+photograph, MIT like the rest of the repository. The intermediate PNG is not:
+it is two and a half times the bytes for a picture nothing reads.
 """
 import argparse
 import pathlib

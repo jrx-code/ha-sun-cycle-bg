@@ -33,7 +33,9 @@ ESO panorama above by correlation over centre, rotation and field of view:
 l = -5 deg, b = -2 deg, rotation -24 deg, field 62 deg, r = 0.64, at which the
 band angle, the core and the Great Rift line up with the panorama.
 
-Provenance and licence of the source photograph: **not established here.** It
-came from the owner's Downloads folder without a source. Do not publish or
-redistribute this file until that is settled; it is in the working tree for the
-tuning page only.
+Source and licence: the photograph is the **repository owner's own**, and falls
+under this repository's MIT licence like `demo/assets/sun.png`, `moon.png` and
+the nine planet cutouts. Nothing to clear, nothing to attribute to anyone else.
+
+Only the all-sky panorama above is third-party (ESO/S. Brunier, CC BY 4.0) and
+keeps its own credit line.
