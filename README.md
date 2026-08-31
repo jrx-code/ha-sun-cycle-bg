@@ -161,6 +161,13 @@ worse than no editor:
   `names:`, `discs:`, `files:`, `meteors.radiant` and anything else that only
   YAML can express survive opening and using the editor.
 
+At the bottom of the form is a **YAML** panel: everything the controls add up
+to, as text, with a Copy button. A storage-mode dashboard is written by the
+form itself and needs none of it; a dashboard kept in YAML needs exactly this,
+and HA's own code editor swaps the form out to show it. The panel stays in step
+with the controls above it, and includes the keys the editor does not model, so
+what you copy is the whole card and not the half the editor understands.
+
 The editor also checks its own table of defaults against the card's
 `readStarConfig` / `readPlanetConfig` / `readMilkyConfig` when it opens, and
 says so in red if the two ever disagree — a silent disagreement would make it

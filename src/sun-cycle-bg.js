@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.13.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.14.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -2163,6 +2163,17 @@
       'transition:transform .16s ease,background .16s ease;}' +
     '.scb-p:checked{background:var(--primary-color,#03a9f4);}' +
     '.scb-p:checked::after{transform:translateX(15px);background:var(--card-background-color,#111);}' +
+    '.scb-yaml{margin:0;padding:10px 12px;border-radius:8px;overflow:auto;white-space:pre;' +
+      'font:12.5px/1.5 ui-monospace,"SF Mono","Roboto Mono",monospace;' +
+      'color:var(--primary-text-color);background:var(--code-editor-background-color,' +
+      'var(--card-background-color,#111));' +
+      'border:1px solid var(--divider-color,rgba(255,255,255,.12));}' +
+    '.scb-pasek{display:flex;align-items:center;gap:10px;margin:0 0 8px;}' +
+    '.scb-kopiuj{font:inherit;font-size:13px;padding:5px 12px;border-radius:6px;cursor:pointer;' +
+      'color:var(--primary-color,#03a9f4);background:transparent;' +
+      'border:1px solid var(--divider-color,rgba(255,255,255,.2));}' +
+    '.scb-kopiuj:hover{border-color:var(--primary-color,#03a9f4);}' +
+    '.scb-stan{font-size:12px;color:var(--secondary-text-color);}' +
     '.scb-blad{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;' +
       'background:rgba(224,87,74,.15);border:1px solid var(--error-color,#e0574a);}';
 
@@ -2261,6 +2272,7 @@
 
     _emit() {
       edytorSprzataj(this._cfg, EDYTOR_GRUPY);
+      this._odswiezYaml();
       this._wyslany = edytorOdcisk(this._cfg);
       this.dispatchEvent(new CustomEvent('config-changed', {
         detail: { config: this._cfg }, bubbles: true, composed: true,
@@ -2422,6 +2434,56 @@
         }
         r.appendChild(det);
       }
+
+      // --- the fragment, for a dashboard kept in YAML ---------------------
+      const yd = document.createElement('details');
+      yd.className = 'scb-grupa';
+      yd.open = byly.indexOf('YAML') >= 0;
+      const ys = document.createElement('summary');
+      ys.innerHTML = '<span class="scb-tyt">YAML</span><span class="scb-odznaka"></span>';
+      yd.appendChild(ys);
+      const yc = document.createElement('div');
+      yc.className = 'scb-cialo';
+      yc.appendChild(edytorOpis('Everything the controls above add up to, ready to paste '
+        + 'into a dashboard kept in YAML. A storage-mode dashboard is written by the form '
+        + 'itself and needs none of this.'));
+      const pasek = document.createElement('div');
+      pasek.className = 'scb-pasek';
+      const przycisk = document.createElement('button');
+      przycisk.type = 'button';
+      przycisk.className = 'scb-kopiuj';
+      przycisk.textContent = 'Copy';
+      const stan = document.createElement('span');
+      stan.className = 'scb-stan';
+      pasek.appendChild(przycisk);
+      pasek.appendChild(stan);
+      yc.appendChild(pasek);
+      const pre = document.createElement('pre');
+      pre.className = 'scb-yaml';
+      yc.appendChild(pre);
+      yd.appendChild(yc);
+      przycisk.addEventListener('click', async () => {
+        try {
+          // no clipboard on a plain-http dashboard: select it instead, so
+          // the keyboard can still do the copying
+          await navigator.clipboard.writeText(pre.textContent);
+          stan.textContent = 'copied';
+        } catch (e) {
+          const zakres = document.createRange();
+          zakres.selectNodeContents(pre);
+          const sel = (this.shadowRoot.getSelection ? this.shadowRoot : window).getSelection();
+          sel.removeAllRanges(); sel.addRange(zakres);
+          stan.textContent = 'selected — press Ctrl+C';
+        }
+        setTimeout(() => { stan.textContent = ''; }, 2500);
+      });
+      r.appendChild(yd);
+      this._pre = pre;
+      this._odswiezYaml();
+    }
+
+    _odswiezYaml() {
+      if (this._pre) this._pre.textContent = edytorYaml(this._cfg);
     }
 
     _przelacz(g, wl) {
@@ -2452,6 +2514,38 @@
       return v;
     };
     return JSON.stringify(uporzadkuj(cfg || {}));
+  }
+
+  /* The form writes a storage-mode dashboard. A dashboard kept in YAML needs
+     the same thing as text, and HA's own code editor swaps the form out to
+     show it — so the fragment lives here as a panel of its own, always in
+     step with the controls above it. */
+  function edytorYaml(cfg) {
+    const linie = [];
+    const skalar = (v) => {
+      if (typeof v === 'boolean' || typeof v === 'number') return String(v);
+      const t = String(v);
+      return /^[\w./:-]+$/.test(t) ? t : JSON.stringify(t);
+    };
+    const dump = (o, wciecie) => {
+      for (const [k, v] of Object.entries(o)) {
+        if (v === undefined) continue;
+        if (Array.isArray(v)) {
+          linie.push(wciecie + k + ': [' + v.map(skalar).join(', ') + ']');
+        } else if (v && typeof v === 'object') {
+          if (!Object.keys(v).length) linie.push(wciecie + k + ': {}');
+          else { linie.push(wciecie + k + ':'); dump(v, wciecie + '  '); }
+        } else {
+          linie.push(wciecie + k + ': ' + skalar(v));
+        }
+      }
+    };
+    // type first, the way it is written by hand
+    const uporzadkowany = {};
+    if (cfg.type) uporzadkowany.type = cfg.type;
+    for (const k of Object.keys(cfg)) if (k !== 'type') uporzadkowany[k] = cfg[k];
+    dump(uporzadkowany, '');
+    return linie.join('\n');
   }
 
   function edytorOpis(tekst) {
