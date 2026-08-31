@@ -99,8 +99,10 @@ def main() -> int:
     try:
         with sync_playwright() as pw:
             br = pw.chromium.launch()
+            # 1.5x, not 2x: the README shows this about 900 px wide, and the
+            # 2x frame cost 2 MB for detail nobody sees
             pg = br.new_page(viewport={"width": W, "height": H},
-                             device_scale_factor=2)
+                             device_scale_factor=1.5)
             bledy = []
             pg.on("pageerror", lambda e: bledy.append(str(e)))
             pg.on("console", lambda m: bledy.append(f"{m.type}: {m.text}")
@@ -129,6 +131,8 @@ def main() -> int:
     finally:
         srv.shutdown()
         strona.unlink()
+    from PIL import Image
+    Image.open(out).save(out, optimize=True)      # playwright nie optymalizuje
     print(f"{out} ({out.stat().st_size // 1024} kB)")
     print("pas:", miara["pas"], "px ze swiatlem; tarcz planet:", miara["planety"])
     print("warstwy:", miara["warstwy"])
