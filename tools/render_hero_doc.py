@@ -31,7 +31,7 @@ PORT = 8796
 W, H = 1280, 460
 # the moment demo/sol_snapshot.json was taken, as UTC
 CHWILA = "2026-08-29T22:00:11Z"
-LAT, LON = 53.5182, 14.4570
+LAT, LON = 52.2297, 21.0122
 
 STRONA = """<!doctype html><meta charset="utf-8">
 <style>

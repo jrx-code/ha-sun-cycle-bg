@@ -28,7 +28,7 @@ import sys
 ROOT = pathlib.Path(__file__).parent.parent
 KARTA = ROOT / "src" / "sun-cycle-bg.js"
 OUT = ROOT / "demo" / "konfigurator.html"
-LAT, LON = 53.5182, 14.4570
+LAT, LON = 52.2297, 21.0122
 # obrazki na HA; na dysku repo ta sama para lezy w demo/assets
 ZASOBY = "/local/sun-cycle/"
 

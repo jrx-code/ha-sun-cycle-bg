@@ -26,7 +26,7 @@ import sys
 ROOT = pathlib.Path(__file__).parent.parent
 KARTA = ROOT / "src" / "sun-cycle-bg.js"
 OUT = ROOT / "demo" / "droga-mleczna.html"
-LAT, LON = 53.5182, 14.4570          # Home Assistant's own coordinates
+LAT, LON = 52.2297, 21.0122          # demo location, override with --lat/--lon
 MIEJSCE = "Bartoszewem"   # forma po „nad": tak brzmi w tytule i naglowku
 
 # Dwa zdjecia: panorama calego nieba (ESO) i wlasny kadr ze zdjetym tlem.

@@ -12,7 +12,7 @@ tools/prepare_milkyway_texture.py.
 
 This module is the sanity check: run it and see where the band stands tonight.
 
-    python3 tools/milky_way.py --lat 53.5182 --lon 14.4570 --when 2026-08-30T23:30
+    python3 tools/milky_way.py --lat 52.2297 --lon 21.0122 --when 2026-08-30T23:30
 """
 import argparse
 import datetime
@@ -91,8 +91,8 @@ def band(lat, lon, when, step_l=2.0, step_b=3.0, b_max=15.0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lat", type=float, default=53.5182)
-    ap.add_argument("--lon", type=float, default=14.4570)
+    ap.add_argument("--lat", type=float, default=52.2297)
+    ap.add_argument("--lon", type=float, default=21.0122)
     ap.add_argument("--when", default=None, help="local ISO time, default now")
     a = ap.parse_args()
     when = (datetime.datetime.fromisoformat(a.when) if a.when

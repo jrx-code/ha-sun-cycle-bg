@@ -33,7 +33,7 @@ GAP = 8
 # 30 August, 21:00 local at 53.5 N: the galactic centre is due south at +7 deg
 # and Cygnus stands overhead — the band is across the frame and the sky is dark
 CHWILA = "2026-08-30T19:00:00Z"
-LAT, LON = 53.5182, 14.4570
+LAT, LON = 52.2297, 21.0122
 
 PANELE = [
     (-16.0, "frame", "one photograph, at its true scale and place"),

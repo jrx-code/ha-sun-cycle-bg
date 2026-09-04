@@ -40,7 +40,7 @@ import sys
 ROOT = pathlib.Path(__file__).parent.parent
 KARTA = ROOT / "src" / "sun-cycle-bg.js"
 OUT = ROOT / "demo" / "droga-mleczna-widok.html"
-LAT, LON = 53.5182, 14.4570
+LAT, LON = 52.2297, 21.0122
 AZ0, AZ1 = 50, 310
 
 PANORAMA = "/local/sun-cycle/milky-way.jpg?v=2"      # ESO/S. Brunier, 4096x2048
