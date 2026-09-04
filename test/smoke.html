@@ -147,7 +147,7 @@ const PELNE = {
   const card = cont.querySelector('sun-cycle-bg-card');
   card.hass = {
     states: Object.assign({ 'sun.sun': { attributes: { elevation: -16.18, azimuth: 321.56 } } }, ISS_STATES),
-    config: { latitude: 53.5, longitude: 14.5 },
+    config: { latitude: 52.2297, longitude: 21.0122 },
   };
   const layer = cont.querySelector('.sun-cycle-stars');
   layer.scsMeteor();                              // on demand, like a tuning page
@@ -238,7 +238,7 @@ function scenaChod(offsetS, przezZero) {
     files: Object.fromEntries(window.sunCycleBg.PLANET_BODIES.map(b => [b, PIKSEL])) } });
   cont.querySelector('sun-cycle-bg-card').hass = {
     states: Object.assign({ 'sun.sun': { attributes: { elevation: -16.18, azimuth: 321.56 } } }, st),
-    config: { latitude: 53.5, longitude: 14.5 },
+    config: { latitude: 52.2297, longitude: 21.0122 },
   };
   return planety(cont);
 }
@@ -249,7 +249,7 @@ function scenaPlanet(elev, extra) {
   const cont = buduj(elev, 321.56, { stars: { count: 20 }, planets: cfg });
   cont.querySelector('sun-cycle-bg-card').hass = {
     states: Object.assign({ 'sun.sun': { attributes: { elevation: elev, azimuth: 321.56 } } }, SOL),
-    config: { latitude: 53.5, longitude: 14.5 },
+    config: { latitude: 52.2297, longitude: 21.0122 },
   };
   return planety(cont);
 }
