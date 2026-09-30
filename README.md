@@ -128,7 +128,7 @@ sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
 2. Install **Sun Cycle Background**, reload resources when prompted.
 
 HACS installs the contents of `dist/` into
-`/config/www/community/ha-sun-cycle-bg/`: the card, the sun, the moon, nine
+`/config/www/community/hassio-sun-cycle-bg/`: the card, the sun, the moon, nine
 planets and two photographs of the Milky Way. Every default path in the card
 points there, so on a fresh system this already draws something:
 
@@ -234,6 +234,20 @@ The card reads the first two and nothing else. Without the integration the
 option is harmless: nothing is drawn. You also need one picture per planet
 under `/local/` — see [Planets](#planets).
 
+### Upgrading from 1.15.1 or earlier (repository renamed)
+
+The repository was renamed from `ha-sun-cycle-bg` to `hassio-sun-cycle-bg` in 1.15.2.
+HACS installs into a folder named after the repository, so the update lands in
+`/config/www/community/hassio-sun-cycle-bg/` and HACS adds a second dashboard resource
+next to the old `/hacsfiles/ha-sun-cycle-bg/sun-cycle-bg.js`. With both loaded the card
+breaks. After updating:
+
+1. **Settings → Dashboards → Resources**: delete the entry starting with `/hacsfiles/ha-sun-cycle-bg/`
+2. Delete the old folder `/config/www/community/ha-sun-cycle-bg/`
+3. If your card config sets `assets: /hacsfiles/ha-sun-cycle-bg/`, change it to
+   `/hacsfiles/hassio-sun-cycle-bg/` or drop the line (that is the default)
+4. Refresh the browser
+
 ### Upgrading from 1.4
 
 Nothing to change. `planets:` is off by default, so a 1.4 config draws exactly
@@ -260,8 +274,8 @@ All options, with defaults:
 
 ```yaml
 type: custom:sun-cycle-bg-card
-assets: /hacsfiles/ha-sun-cycle-bg/   # where the shipped pictures live; every
-                        # default path below hangs off this
+assets: /hacsfiles/hassio-sun-cycle-bg/   # where the shipped pictures live; every
+                            # default path below hangs off this
 sun_entity: sun.sun     # any entity with `elevation` (and ideally `azimuth`)
 twilight_palette: false # true = warmer amber dusk anchors instead of mauve
 azimuth: [50, 310]      # sky window mapped across the frame, degrees
