@@ -327,7 +327,7 @@ planets: false          # true = the eight from the Sol integration, or:
 # planets:
 #   entities: sensor.sol_   # prefix, + <body>_azimuth / _elevation
 #   bodies: [mercury, venus, mars, jupiter, saturn, uranus, neptune, pluto]
-#   images: <assets>/planets/   # + <body>.png
+#   images: <assets>/   # + <body>.png
 #   files: {}             # per-body override: {saturn: /local/mine.png}
 #   size: 2.4             # Jupiter's disc, % of the view width
 #   scale: brightness     # ladder: brightness | diameters | equal, or
@@ -507,7 +507,7 @@ overrides individual paths. They want transparent backgrounds.
 Nine such cutouts sit in [`demo/assets/planets`](demo/assets/planets) — the
 repository owner's own artwork, under this repository's MIT licence like
 `demo/assets/sun.png` and `moon.png`. `tools/make_dist.py` copies them into
-`dist/planets/`, which is what HACS installs, so `planets: true` needs no
+`dist/`, beside the card, which is what HACS installs, so `planets: true` needs no
 paths. The card's default `discs` numbers are the measurements of exactly
 these files, so they need no `discs:` block either.
 

@@ -40,15 +40,15 @@ asset named like the plugin file, sets `content.path.remote = "release"`, and
 `download_content` then calls `release_contents(version)`, which asks the API
 for that tag and downloads *every* asset on it. Deterministic, per version.
 
-The price is that release assets land flat: a GitHub asset name cannot hold a
-slash, so `planets/mercury.png` arrives as `mercury.png` beside the script. The
-card handles both layouts — `readPlanetConfig` marks the default path as its own
-guess and `buildPlanets` retries the flat name once if it 404s.
+Release assets land flat: a GitHub asset name cannot hold a slash. So dist/ is
+flat too (since 1.15.3; it had a planets/ folder before), and both routes give
+the same layout. The card asks for the flat name first and retries
+`planets/<body>.png` once only for manual installs copied from an older dist/.
 
     python3 tools/make_dist.py
     gh release create vX.Y.Z --verify-tag --title ... --notes ... \
         dist/sun-cycle-bg.js dist/sun.png dist/moon.png dist/milky-way.jpg \
-        dist/milky-way-cutout.webp dist/CREDITS.md dist/planets/*.png
+        dist/milky-way-cutout.webp dist/CREDITS.md dist/{mercury,venus,earth,mars,jupiter,saturn,uranus,neptune,pluto}.png
 """
 import pathlib
 import sys
@@ -62,7 +62,7 @@ for nazwa in ("sun.png", "moon.png", "milky-way.jpg", "milky-way-cutout.webp"):
     ZAWARTOSC.append((f"demo/assets/{nazwa}", nazwa))
 for ciało in ("mercury", "venus", "earth", "mars", "jupiter", "saturn",
               "uranus", "neptune", "pluto"):
-    ZAWARTOSC.append((f"demo/assets/planets/{ciało}.png", f"planets/{ciało}.png"))
+    ZAWARTOSC.append((f"demo/assets/planets/{ciało}.png", f"{ciało}.png"))
 ZAWARTOSC.append(("demo/assets/MILKY-WAY-CREDIT.md", "CREDITS.md"))
 
 

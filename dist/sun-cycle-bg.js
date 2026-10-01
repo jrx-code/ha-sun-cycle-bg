@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.15.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.15.3 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -794,13 +794,15 @@
     return {
       entities: typeof c.entities === 'string' ? c.entities : 'sensor.sol_',
       bodies,
-      images: typeof c.images === 'string' ? c.images : baza + 'planets/',
-      // Whether that path is the card's own guess. It matters because the two
-      // ways HACS delivers a plugin put the pictures in two different places:
-      // a download from the repository tree keeps `dist/planets/`, a download
-      // from a release's assets cannot — GitHub asset names hold no slash, so
-      // every file lands flat beside the script. buildPlanets falls back to the
-      // flat name when the guess 404s; a path given in the config is taken as
+      images: typeof c.images === 'string' ? c.images : baza,
+      // Whether that path is the card's own guess. Since 1.15.3 the pictures
+      // sit flat beside the script whichever way HACS delivers the card: a
+      // release's assets cannot hold a slash, and dist/ is now flat to match.
+      // Up to 1.15.2 dist/ had a planets/ folder, and a manual install copied
+      // from it may still have one, so buildPlanets retries `planets/<body>.png`
+      // once when the flat name 404s. The flat name goes first because that is
+      // what every HACS install has: guessing the folder first cost every
+      // dashboard load eight 404s. A path given in the config is taken as
       // given and never second-guessed.
       imagesDomyslne: typeof c.images !== 'string',
       files: c.files && typeof c.files === 'object' ? c.files : {},
@@ -1232,7 +1234,7 @@
       const im = document.createElement('img');
       im.src = planetSrc(cfg, body);
       if (cfg.imagesDomyslne && !cfg.files[body]) {
-        im.onerror = () => { im.onerror = null; im.src = HACS_BASE + body + '.png'; };
+        im.onerror = () => { im.onerror = null; im.src = cfg.images + 'planets/' + body + '.png'; };
       }
       im.alt = '';
       im.loading = 'lazy';
