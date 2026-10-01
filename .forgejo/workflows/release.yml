@@ -80,7 +80,7 @@ jobs:
                   [d / "sun-cycle-bg.js", d / "sun.png", d / "moon.png",
                    d / "milky-way.jpg", d / "milky-way-cutout.webp",
                    d / "CREDITS.md"]
-                  + [d / "planets" / f"{c}.png" for c in
+                  + [d / f"{c}.png" for c in
                      ("mercury", "venus", "earth", "mars", "jupiter",
                       "saturn", "uranus", "neptune", "pluto")]
                   if not p.exists()]
