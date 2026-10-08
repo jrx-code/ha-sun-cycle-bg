@@ -1,0 +1,17 @@
+{
+  "pobrano": "2026-10-08T20:09:44.411644+00:00",
+  "stan": "partlycloudy",
+  "temperatura": 9.6,
+  "zachmurzenie": 15,
+  "wiatr_kmh": 22.54,
+  "wiatr_kierunek": 260,
+  "widocznosc_km": 10.0,
+  "opad_mmh": 0,
+  "chmury_niskie": 37,
+  "chmury_srednie": 30,
+  "chmury_wysokie": 3,
+  "mgla": 0,
+  "lifted_index": 10.9,
+  "poryw_lokalny_kmh": 4,
+  "deszcz_lokalny": "off"
+}

@@ -1,0 +1,1317 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tło: pogoda i roje</title>
+<style>
+  :root { --bg:#0d1015; --surface:#151a22; --surface2:#1b212b; --line:rgba(255,255,255,.08);
+          --text:#e8ebf1; --muted:#96a0b0; --accent:#7cb3f9; --ok:#7fe1a8; --warn:#f0c674; --zle:#e0574a;
+          --s1:#3987e5; --s2:#d95926; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); margin:0; padding:24px 16px 80px;
+         font:15px/1.55 system-ui,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1360px; margin:0 auto; display:flex; flex-direction:column; gap:20px; }
+  h1 { font-size:23px; font-weight:750; margin:0 0 6px; letter-spacing:-.2px; }
+  h2 { margin:0 0 10px; font-size:17px; }
+  h3 { margin:14px 0 6px; font-size:14px; color:var(--muted); font-weight:650;
+       text-transform:uppercase; letter-spacing:.06em; }
+  p { margin:0 0 8px; }
+  .lead p { color:var(--muted); max-width:96ch; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+  code { background:rgba(255,255,255,.06); border-radius:4px; padding:1px 5px; font-size:.9em; }
+  .note { color:var(--muted); font-size:13px; }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) 400px; gap:18px; align-items:start; }
+  @media (max-width:1100px) { .layout { grid-template-columns:1fr; } }
+  .kolumna-podglad { position:sticky; top:12px; z-index:2; }
+  @media (max-width:1100px) { .kolumna-podglad { position:static; } }
+
+  hui-view-container#scena { position:relative; display:block; aspect-ratio:16/5;
+    border-radius:12px; overflow:hidden; border:1px solid var(--line); background:#000; }
+  hui-view-background { position:absolute; inset:0; display:block; z-index:0; }
+  hui-view { position:absolute; inset:0; display:block; pointer-events:none; }
+  .warstwa { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #welon, #blysk { opacity:0; }
+  #blysk { background:rgb(226,232,255); mix-blend-mode:screen; }
+  .odczyt { display:flex; gap:6px 16px; flex-wrap:wrap; color:var(--muted); font-size:13px;
+            margin-top:8px; font-variant-numeric:tabular-nums; }
+  .odczyt b { color:var(--text); font-weight:650; }
+  .presety { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  button { background:var(--surface2); color:var(--text); border:1px solid var(--line);
+           border-radius:8px; padding:5px 10px; font:inherit; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:#24364f; border-color:var(--accent); }
+
+  .grupa { border-top:1px solid var(--line); padding:10px 0 6px; }
+  .grupa:first-of-type { border-top:0; padding-top:0; }
+  .wiersz { display:grid; grid-template-columns:132px 1fr 62px; gap:8px; align-items:center;
+            margin:5px 0; font-size:13.5px; }
+  .wiersz output { text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .wiersz select, .wiersz input[type=date] { grid-column:2 / 4; background:var(--surface2);
+     color:var(--text); border:1px solid var(--line); border-radius:6px; padding:4px 6px; font:inherit; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .przelaczniki { display:grid; grid-template-columns:1fr 1fr; gap:3px 12px; font-size:13.5px; }
+  .przelaczniki label { display:flex; gap:6px; align-items:center; cursor:pointer; }
+  .przelaczniki small { color:var(--muted); }
+
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--surface); }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tr.aktywny td { background:rgba(124,179,249,.07); }
+  .tabwrap { overflow-x:auto; max-height:640px; overflow-y:auto; }
+  .tag { display:inline-block; padding:0 6px; border-radius:6px; font-size:12px; font-weight:600; }
+  .tak { background:rgba(127,225,168,.14); color:var(--ok); }
+  .nie { background:rgba(224,87,74,.14); color:#f09a90; }
+  .czesc { background:rgba(240,198,116,.14); color:var(--warn); }
+
+  #wykres { width:100%; height:300px; display:block; }
+  #wykres .os { stroke:rgba(255,255,255,.14); stroke-width:1; }
+  #wykres .siatka { stroke:rgba(255,255,255,.06); stroke-width:1; }
+  #wykres text { fill:var(--muted); font-size:11px; }
+  #wykres .etykieta { fill:var(--text); font-size:11.5px; }
+  .legenda { display:flex; gap:16px; font-size:13px; color:var(--muted); margin:4px 0 6px; }
+  .legenda i { display:inline-block; width:18px; height:2px; vertical-align:middle; margin-right:6px; }
+  .dymek { position:fixed; pointer-events:none; background:#0b0e13; border:1px solid var(--line);
+           border-radius:8px; padding:6px 9px; font-size:12.5px; display:none; z-index:10; max-width:260px; }
+  .decyzje li { margin:0 0 10px; }
+  .decyzje b { color:var(--text); }
+  pre.yaml { background:#0b0e13; border:1px solid var(--line); border-radius:10px; padding:12px;
+             font-size:12.5px; overflow-x:auto; color:#cfd6e2; }
+  .dzis { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .dzis > div { background:var(--surface2); border-radius:10px; padding:10px 12px; font-size:13px; }
+  .dzis b { font-size:14px; }
+</style>
+</head>
+<body>
+<script>
+/* Symulowany zegar. Karta liczy księżyc, Drogę Mleczną i planety z `new Date()`,
+   więc żeby cała scena szła za suwakiem czasu, a nie tylko słońce z sun.sun,
+   Date jest podmienione ZANIM karta się załaduje. performance.now() zostaje
+   prawdziwe, więc animacje i pomiar klatek się nie psują. */
+const RD = Date;
+let SIM_OFF = 0;
+class SimDate extends RD {
+  constructor(...a) { if (a.length) super(...a); else super(RD.now() + SIM_OFF); }
+  static now() { return RD.now() + SIM_OFF; }
+}
+window.Date = SimDate;
+</script>
+<main>
+  <div class="lead">
+    <h1>Tło: pogoda i roje meteorów</h1>
+    <p>Na scenie rysuje prawdziwa karta <code>sun-cycle-bg __WERSJA__</code> z konfiguracją z panelu
+    salonu, w kadrze 16:5 (1280 × 400 jak kiosk). Na niej leży prototyp warstwy pogody, który
+    odtwarza efekty z <a href="https://github.com/teuchezh/dynamic-weather-card/releases/tag/v2026.10.0"
+    style="color:var(--accent)">dynamic-weather-card v2026.10.0</a>: chmury w trzech warstwach, deszcz
+    z rozbryzgami, krople na szybie, śnieg, grad, mgłę, błyskawice, wiatr z liśćmi i zorzę. Kod
+    warstwy jest napisany od zera dla tej strony, nie skopiowany z tamtej karty.</p>
+    <p>Meteory idą z kalendarza IMO: radiant każdego roju jest liczony dla naszej szerokości
+    i godziny, częstość z ZHR, wysokości radiantu, zasięgu gwiazdowego, Księżyca i chmur.
+    Dziś panel puszcza 28 meteorów na godzinę z punktu [78 %, 12 %] kadru przez cały rok.
+    Strona zbudowana __ZBUDOWANO__.</p>
+  </div>
+
+  <div class="layout">
+    <div class="kolumna-podglad">
+      <div class="card">
+        <h2>Scena</h2>
+        <hui-view-container id="scena">
+          <hui-view-background></hui-view-background>
+          <sun-cycle-bg-card id="karta"></sun-cycle-bg-card>
+          <hui-view>
+            <canvas id="c-niebo" class="warstwa"></canvas>
+            <div id="welon" class="warstwa"></div>
+            <canvas id="c-pogoda" class="warstwa"></canvas>
+            <div id="blysk" class="warstwa"></div>
+            <canvas id="c-szyba" class="warstwa"></canvas>
+          </hui-view>
+        </hui-view-container>
+        <div class="odczyt" id="odczyt"></div>
+        <div class="odczyt" id="odczyt2"></div>
+        <div class="presety" id="presety"></div>
+      </div>
+    </div>
+
+    <div class="card" id="panel">
+      <div class="grupa">
+        <h3>Czas</h3>
+        <div class="wiersz"><span>data</span><input type="date" id="data"></div>
+        <div class="wiersz"><span>godzina</span><input type="range" id="godz" min="0" max="1439" step="5"><output id="godz-o"></output></div>
+        <div class="presety" style="margin-top:4px">
+          <button id="graj">▶ doba w 90 s</button>
+          <button id="teraz">teraz</button>
+        </div>
+      </div>
+      <div class="grupa">
+        <h3>Pogoda</h3>
+        <div class="wiersz"><span>stan (HA)</span><select id="stan"></select></div>
+        <div class="wiersz"><span>natężenie opadu</span><input type="range" id="int" min="0" max="1" step="0.05"><output id="int-o"></output></div>
+        <div class="wiersz"><span>chmury niskie</span><input type="range" id="cl" min="0" max="100" step="1"><output id="cl-o"></output></div>
+        <div class="wiersz"><span>chmury średnie</span><input type="range" id="cm" min="0" max="100" step="1"><output id="cm-o"></output></div>
+        <div class="wiersz"><span>chmury wysokie</span><input type="range" id="ch" min="0" max="100" step="1"><output id="ch-o"></output></div>
+        <div class="wiersz"><span>mgła</span><input type="range" id="mg" min="0" max="100" step="1"><output id="mg-o"></output></div>
+        <div class="wiersz"><span>wiatr km/h</span><input type="range" id="wi" min="0" max="100" step="1"><output id="wi-o"></output></div>
+        <div class="wiersz"><span>wiatr z (°)</span><input type="range" id="wk" min="0" max="359" step="1"><output id="wk-o"></output></div>
+        <div class="wiersz"><span>zorza (siła)</span><input type="range" id="zo" min="0" max="1" step="0.05"><output id="zo-o"></output></div>
+        <div class="wiersz"><span>zorza: gdzie</span><select id="zo-tryb">
+          <option value="krawedz">przy krawędziach (tam jest północ)</option>
+          <option value="nad">przez cały kadr (jak w DWC)</option></select></div>
+      </div>
+      <div class="grupa">
+        <h3>Efekty</h3>
+        <div class="przelaczniki" id="efekty"></div>
+      </div>
+      <div class="grupa">
+        <h3>Meteory</h3>
+        <div class="wiersz"><span>źródło</span><select id="met">
+          <option value="roje">roje IMO + tło sporadyczne</option>
+          <option value="karta">dzisiejsze z panelu (28/h z punktu)</option>
+          <option value="brak">wyłączone</option></select></div>
+        <div class="wiersz"><span>mnożnik</span><select id="mnoz">
+          <option value="1">×1 (tyle, ile naprawdę)</option><option value="3">×3</option>
+          <option value="10">×10</option><option value="30">×30 (pokaz)</option></select></div>
+        <div class="wiersz"><span>zasięg gwiazd. (lm)</span><input type="range" id="lm" min="4" max="6.5" step="0.1"><output id="lm-o"></output></div>
+        <div class="przelaczniki">
+          <label><input type="checkbox" id="ksiezyc" checked> Księżyc rozjaśnia niebo</label>
+          <label><input type="checkbox" id="chmury-met" checked> chmury zasłaniają</label>
+        </div>
+        <div class="presety"><button id="odpal">odpal meteor z najsilniejszego roju</button></div>
+      </div>
+      <div class="grupa">
+        <h3>Wydajność</h3>
+        <div class="wiersz"><span>jakość</span><select id="jakosc">
+          <option value="high">high: 60 fps, pełne cząstki, pełna rozdzielczość</option>
+          <option value="medium">medium: 30 fps, 60 % cząstek, 75 % rozdz.</option>
+          <option value="low">low: 20 fps, 35 % cząstek, 50 % rozdz.</option></select></div>
+        <p class="note">Pomiar klatek pod sceną dotyczy tej przeglądarki, nie kiosku RPi5.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Co jest w release'ie, co mamy, co dałoby się wdrożyć</h2>
+    <div class="tabwrap" style="max-height:none">
+    <table id="porownanie"><thead><tr>
+      <th>efekt</th><th>dynamic-weather-card 2026.10</th><th>sun-cycle-bg dziś</th>
+      <th>dane w naszym HA (odczyt __POBRANO__)</th><th>koszt</th><th>propozycja</th>
+    </tr></thead><tbody></tbody></table>
+    </div>
+    <p class="note" style="margin-top:8px">Dane w trzeciej kolumnie to stany z <code>/api/states</code> produkcyjnego
+    HA w chwili budowania strony. „Koszt” to szacunek rodzaju pracy na klatkę: „znikomy” = jeden element
+    z przejściem CSS, „średni”/„wysoki” = rysowanie na canvasie w każdej klatce. Kontrakt karty mówi dziś:
+    tylko transform i opacity, bez pętli rysującej. Każdy wiersz z canvasem ten kontrakt łamie.</p>
+  </div>
+
+  <div class="card">
+    <h2>Roje meteorów: czy da się je pokazać zgodnie z kalendarzem</h2>
+    <p>Da się, bez żadnej integracji i bez sieci. Lista robocza IMO podaje maksimum każdego roju jako długość
+    ekliptyczną Słońca (λ☉, J2000), więc data maksimum wychodzi z tej samej astronomii, którą karta już liczy
+    dla Słońca. Radiant (RA, Dec z dryfem dobowym) przelicza się na wysokość i azymut tą samą funkcją
+    <code>altaz</code> co Księżyc. Częstość w danej chwili:</p>
+    <p style="font-family:ui-monospace,monospace;font-size:13.5px;color:var(--text)">
+      HR = ZHR(λ☉) · sin(h<sub>radiant</sub>) · r<sup>(lm − 6,5)</sup> · (1 − zachmurzenie)</p>
+    <p class="note">ZHR(λ☉) i r z tabeli 5 IMO, lm to zasięg gwiazdowy (suwak). Kształt aktywności między krawędziami
+    okna a maksimum jest moim modelem: spadek wykładniczy do ZHR ≈ 1,5 na krawędziach okna. IMO publikuje tylko
+    okno i maksimum, więc profil jest przybliżeniem. Kwadrantydy mają w rzeczywistości maksimum szerokie na kilka
+    godzin, a model daje kilka dni. Księżyc: zasięg spada o 2 mag × oświetlenie × √sin(wysokość Księżyca),
+    to też przybliżenie. Tło sporadyczne przyjąłem jako 6/h wieczorem do 12/h nad ranem przy lm 6,5 i r = 3.
+    Rój antyhelionowy (ANT, ZHR 4) ma radiant 11° na wschód od punktu przeciwległego Słońcu, jak w tabeli 6.</p>
+
+    <div class="dzis" id="dzis"></div>
+
+    <h3>Rok na naszej szerokości, najlepsza godzina każdej nocy, bezchmurnie</h3>
+    <div class="legenda"><span><i style="background:var(--s1)"></i>z Księżycem</span>
+      <span><i style="background:var(--s2)"></i>bez Księżyca</span>
+      <span>kliknięcie w wykres przenosi scenę na tę noc</span></div>
+    <svg id="wykres" role="img" aria-label="Spodziewana liczba meteorów na godzinę przez rok"></svg>
+    <div class="dymek" id="dymek"></div>
+
+    <h3>Roje w najbliższym roku</h3>
+    <div class="tabwrap"><table id="roje"><thead><tr>
+      <th>rój</th><th>aktywność</th><th>maksimum</th><th class="num">ZHR</th><th class="num">V km/s</th>
+      <th class="num">radiant</th><th>najlepiej u nas</th><th class="num">HR bez Księżyca</th>
+      <th class="num">HR z Księżycem</th><th class="num">Księżyc</th><th>źródło</th><th></th>
+    </tr></thead><tbody></tbody></table></div>
+    <p class="note" style="margin-top:8px">„Najlepiej u nas”: godzina w noc maksimum (czas lokalny), w której HR jest
+    największy przy Słońcu niżej niż −12°, i wysokość radiantu wtedy. Roje z radiantem, który nigdy nie wschodzi
+    na 53,5° N (π-Puppidy, α-Centaurydy, Puppidy-Velidy), mają HR 0. Roje dzienne (Arietydy, Sekstantydy) są
+    w tabeli, ale ich radiant stoi przy Słońcu, więc w nocy też nie dają nic. „Var” = zmienny, IMO nie podaje
+    ZHR i model go nie liczy.</p>
+  </div>
+
+  <div class="card decyzje">
+    <h2>Do decyzji</h2>
+    <ol id="decyzje">
+      <li><b>Gdzie żyje warstwa pogody.</b> Moja rekomendacja: nowy blok <code>weather:</code> w sun-cycle-bg,
+      wyłączony domyślnie. Chmury, welon i mgła muszą znać paletę nieba i wysokość Słońca, a meteory i zorza
+      projekcję kadru, a to wszystko karta już liczy. Osobna karta dublowałaby astronomię.</li>
+      <li><b>Kontrakt wydajności.</b> Deszcz, śnieg, grad, liście i krople to pętla rysująca na canvasie, czyli
+      odejście od zasady „tylko compositor”. Propozycja: pętla działa tylko wtedy, gdy stan pogody coś pada albo
+      wieje (przy <code>sunny</code>/<code>clear-night</code>/<code>partlycloudy</code> stoi), jakość
+      <code>medium</code> na kiosku, pauza poza ekranem i przy <code>prefers-reduced-motion</code>. Chmury
+      i welon dadzą się zrobić bez pętli (warstwy z transform), więc mogą działać zawsze. Przed wdrożeniem pomiar
+      fps na RPi5.</li>
+      <li><b>Które efekty.</b> Moja lista na start: welon nieba, chmury, deszcz z rozbryzgami, śnieg, mgła,
+      błyskawice. Do decyzji: grad (u nas stan <code>hail</code> z OWM pojawia się rzadko), wiatr z liśćmi
+      (u mnie liście tylko jesienią, poza nią same smugi; DWC daje zielone liście przez resztę roku), krople na szybie.</li>
+      <li><b>Krople na szybie</b> w DWC leżą na karcie. U nas tło jest pod wszystkimi kartami panelu, więc krople
+      byłyby pod kafelkami, a nie „na szybie”. Nad kafelkami zasłaniałyby tekst. Rekomendacja: wyłączone albo
+      pod kartami ze świadomością, że efekt szyby słabnie.</li>
+      <li><b>Zorza.</b> W HA nie ma źródła indeksu Kp (w <code>/api/states</code> 0 encji z „kp” i „aurora” poza
+      scenami świateł). Bez danych zorza byłaby ozdobą na każdą pogodną noc. Do tego kadr karty patrzy na południe
+      (azymut 50° do 310°), a zorza u nas świeci na północy, czyli przy krawędziach kadru. Rekomendacja: dodać
+      tylko razem z integracją NOAA SWPC i tylko przy krawędziach, albo wcale.</li>
+      <li><b>Meteory z kalendarza.</b> Rekomendacja: zastąpić stałe 28/h modelem rojów: kilka radiantów naraz,
+      prędkość i barwa z V∞, chmury i opad wycinają meteory. Do wyboru mnożnik: ×1 daje prawdę (w zwykłą noc
+      kilka na godzinę, w Perseidy kilkadziesiąt), ×3 daje widoczny ruch bez fałszywego roju.</li>
+      <li><b>Źródła danych pogody:</b> stan i wiatr z <code>weather.openweathermap</code>, chmury w trzech
+      warstwach i mgła z <code>weather.astroweather_dom</code>, porywy z lokalnego anemometru. Stan
+      <code>weather.astroweather_dom</code> to ocena seeingu („Poor”), nie pogoda, więc nie może sterować
+      efektami.</li>
+    </ol>
+    <h3>Szkic konfiguracji (klucze nie istnieją, to propozycja)</h3>
+    <pre class="yaml">type: custom:sun-cycle-bg-card
+weather:
+  entity: weather.openweathermap
+  clouds_entity: weather.astroweather_dom      # cloud_area_fraction_low/medium/high, fog_area_fraction
+  gust_entity: sensor.dom_anemometr_gust_strength
+  effects: [veil, clouds, rain, splashes, snow, fog, lightning, wind]
+  leaves: autumn                               # autumn | always | false
+  glass_drops: false
+  quality: medium                              # high | medium | low
+stars:
+  meteors:
+    showers: imo                               # radianty i ZHR z listy IMO, liczone lokalnie
+    boost: 3
+    limiting_magnitude: 5.8
+    moon: true
+    clouds: true</pre>
+  </div>
+</main>
+
+<script>
+/* ---- sun-cycle-bg.js, wklejone przy budowaniu strony ---- */
+__KARTA__
+</script>
+
+<script>
+(() => {
+"use strict";
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const $ = (id) => document.getElementById(id);
+const ROJE = __ROJE__;
+const POGODA = __POGODA__;
+const MIGAWKA = __MIGAWKA__;
+const KONFIG = __KONFIG__;
+const ZASOBY = new URLSearchParams(location.search).get("assets") || "__ZASOBY__";
+// zaokrąglone do pół stopnia: strona leży w /local bez logowania
+const LAT = 53.5, LON = 14.5;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const mixC = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+const sstep = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a.toFixed(3)})`;
+
+/* ================= astronomia ================= */
+function julian(ms) { return ms / 86400000 + 2440587.5; }
+const gmst = (J) => ((280.46061837 + 360.98564736629 * (J - 2451545)) % 360 + 360) % 360;
+function altaz(ra, dec, J, lat = LAT, lon = LON) {
+  const H = ((gmst(J) + lon - ra) % 360) * D2R, dr = dec * D2R, pr = lat * D2R;
+  const alt = Math.asin(Math.sin(dr) * Math.sin(pr) + Math.cos(dr) * Math.cos(pr) * Math.cos(H));
+  const az = Math.atan2(-Math.sin(H) * Math.cos(dr),
+    Math.cos(pr) * Math.sin(dr) - Math.sin(pr) * Math.cos(dr) * Math.cos(H));
+  return { alt: alt * R2D, az: ((az * R2D) % 360 + 360) % 360 };
+}
+function altazDoEq(alt, az, J) {
+  const a = alt * D2R, A = az * D2R, pr = LAT * D2R;
+  const dec = Math.asin(Math.sin(a) * Math.sin(pr) + Math.cos(a) * Math.cos(pr) * Math.cos(A));
+  const H = Math.atan2(-Math.sin(A) * Math.cos(a), Math.cos(pr) * Math.sin(a) - Math.sin(pr) * Math.cos(a) * Math.cos(A));
+  return { ra: ((gmst(J) + LON - H * R2D) % 360 + 360) % 360, dec: dec * R2D };
+}
+function eklDoEq(lam, beta) {
+  const e = 23.439 * D2R, l = lam * D2R, b = beta * D2R;
+  return {
+    ra: ((Math.atan2(Math.sin(l) * Math.cos(e) - Math.tan(b) * Math.sin(e), Math.cos(l)) * R2D) % 360 + 360) % 360,
+    dec: Math.asin(Math.sin(b) * Math.cos(e) + Math.cos(b) * Math.sin(e) * Math.sin(l)) * R2D,
+  };
+}
+function slonce(J) {
+  const n = J - 2451545, L = (280.460 + 0.9856474 * n) % 360;
+  const g = ((357.528 + 0.9856003 * n) % 360) * D2R;
+  const lam = ((L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360 + 360) % 360;
+  const eq = eklDoEq(lam, 0);
+  // λ☉ IMO jest w J2000: odjąć precesję od równonocy daty
+  return { ...eq, lam, lam2000: ((lam - 1.3970 * (n / 36525)) % 360 + 360) % 360 };
+}
+function ksiezyc(J) {   // ten sam szereg co w karcie (moonEq)
+  const T = (J - 2451545) / 36525, s = (x) => Math.sin(x * D2R);
+  const Lp = (218.316 + 481267.8813 * T) % 360, M = (357.529 + 35999.0503 * T) % 360;
+  const Mp = (134.963 + 477198.8676 * T) % 360, D = (297.850 + 445267.1115 * T) % 360;
+  const F = (93.272 + 483202.0175 * T) % 360;
+  const lam = (Lp + 6.289 * s(Mp) + 1.274 * s(2 * D - Mp) + 0.658 * s(2 * D) + 0.214 * s(2 * Mp)
+    - 0.186 * s(M) - 0.114 * s(2 * F) + 0.059 * s(2 * D - 2 * Mp) + 0.057 * s(2 * D - M - Mp)
+    + 0.053 * s(2 * D + Mp) + 0.046 * s(2 * D - M) - 0.041 * s(M - Mp) - 0.035 * s(D) - 0.031 * s(M + Mp)) % 360;
+  const beta = 5.128 * s(F) + 0.281 * s(Mp + F) - 0.278 * s(F - Mp) + 0.176 * s(2 * D - F)
+    - 0.075 * s(2 * F - Mp) - 0.041 * s(Mp - 2 * F);
+  const eq = eklDoEq((lam + 360) % 360, beta);
+  const sl = slonce(J);
+  const elong = Math.acos(Math.cos(beta * D2R) * Math.cos(((lam - sl.lam) % 360) * D2R));
+  return { ...eq, osw: (1 - Math.cos(elong)) / 2 };
+}
+const wrap180 = (x) => ((x % 360) + 540) % 360 - 180;
+// strefa Europe/Warsaw bez bibliotek: przesunięcie z Intl
+const FMT = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Warsaw", hourCycle: "h23",
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+function czesciPL(ms) {
+  const p = Object.fromEntries(FMT.formatToParts(new RD(ms)).map((x) => [x.type, x.value]));
+  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, min: +p.minute };
+}
+function plDoUtc(y, m, d, minuty) {
+  let g = RD.UTC(y, m - 1, d, 0, minuty);
+  for (let i = 0; i < 2; i++) {
+    const c = czesciPL(g);
+    const lok = RD.UTC(c.y, c.m - 1, c.d, c.h, c.min);
+    g -= lok - RD.UTC(y, m - 1, d, 0, minuty);
+  }
+  return g;
+}
+const dwa = (n) => String(n).padStart(2, "0");
+const fmtData = (ms) => { const c = czesciPL(ms); return `${dwa(c.d)}.${dwa(c.m)}.${c.y}`; };
+const fmtGodz = (ms) => { const c = czesciPL(ms); return `${dwa(c.h)}:${dwa(c.min)}`; };
+const MIES = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];
+
+/* ================= model rojów ================= */
+// okna aktywności z dat na λ☉ (λ dla roku 2027 = rok kalendarza IMO)
+function lamDaty(md, rok) {
+  const [m, d] = md.split("-").map(Number);
+  return slonce(julian(RD.UTC(rok, m - 1, d, 0))).lam2000;
+}
+for (const r of ROJE) {
+  r.lamOd = lamDaty(r.od, 2027);
+  r.lamDo = lamDaty(r.do, 2027);
+  const przed = Math.max(1, wrap180(r.lam - r.lamOd)), po = Math.max(1, wrap180(r.lamDo - r.lam));
+  r.Bp = r.zhr ? Math.log10(r.zhr / 1.5) / przed : 0;
+  r.Bn = r.zhr ? Math.log10(r.zhr / 1.5) / po : 0;
+}
+function zhrW(r, lam) {
+  if (!r.zhr) return 0;
+  const d = wrap180(lam - r.lam);
+  if (d < 0 && -d > wrap180(r.lam - r.lamOd)) return 0;
+  if (d > 0 && d > wrap180(r.lamDo - r.lam)) return 0;
+  return r.zhr * Math.pow(10, -(d < 0 ? r.Bp : r.Bn) * Math.abs(d));
+}
+function radiant(r, lam) {
+  const dni = wrap180(lam - r.lam) / 0.9856;
+  return { ra: (r.ra + r.dra * dni + 360) % 360, dec: clamp(r.dec + r.ddec * dni, -90, 90) };
+}
+const SPORADYCZNE = { kod: "SPO", nazwa: "sporadyczne", v: 40, r: 3.0 };
+const ANT = { kod: "ANT", nazwa: "antyhelion", v: 30, r: 3.0, zhr: 4 };
+// ANT działa od 10 grudnia do 20 września, czyli nie działa między tymi datami
+const ANT_KONIEC = lamDaty("09-20", 2027), ANT_START = lamDaty("12-10", 2027);
+function antAktywny(lam) { return !(wrap180(lam - ANT_KONIEC) > 0 && wrap180(ANT_START - lam) > 0); }
+function lmEf(lm, J, sl, moonOn) {
+  if (!moonOn) return lm;
+  const k = ksiezyc(J), p = altaz(k.ra, k.dec, J);
+  return p.alt > 0 ? lm - 2 * k.osw * Math.sqrt(Math.sin(p.alt * D2R)) : lm;
+}
+/* Wszystkie źródła w chwili ms: [{rój, hr, alt, az}], hr dla bezchmurnego nieba. */
+function zrodla(ms, lm, moonOn) {
+  const J = julian(ms), sl = slonce(J);
+  const sp = altaz(sl.ra, sl.dec, J);
+  if (sp.alt > -12) return { sp, lista: [], lm: lm };
+  const L = lmEf(lm, J, sl, moonOn);
+  const lista = [];
+  for (const r of ROJE) {
+    const z = zhrW(r, sl.lam2000);
+    if (!z) continue;
+    const rd = radiant(r, sl.lam2000), p = altaz(rd.ra, rd.dec, J);
+    if (p.alt <= 0) continue;
+    lista.push({ roj: r, hr: z * Math.sin(p.alt * D2R) * Math.pow(r.r, L - 6.5), alt: p.alt, az: p.az });
+  }
+  if (antAktywny(sl.lam2000)) {
+    const eq = eklDoEq((sl.lam + 191) % 360, 0), p = altaz(eq.ra, eq.dec, J);
+    if (p.alt > 0) lista.push({ roj: ANT, hr: 4 * Math.sin(p.alt * D2R) * Math.pow(3, L - 6.5), alt: p.alt, az: p.az });
+  }
+  // tło sporadyczne: 6/h wieczorem, 12/h nad ranem (apeks nad horyzontem) — założenie, nie IMO
+  const c = czesciPL(ms), godz = c.h + c.min / 60;
+  const rano = 0.5 + 0.5 * Math.cos((godz - 5) / 24 * 2 * Math.PI);
+  lista.push({ roj: SPORADYCZNE, hr: (6 + 6 * rano) * Math.pow(3, L - 6.5), alt: null, az: null });
+  return { sp, lista, lm: L };
+}
+const sumaHR = (z) => z.lista.reduce((s, x) => s + x.hr, 0);
+
+/* ================= scena: karta ================= */
+const karta = $("karta");
+const J_MIG = julian(new RD(MIGAWKA.pobrano).getTime());
+const PLANETY_EQ = {};
+for (const [b, w] of Object.entries(MIGAWKA.planety)) PLANETY_EQ[b] = altazDoEq(+w.elevation, +w.azimuth, J_MIG);
+
+const S = {
+  ms: 0, stan: "partlycloudy", int: 0, cl: 0, cm: 0, ch: 0, mg: 0, wi: 0, wk: 260, zo: 0, zoTryb: "krawedz",
+  met: "roje", mnoz: 1, lm: 5.8, ksiezyc: true, chmuryMet: true, jakosc: "high",
+  fx: { welon: true, chmury: true, deszcz: true, rozbryzgi: true, szyba: false, snieg: true, grad: true,
+        mgla: true, piorun: true, smugi: true, liscie: true, zorza: true },
+};
+function konfigKarty() {
+  const k = JSON.parse(JSON.stringify(KONFIG));
+  k.assets = ZASOBY;
+  if (k.stars) {
+    delete k.stars.iss;              // przeloty ISS wymagają encji N2YO, tu ich nie ma
+    if (S.met !== "karta") k.stars.meteors = { ...(k.stars.meteors || {}), rate: 0 };
+  }
+  return k;
+}
+let ostatniMet = null;
+function zastosujKarte() {
+  if (ostatniMet === S.met) return;
+  ostatniMet = S.met;
+  karta.setConfig(konfigKarty());
+  ustawNiebo(true);
+}
+let niebo = { e: 0, az: 180, J: 0 };
+let nieboT = 0;
+function ustawNiebo(wymus) {
+  const teraz = performance.now();
+  if (!wymus && teraz - nieboT < 90) return;
+  nieboT = teraz;
+  SIM_OFF = S.ms - RD.now();
+  const J = julian(S.ms), sl = slonce(J), sp = altaz(sl.ra, sl.dec, J);
+  const stany = { "sun.sun": { state: sp.alt > 0 ? "above_horizon" : "below_horizon",
+    attributes: { elevation: sp.alt, azimuth: sp.az } } };
+  for (const [b, eq] of Object.entries(PLANETY_EQ)) {
+    const p = altaz(eq.ra, eq.dec, J);
+    stany["sensor.sol_" + b + "_azimuth"] = { state: p.az.toFixed(1) };
+    stany["sensor.sol_" + b + "_elevation"] = { state: p.alt.toFixed(1) };
+  }
+  const przed = karta._painted;
+  karta.hass = { states: stany, config: { latitude: LAT, longitude: LON } };
+  if (karta._painted === przed && typeof karta._apply === "function") karta._apply();
+  niebo = { e: sp.alt, az: sp.az, J };
+  const k = ksiezyc(J), kp = altaz(k.ra, k.dec, J);
+  niebo.ksiezyc = { alt: kp.alt, osw: k.osw };
+  niebo.zr = zrodla(S.ms, S.lm, S.ksiezyc);
+  odczyt();
+}
+// rzut karty (_project): azymut na szerokość, wysokość na wysokość, horyzont przy dole
+const AZ0 = 50, AZ1 = 310;
+function rzut(alt, az) {
+  return { x: clamp((az - AZ0) / (AZ1 - AZ0), -0.05, 1.05), y: (92 - clamp((alt + 6) / 60, -0.1, 1) * 86) / 100 };
+}
+
+/* ================= warstwy ================= */
+const cN = $("c-niebo"), cP = $("c-pogoda"), cS = $("c-szyba");
+const gN = cN.getContext("2d"), gP = cP.getContext("2d"), gS = cS.getContext("2d");
+const welon = $("welon"), blysk = $("blysk"), scena = $("scena");
+const JAK = { high: { fps: 60, n: 1, res: 1 }, medium: { fps: 30, n: 0.6, res: 0.75 }, low: { fps: 20, n: 0.35, res: 0.5 } };
+let W = 0, H = 0, SK = 1;   // px kanw, skala względem 400 px wysokości
+function rozmiar() {
+  const b = scena.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1) * JAK[S.jakosc].res;
+  W = Math.max(1, Math.round(b.width * dpr)); H = Math.max(1, Math.round(b.height * dpr));
+  for (const c of [cN, cP, cS]) { c.width = W; c.height = H; }
+  SK = H / 400;
+  sprite.cache = {};
+}
+new ResizeObserver(rozmiar).observe(scena);
+
+/* ---- światło: kolory chmur, welonu, opadu z wysokości Słońca i burzowości ---- */
+function swiatlo() {
+  const e = niebo.e;
+  const dzien = { gora: [252, 252, 254], dol: [200, 207, 218], welon: [152, 160, 170] };
+  const zloto = { gora: [255, 218, 184], dol: [176, 146, 152], welon: [150, 132, 132] };
+  const zmierzch = { gora: [206, 140, 128], dol: [88, 80, 112], welon: [72, 66, 86] };
+  const noc = { gora: [56, 62, 80], dol: [24, 28, 40], welon: [14, 17, 24] };
+  let c;
+  if (e >= 10) c = dzien;
+  else if (e >= 2) c = blend(zloto, dzien, (e - 2) / 8);
+  else if (e >= -6) c = blend(zmierzch, zloto, (e + 6) / 8);
+  else if (e >= -14) c = blend(noc, zmierzch, (e + 14) / 8);
+  else c = noc;
+  const k = niebo.ksiezyc || { alt: -1, osw: 0 };
+  if (e < -6 && k.alt > 0) {
+    const m = k.osw * Math.sin(k.alt * D2R) * 0.6;
+    c = { gora: mixC(c.gora, [120, 128, 150], m), dol: c.dol, welon: mixC(c.welon, [40, 44, 56], m) };
+  }
+  const burza = burzowosc();
+  return {
+    gora: mixC(c.gora, c.gora.map((v) => v * 0.48), burza), dol: mixC(c.dol, c.dol.map((v) => v * 0.42), burza),
+    welon: mixC(c.welon, c.welon.map((v) => v * 0.55), burza), e,
+  };
+  function blend(a, b, t) { t = clamp(t, 0, 1); return { gora: mixC(a.gora, b.gora, t), dol: mixC(a.dol, b.dol, t), welon: mixC(a.welon, b.welon, t) }; }
+}
+function burzowosc() {
+  return ({ "lightning-rainy": 0.85, lightning: 0.6, pouring: 0.6, hail: 0.7, exceptional: 0.8, rainy: 0.35,
+    "snowy-rainy": 0.3, snowy: 0.15, cloudy: 0.15, fog: 0.1 })[S.stan] || 0;
+}
+const pokrycie = () => 1 - (1 - S.cl / 100) * (1 - S.cm / 100 * 0.8) * (1 - S.ch / 100 * 0.35);
+const OPAD = { rainy: "deszcz", pouring: "deszcz", "lightning-rainy": "deszcz", snowy: "snieg",
+  "snowy-rainy": "desznieg", hail: "grad", exceptional: "deszcz" };
+const PIORUNY = { lightning: 1, "lightning-rainy": 1, exceptional: 0.5 };
+function wiatrX() {   // + = w prawo; kadr patrzy na południe, zachód po prawej
+  return S.wi * Math.cos((S.wk - 90) * D2R);
+}
+
+/* ---- sprite'y chmur: maska alfa raz, barwienie przy zmianie światła ---- */
+function sprite(typ, i) {
+  const klucz = typ + i;
+  if (sprite.maski[klucz]) return sprite.maski[klucz];
+  const c = document.createElement("canvas"), w = 520, h = typ === "cirrus" ? 90 : 220;
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  let ziarno = (i + 1) * (typ.length * 7919);
+  const los = () => ((ziarno = (ziarno * 16807) % 2147483647) / 2147483647);
+  if (typ === "cirrus") {
+    for (let k = 0; k < 14; k++) {
+      const x = 40 + los() * 440, y = 20 + los() * 50, rx = 60 + los() * 120, ry = 4 + los() * 7;
+      g.save(); g.translate(x, y); g.rotate((los() - 0.5) * 0.25); g.scale(1, ry / rx);
+      const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+      r.addColorStop(0, "rgba(255,255,255,.55)"); r.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, Math.PI * 2); g.fill(); g.restore();
+    }
+  } else {
+    const n = typ === "cumulus" ? 22 : 30, plaski = typ === "stratus" ? 0.45 : 1;
+    for (let k = 0; k < n; k++) {
+      const t = k / n, x = 70 + los() * 380, baza = h * 0.72;
+      const wyz = Math.sin(Math.PI * (x - 50) / 420) * (h * 0.42) * plaski;
+      const y = baza - los() * wyz, r = (28 + los() * 52) * (typ === "stratus" ? 0.9 : 1) * (0.7 + 0.5 * (1 - t));
+      const gr = g.createRadialGradient(x, y, r * 0.15, x, y, r);
+      gr.addColorStop(0, "rgba(255,255,255,.9)"); gr.addColorStop(0.65, "rgba(255,255,255,.55)");
+      gr.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    // płaska podstawa: wszystko poniżej bazy wygaszone
+    g.globalCompositeOperation = "destination-out";
+    const p = g.createLinearGradient(0, h * 0.7, 0, h * 0.86);
+    p.addColorStop(0, "rgba(0,0,0,0)"); p.addColorStop(1, "rgba(0,0,0,1)");
+    g.fillStyle = p; g.fillRect(0, h * 0.7, w, h * 0.3);
+  }
+  return (sprite.maski[klucz] = c);
+}
+sprite.maski = {}; sprite.cache = {};
+function barwiony(typ, i, sw) {
+  const klucz = typ + i + "|" + sw.gora.map((v) => v >> 3).join() + sw.dol.map((v) => v >> 3).join();
+  if (sprite.cache[klucz]) return sprite.cache[klucz];
+  if (Object.keys(sprite.cache).length > 60) sprite.cache = {};
+  const m = sprite(typ, i), c = document.createElement("canvas");
+  c.width = m.width; c.height = m.height;
+  const g = c.getContext("2d");
+  g.drawImage(m, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  const gr = g.createLinearGradient(0, 0, 0, m.height);
+  // od dołu oświetlone przy nisko stojącym Słońcu, od góry w dzień
+  const odDolu = sw.e < 6 && sw.e > -8;
+  gr.addColorStop(0, rgba(odDolu ? sw.dol : sw.gora, 1));
+  gr.addColorStop(0.55, rgba(mixC(sw.gora, sw.dol, 0.5), 1));
+  gr.addColorStop(1, rgba(odDolu ? sw.gora : sw.dol, 1));
+  g.fillStyle = gr; g.fillRect(0, 0, m.width, m.height);
+  return (sprite.cache[klucz] = c);
+}
+
+/* ---- stan cząstek ---- */
+const CH = { cirrus: [], alto: [], cumulus: [], stratus: [] };
+const krople = [], plusk = [], platki = [], grad = [], smugi = [], liscie = [], szyba = [], meteory = [];
+let pior = null, nastPiorun = 0, flash = 0;
+const losZ = () => Math.pow(Math.random(), 0.8);
+
+function dopasuj(tab, n, nowy) {
+  while (tab.length < n) tab.push(nowy(true));
+  if (tab.length > n) tab.length = n;
+}
+const SZER = { cirrus: 0.45, alto: 0.3, cumulus: 0.3, stratus: 0.5 };
+function chmuryKroku(dt, sw) {
+  const wx = wiatrX(), mn = JAK[S.jakosc].n;
+  const warstwy = [
+    ["cirrus", S.ch / 100, 10, 0.03, 0.22, 0.35, 0.45],
+    ["alto", S.cm / 100, 9, 0.10, 0.40, 0.55, 0.65],
+    ["cumulus", S.cl / 100 * (S.cl > 75 ? 0.6 : 1), 10, 0.20, 0.58, 0.85, 1.0],
+    ["stratus", sstep(0.65, 1, S.cl / 100), 9, 0.08, 0.50, 1.1, 1.0],
+  ];
+  if (!S.fx.chmury) return;
+  for (const [typ, pok, max, y0, y1, skala, szybk] of warstwy) {
+    const n = Math.round(pok * max * (0.6 + 0.4 * mn) + (pok > 0.02 ? 1 : 0));
+    dopasuj(CH[typ], n, (start) => ({ i: (Math.random() * 4) | 0, x: start ? Math.random() * 1.4 - 0.2 : (wx >= 0 ? -0.35 : 1.05),
+      y: y0 + Math.random() * (y1 - y0), s: skala * (0.75 + Math.random() * 0.5), a: 0.75 + Math.random() * 0.25 }));
+    const v = (0.004 + Math.abs(wx) / 2400) * szybk * Math.sign(wx || 1);
+    for (const c of CH[typ]) {
+      c.x += v * dt;
+      if (c.x > 1.15) c.x = -0.4; if (c.x < -0.45) c.x = 1.12;
+      const sp = barwiony(typ, c.i, sw), w = W * SZER[typ] * c.s;
+      const h = sp.height * w / sp.width;
+      gP.globalAlpha = c.a * clamp(pok * 1.6, 0.2, 1) * (typ === "cirrus" ? 0.7 : 1);
+      gP.drawImage(sp, c.x * W, c.y * H - h * 0.7, w, h);
+    }
+  }
+  gP.globalAlpha = 1;
+  // pokład stratusów: przy pełnym zachmurzeniu chmury nie są osobne
+  const pokl = sstep(0.75, 1, S.cl / 100);
+  if (pokl > 0) {
+    const gr = gP.createLinearGradient(0, 0, 0, H * 0.75);
+    gr.addColorStop(0, rgba(sw.dol, 0.95 * pokl)); gr.addColorStop(0.7, rgba(mixC(sw.dol, sw.gora, 0.35), 0.75 * pokl));
+    gr.addColorStop(1, rgba(sw.gora, 0));
+    gP.fillStyle = gr; gP.fillRect(0, 0, W, H * 0.75);
+  }
+}
+
+function opadKroku(dt, sw) {
+  const typ = OPAD[S.stan], mn = JAK[S.jakosc].n, I = S.int;
+  const wx = wiatrX() * (1 + 0.35 * poryw());
+  const nD = (typ === "deszcz" ? 1 : typ === "desznieg" ? 0.55 : 0) * I * 1400 * mn * (S.fx.deszcz ? 1 : 0);
+  const nS = (typ === "snieg" ? 1 : typ === "desznieg" ? 0.45 : 0) * I * 900 * mn * (S.fx.snieg ? 1 : 0);
+  const nG = (typ === "grad" ? 1 : 0) * I * 500 * mn * (S.fx.grad ? 1 : 0);
+  const nDg = typ === "grad" ? I * 500 * mn * (S.fx.deszcz ? 1 : 0) : 0;
+  const nowaKropla = (start) => { const z = losZ(); return { x: Math.random() * W * 1.4 - W * 0.2, y: start ? Math.random() * H : -Math.random() * H * 0.2, z }; };
+  dopasuj(krople, Math.round(nD + nDg), nowaKropla);
+  dopasuj(platki, Math.round(nS), (start) => ({ x: Math.random() * W * 1.3 - W * 0.15, y: start ? Math.random() * H : -10, z: losZ(), f: Math.random() * 6.28 }));
+  dopasuj(grad, Math.round(nG), (start) => ({ x: Math.random() * W * 1.3 - W * 0.15, y: start ? Math.random() * H : -10, z: losZ(), vy: 0, odb: 0 }));
+
+  // deszcz: trzy kubełki głębi, jedna ścieżka na kubełek
+  if (krople.length) {
+    const kol = sw.e > 0 ? [214, 224, 236] : [150, 164, 186];
+    const sciezki = [new Path2D(), new Path2D(), new Path2D()];
+    for (const k of krople) {
+      const v = (900 + 1500 * k.z) * SK * (0.75 + 0.25 * I), dl = (10 + 30 * k.z) * SK * (0.55 + 0.45 * I);
+      const sk = clamp(wx / 45, -1.3, 1.3) * (0.4 + 0.6 * k.z);
+      k.y += v * dt; k.x += v * sk * dt;
+      const ziemia = H * (0.78 + 0.22 * k.z);
+      if (k.y > ziemia) {
+        if (S.fx.rozbryzgi && k.z > 0.4 && plusk.length < 260 * mn)
+          for (let j = 0; j < 2 + (k.z > 0.8); j++)
+            plusk.push({ x: k.x, y: ziemia, vx: (Math.random() - 0.5) * 120 * SK + v * sk * 0.05, vy: -(60 + Math.random() * 110) * SK * k.z, t: 0, z: k.z });
+        Object.assign(k, nowaKropla(false));
+        continue;
+      }
+      const s = sciezki[k.z < 0.33 ? 0 : k.z < 0.66 ? 1 : 2];
+      s.moveTo(k.x, k.y); s.lineTo(k.x - dl * sk * 0.9, k.y - dl);
+    }
+    const sz = [0.8, 1.1, 1.6], al = [0.16, 0.28, 0.46];
+    for (let j = 0; j < 3; j++) { gP.strokeStyle = rgba(kol, al[j]); gP.lineWidth = sz[j] * SK * 1.4; gP.stroke(sciezki[j]); }
+  }
+  if (plusk.length) {
+    gP.fillStyle = rgba(sw.e > 0 ? [225, 233, 242] : [160, 172, 192], 0.55);
+    gP.beginPath();
+    for (let i = plusk.length - 1; i >= 0; i--) {
+      const p = plusk[i]; p.t += dt; p.vy += 700 * SK * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.t > 0.35) { plusk.splice(i, 1); continue; }
+      const r = (0.6 + p.z) * SK;
+      gP.moveTo(p.x + r, p.y); gP.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+    gP.fill();
+  }
+  if (platki.length) {
+    const sc = [new Path2D(), new Path2D(), new Path2D()];
+    const t = performance.now() / 1000;
+    for (const p of platki) {
+      const v = (25 + 75 * p.z) * SK * (0.8 + 0.4 * I);
+      p.y += v * dt; p.x += (wx * 1.6 * (0.3 + 0.7 * p.z) * SK + Math.sin(t * 1.3 + p.f) * 18 * SK * p.z) * dt;
+      if (p.y > H * (0.8 + 0.2 * p.z)) { p.y = -8; p.x = Math.random() * W * 1.3 - W * 0.15; }
+      if (p.x > W * 1.15) p.x -= W * 1.3; if (p.x < -W * 0.15) p.x += W * 1.3;
+      const r = (0.7 + 2.6 * p.z) * SK, s = sc[p.z < 0.33 ? 0 : p.z < 0.66 ? 1 : 2];
+      s.moveTo(p.x + r, p.y); s.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+    const al = [0.45, 0.65, 0.9], kol = sw.e > -4 ? [255, 255, 255] : [196, 204, 222];
+    for (let j = 0; j < 3; j++) { gP.fillStyle = rgba(kol, al[j]); gP.fill(sc[j]); }
+  }
+  if (grad.length) {
+    gP.fillStyle = rgba(sw.e > 0 ? [240, 246, 252] : [176, 186, 204], 0.85);
+    gP.beginPath();
+    for (const p of grad) {
+      p.vy = p.vy || (1100 + 900 * p.z) * SK;
+      p.vy += 300 * SK * dt; p.y += p.vy * dt; p.x += wx * 4 * SK * dt;
+      const ziemia = H * (0.8 + 0.2 * p.z);
+      if (p.y > ziemia) {
+        if (p.odb < 1) { p.y = ziemia; p.vy = -p.vy * 0.28; p.odb++; }
+        else { p.y = -10; p.x = Math.random() * W * 1.3 - W * 0.15; p.vy = 0; p.odb = 0; }
+      }
+      const r = (1.1 + 2.2 * p.z) * SK;
+      gP.moveTo(p.x + r, p.y); gP.arc(p.x, p.y, r, 0, Math.PI * 2);
+    }
+    gP.fill();
+  }
+}
+
+/* ---- mgła: zamglenie od dołu + pasma dryfujące z wiatrem ---- */
+const pasma = Array.from({ length: 6 }, (_, i) => ({ x: Math.random() * 1.6 - 0.4, y: 0.38 + i * 0.1, s: 0.6 + Math.random() * 0.7 }));
+function mglaKroku(dt, sw) {
+  const f = S.mg / 100;
+  if (!S.fx.mgla || f <= 0.01) return;
+  const kol = mixC(sw.welon, [230, 234, 240], sw.e > 0 ? 0.35 : 0.08);
+  const gr = gP.createLinearGradient(0, H * 0.25, 0, H);
+  gr.addColorStop(0, rgba(kol, 0.15 * f)); gr.addColorStop(0.45, rgba(kol, 0.6 * f)); gr.addColorStop(1, rgba(kol, 0.95 * f));
+  gP.fillStyle = gr; gP.fillRect(0, 0, W, H);
+  const v = (0.006 + Math.abs(wiatrX()) / 5000) * Math.sign(wiatrX() || 1);
+  for (const p of pasma) {
+    p.x += v * dt * (0.6 + p.s * 0.6); if (p.x > 1.4) p.x = -0.9; if (p.x < -0.9) p.x = 1.4;
+    const cx = p.x * W, cy = p.y * H, rx = W * 0.55 * p.s, ry = H * 0.09;
+    gP.save(); gP.translate(cx, cy); gP.scale(1, ry / rx);
+    const r = gP.createRadialGradient(0, 0, 0, 0, 0, rx);
+    r.addColorStop(0, rgba(mixC(kol, [255, 255, 255], 0.15), 0.6 * f)); r.addColorStop(1, rgba(kol, 0));
+    gP.fillStyle = r; gP.beginPath(); gP.arc(0, 0, rx, 0, Math.PI * 2); gP.fill(); gP.restore();
+  }
+}
+
+/* ---- błyskawice ---- */
+function nowyPiorun() {
+  const doziemny = Math.random() < 0.6;
+  const x0 = (0.1 + Math.random() * 0.8) * W, y0 = H * (0.08 + Math.random() * 0.12);
+  const glowna = [], galezie = [];
+  const cel = doziemny ? { x: x0 + (Math.random() - 0.5) * W * 0.18, y: H * (0.8 + Math.random() * 0.1) }
+                       : { x: x0 + (Math.random() < 0.5 ? -1 : 1) * W * (0.15 + Math.random() * 0.2), y: y0 + H * 0.1 };
+  const kroki = 26;
+  let x = x0, y = y0;
+  glowna.push([x, y]);
+  for (let i = 1; i <= kroki; i++) {
+    const t = i / kroki;
+    x = lerp(x0, cel.x, t) + (Math.random() - 0.5) * W * 0.035; y = lerp(y0, cel.y, t) + (Math.random() - 0.5) * H * 0.02;
+    glowna.push([x, y]);
+    if (doziemny && Math.random() < 0.18 && i < kroki - 4) {
+      const g = [[x, y]]; let gx = x, gy = y; const kier = Math.random() < 0.5 ? -1 : 1;
+      for (let j = 0; j < 6 + Math.random() * 6; j++) { gx += kier * W * (0.006 + Math.random() * 0.014); gy += H * (0.012 + Math.random() * 0.02); g.push([gx, gy]); }
+      galezie.push(g);
+    }
+  }
+  return { glowna, galezie, t: 0, doziemny, x: x0 / W };
+}
+function piorunKroku(dt) {
+  const czest = PIORUNY[S.stan];
+  if (!czest || !S.fx.piorun) { flash = 0; blysk.style.opacity = 0; pior = null; return; }
+  const teraz = performance.now() / 1000;
+  if (!nastPiorun) nastPiorun = teraz + 1.5;
+  if (teraz > nastPiorun) { pior = nowyPiorun(); nastPiorun = teraz + (3 + Math.random() * 9) / czest; }
+  if (!pior) { blysk.style.opacity = 0; return; }
+  pior.t += dt;
+  const t = pior.t * 1000;
+  // dwa, trzy uderzenia powrotne: tak miga prawdziwy piorun
+  flash = t < 60 ? 0.5 : t < 110 ? 0.07 : t < 170 ? 0.38 : t < 230 ? 0.05 : t < 290 ? 0.22 : Math.max(0, 0.22 * (1 - (t - 290) / 380));
+  blysk.style.opacity = (flash * (pior.doziemny ? 1 : 0.7) * (niebo.e > 5 ? 0.45 : 1)).toFixed(3);
+  if (t > 700) { pior = null; return; }
+  if (pior.doziemny && flash > 0.12) {
+    const rysuj = (pkt, szer, kol) => { gP.beginPath(); gP.moveTo(pkt[0][0], pkt[0][1]); for (const p of pkt) gP.lineTo(p[0], p[1]); gP.lineWidth = szer; gP.strokeStyle = kol; gP.stroke(); };
+    gP.lineJoin = "round";
+    rysuj(pior.glowna, 7 * SK, "rgba(170,185,255,.28)");
+    for (const g of pior.galezie) rysuj(g, 3 * SK, "rgba(170,185,255,.22)");
+    rysuj(pior.glowna, 1.8 * SK, "rgba(255,255,255,.95)");
+    for (const g of pior.galezie) rysuj(g, 0.9 * SK, "rgba(240,244,255,.8)");
+  } else if (!pior.doziemny && flash > 0.04) {
+    const cx = pior.x * W, r = gP.createRadialGradient(cx, H * 0.18, 0, cx, H * 0.18, W * 0.25);
+    r.addColorStop(0, `rgba(220,226,255,${(flash * 0.9).toFixed(3)})`); r.addColorStop(1, "rgba(220,226,255,0)");
+    gP.fillStyle = r; gP.fillRect(0, 0, W, H * 0.6);
+  }
+}
+
+/* ---- wiatr: porywy, smugi, liście ---- */
+function poryw() {
+  const t = performance.now() / 1000;
+  return Math.max(0, Math.sin(t * 0.37) * 0.6 + Math.sin(t * 1.13 + 1) * 0.3 + Math.sin(t * 2.7) * 0.1);
+}
+function wiatrKroku(dt) {
+  const wx = wiatrX(), sila = Math.abs(wx), kier = Math.sign(wx || 1), mn = JAK[S.jakosc].n;
+  const nSm = S.fx.smugi ? Math.round(clamp((sila - 22) / 40, 0, 1) * 18 * mn) : 0;
+  dopasuj(smugi, nSm, () => ({ x: Math.random() * W, y: Math.random() * H * 0.85, dl: (60 + Math.random() * 140) * SK, z: Math.random(), t: Math.random() * 2 }));
+  if (smugi.length) {
+    gP.lineCap = "round";
+    for (const s of smugi) {
+      s.t += dt; s.x += kier * (300 + sila * 12) * SK * (0.5 + s.z) * dt * (1 + poryw());
+      if (s.x > W + s.dl || s.x < -s.dl * 2) { s.x = kier > 0 ? -s.dl : W + s.dl; s.y = Math.random() * H * 0.85; }
+      const a = 0.09 * (0.5 + 0.5 * Math.sin(s.t * 2.2));
+      gP.strokeStyle = `rgba(255,255,255,${a.toFixed(3)})`; gP.lineWidth = (0.8 + s.z) * SK;
+      gP.beginPath(); gP.moveTo(s.x, s.y);
+      gP.quadraticCurveTo(s.x - kier * s.dl * 0.5, s.y - 8 * SK * Math.sin(s.t), s.x - kier * s.dl, s.y + 3 * SK);
+      gP.stroke();
+    }
+  }
+  const mies = czesciPL(S.ms).m, jesien = mies >= 9 && mies <= 11;
+  const nL = S.fx.liscie && jesien ? Math.round(clamp((sila - 18) / 40, 0, 1) * 16 * mn) : 0;
+  const KOL = ["#c8641e", "#e0a030", "#8a4b1a", "#b8902a", "#9c3b16"];
+  dopasuj(liscie, nL, (start) => ({ x: start ? Math.random() * W : (kier > 0 ? -20 : W + 20), y: Math.random() * H * 0.8,
+    r: Math.random() * 6.28, vr: (Math.random() - 0.5) * 8, f: Math.random() * 6.28, s: (4 + Math.random() * 5) * SK, k: KOL[(Math.random() * KOL.length) | 0], z: 0.4 + Math.random() * 0.6 }));
+  for (const l of liscie) {
+    l.f += dt * 5; l.r += l.vr * dt;
+    l.x += kier * (120 + sila * 6) * SK * l.z * dt * (0.6 + poryw());
+    l.y += (30 * SK + Math.sin(l.f * 0.7) * 60 * SK) * dt;
+    if (l.x > W + 30 || l.x < -30 || l.y > H) { l.x = kier > 0 ? -20 : W + 20; l.y = Math.random() * H * 0.6; }
+    gP.save(); gP.translate(l.x, l.y); gP.rotate(l.r); gP.scale(1, Math.abs(Math.cos(l.f)) * 0.8 + 0.2);
+    gP.fillStyle = l.k; gP.globalAlpha = 0.9;
+    gP.beginPath(); gP.ellipse(0, 0, l.s, l.s * 0.55, 0, 0, Math.PI * 2); gP.fill();
+    gP.strokeStyle = "rgba(60,30,10,.6)"; gP.lineWidth = 0.6 * SK; gP.beginPath(); gP.moveTo(-l.s, 0); gP.lineTo(l.s * 1.3, 0); gP.stroke();
+    gP.restore();
+  }
+  gP.globalAlpha = 1;
+}
+
+/* ---- krople na szybie ---- */
+let szybaAkum = 0;
+function szybaKroku(dt) {
+  gS.clearRect(0, 0, W, H);
+  const pada = OPAD[S.stan] === "deszcz" || OPAD[S.stan] === "desznieg";
+  if (S.fx.szyba && pada) {
+    szybaAkum += dt * S.int * 14;
+    while (szybaAkum > 1) {
+      szybaAkum--;
+      if (szyba.length < 140 * JAK[S.jakosc].n) {
+        const duza = Math.random() < 0.18;
+        szyba.push({ x: Math.random() * W, y: Math.random() * H * 0.9, r: (duza ? 5 + Math.random() * 5 : 1.2 + Math.random() * 3) * SK, vy: 0, wiek: 0, zycie: 8 + Math.random() * 14, stoj: Math.random() * 2 });
+      }
+    }
+  }
+  for (let i = szyba.length - 1; i >= 0; i--) {
+    const d = szyba[i];
+    d.wiek += dt;
+    if (d.wiek > d.zycie) { szyba.splice(i, 1); continue; }
+    if (d.r > 4.5 * SK) {
+      d.stoj -= dt;
+      if (d.stoj < 0) {
+        d.vy = Math.min(d.vy + 160 * SK * dt, 90 * SK);
+        if (Math.random() < 0.02) { d.stoj = Math.random() * 0.8; d.vy = 0; }
+        const dy = d.vy * dt;
+        d.y += dy; d.x += (Math.random() - 0.5) * 0.8 * SK;
+        d.slad = (d.slad || 0) + dy;
+        if (d.slad > 7 * SK && szyba.length < 220) { d.slad = 0; d.r -= 0.05 * SK; szyba.push({ x: d.x + (Math.random() - 0.5) * 2, y: d.y - d.r, r: (0.6 + Math.random() * 0.9) * SK, vy: 0, wiek: 0, zycie: 3 + Math.random() * 4, stoj: 99 }); }
+        if (d.y > H + 10) { szyba.splice(i, 1); continue; }
+      }
+    }
+    const a = 1 - sstep(d.zycie * 0.75, d.zycie, d.wiek);
+    gS.globalAlpha = a;
+    gS.fillStyle = "rgba(0,0,0,.18)"; gS.beginPath(); gS.ellipse(d.x, d.y + d.r * 0.25, d.r, d.r * 1.08, 0, 0, Math.PI * 2); gS.fill();
+    const g = gS.createRadialGradient(d.x - d.r * 0.2, d.y - d.r * 0.25, d.r * 0.1, d.x, d.y, d.r);
+    g.addColorStop(0, "rgba(255,255,255,.04)"); g.addColorStop(0.75, "rgba(255,255,255,.10)"); g.addColorStop(1, "rgba(255,255,255,.38)");
+    gS.fillStyle = g; gS.beginPath(); gS.ellipse(d.x, d.y, d.r, d.r * 1.08, 0, 0, Math.PI * 2); gS.fill();
+    gS.fillStyle = "rgba(255,255,255,.7)"; gS.beginPath(); gS.arc(d.x - d.r * 0.38, d.y - d.r * 0.4, Math.max(0.5, d.r * 0.22), 0, Math.PI * 2); gS.fill();
+  }
+  gS.globalAlpha = 1;
+}
+
+/* ---- zorza (na kanwie nieba, pod welonem) ---- */
+const zorzaC = document.createElement("canvas"); zorzaC.width = 220; zorzaC.height = 70;
+const zg = zorzaC.getContext("2d");
+function zorzaKroku() {
+  const sila = S.zo * (S.fx.zorza ? 1 : 0) * sstep(-8, -14, niebo.e) * (1 - pokrycie());
+  if (sila < 0.02) return;
+  const t = performance.now() / 1000, w = zorzaC.width, h = zorzaC.height;
+  zg.clearRect(0, 0, w, h);
+  for (let x = 0; x < w; x++) {
+    const wys = h * (0.55 + 0.28 * Math.sin(x * 0.045 + t * 0.4) + 0.14 * Math.sin(x * 0.13 - t * 0.9));
+    const jas = clamp(0.35 + 0.4 * Math.sin(x * 0.07 + t * 0.6) + 0.25 * Math.sin(x * 0.21 - t * 1.4), 0, 1);
+    const g = zg.createLinearGradient(0, h, 0, h - wys);
+    g.addColorStop(0, `rgba(70,255,150,0)`);
+    g.addColorStop(0.08, `rgba(70,255,150,${(0.9 * jas).toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(60,220,140,${(0.45 * jas).toFixed(3)})`);
+    g.addColorStop(1, `rgba(180,80,220,0)`);
+    zg.fillStyle = g; zg.fillRect(x, h - wys, 1, wys);
+  }
+  gN.save(); gN.globalCompositeOperation = "lighter"; gN.globalAlpha = sila;
+  const gora = H * 0.22, wys = H * 0.70;   // dół zasłony na horyzoncie karty (92 %)
+  if (S.zoTryb === "nad") gN.drawImage(zorzaC, 0, gora, W, wys);
+  else {
+    // północ leży poza oknem 50°–310°, więc zorza wystaje tylko zza krawędzi
+    // pełna siła przy krawędzi, zero w ~22 % szerokości od niej
+    const pas = W * 0.24;
+    gN.drawImage(zorzaC, 0, 0, w * 0.5, h, 0, gora, pas, wys);
+    gN.drawImage(zorzaC, w * 0.5, 0, w * 0.5, h, W - pas, gora, pas, wys);
+    const wyg = (x0, x1) => { const g = gN.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,1)"); return g; };
+    gN.globalCompositeOperation = "destination-out"; gN.globalAlpha = 1;
+    gN.fillStyle = wyg(pas * 0.15, pas); gN.fillRect(0, 0, pas, H);
+    gN.fillStyle = wyg(W - pas * 0.15, W - pas); gN.fillRect(W - pas, 0, pas, H);
+  }
+  gN.restore();
+}
+
+/* ---- meteory ---- */
+function cel(alt, az, kier, dist) {     // punkt odległy o dist w kierunku kier od (alt, az)
+  const f1 = alt * D2R, l1 = az * D2R, d = dist * D2R, k = kier * D2R;
+  const f2 = Math.asin(Math.sin(f1) * Math.cos(d) + Math.cos(f1) * Math.sin(d) * Math.cos(k));
+  const l2 = l1 + Math.atan2(Math.sin(k) * Math.sin(d) * Math.cos(f1), Math.cos(d) - Math.sin(f1) * Math.sin(f2));
+  return { alt: f2 * R2D, az: ((l2 * R2D) % 360 + 360) % 360 };
+}
+const statMet = { proby: 0, ok: 0 };
+function odpalMeteor(zr) {
+  statMet.proby++;
+  let ralt = zr.alt, raz = zr.az;
+  if (ralt === null) { ralt = -20 + Math.random() * 100; raz = Math.random() * 360; }
+  for (let proba = 0; proba < 12; proba++) {
+    const kier = Math.random() * 360, od = 10 + Math.random() * 60;
+    const p0 = cel(ralt, raz, kier, od);
+    if (p0.alt < 4 || p0.alt > 56 || p0.az < AZ0 + 3 || p0.az > AZ1 - 3) continue;
+    const dl = (8 + Math.random() * 18) * Math.max(0.35, Math.sin(od * D2R));
+    // kierunek „od radiantu” = azymut z p0 przeciwny do kierunku na radiant
+    const p1 = cel(ralt, raz, kier, od + dl);
+    const a = rzut(p0.alt, p0.az), b = rzut(p1.alt, p1.az);
+    const v = zr.roj.v, mag = -1 + Math.pow(Math.random(), 0.5) * 5 - (Math.random() < 0.03 ? 3 : 0);
+    statMet.ok++;
+    meteory.push({ x0: a.x * W, y0: a.y * H, x1: b.x * W, y1: b.y * H, t: 0,
+      dur: (0.25 + dl / 14) * Math.pow(40 / v, 0.7), mag,
+      kol: v > 55 ? [210, 235, 255] : v < 30 ? [255, 214, 160] : [255, 248, 236], kod: zr.roj.kod });
+    return true;
+  }
+  return false;
+}
+let licznikMet = 0;
+function meteoryKroku(dt) {
+  if (S.met === "roje" && niebo.zr && niebo.zr.lista.length) {
+    const zakrycie = S.chmuryMet ? (OPAD[S.stan] ? 1 : pokrycie()) : 0;
+    for (const z of niebo.zr.lista) {
+      const na_s = z.hr * S.mnoz * (1 - zakrycie) / 3600;
+      if (Math.random() < na_s * dt && odpalMeteor(z)) licznikMet++;
+    }
+  }
+  for (let i = meteory.length - 1; i >= 0; i--) {
+    const m = meteory[i]; m.t += dt;
+    const p = m.t / m.dur;
+    if (p >= 1) { meteory.splice(i, 1); continue; }
+    const glowa = clamp(p * 1.15, 0, 1), ogon = clamp(p * 1.15 - 0.45, 0, 1);
+    const hx = lerp(m.x0, m.x1, glowa), hy = lerp(m.y0, m.y1, glowa);
+    const tx = lerp(m.x0, m.x1, ogon), ty = lerp(m.y0, m.y1, ogon);
+    // jasność z wielkości gwiazdowej, z podłogą: na panelu 3 mag ma być widoczne, nie tylko prawdziwe
+    const jas = clamp(0.45 + 0.55 * Math.pow(10, -0.4 * (m.mag - 1)), 0.45, 2.2) * Math.pow(Math.sin(Math.PI * clamp(p, 0, 1)), 0.6);
+    const g = gN.createLinearGradient(hx, hy, tx, ty);
+    g.addColorStop(0, rgba(m.kol, clamp(jas, 0, 1))); g.addColorStop(1, rgba(m.kol, 0));
+    gN.strokeStyle = g; gN.lineCap = "round"; gN.lineWidth = (1.2 + clamp(jas, 0, 2)) * Math.max(1, SK);
+    gN.beginPath(); gN.moveTo(hx, hy); gN.lineTo(tx, ty); gN.stroke();
+    if (jas > 1) {   // bolid
+      const r = gN.createRadialGradient(hx, hy, 0, hx, hy, 9 * SK * jas);
+      r.addColorStop(0, rgba(m.kol, 0.6)); r.addColorStop(1, rgba(m.kol, 0));
+      gN.fillStyle = r; gN.beginPath(); gN.arc(hx, hy, 9 * SK * jas, 0, Math.PI * 2); gN.fill();
+    }
+  }
+}
+
+/* ---- welon: niebo przygasa pod chmurami (jeden div, opacity + kolor) ---- */
+function welonKroku(sw) {
+  const pok = pokrycie();
+  let a = S.fx.welon ? sstep(0.35, 1, pok) * 0.82 + burzowosc() * 0.12 : 0;
+  if (S.fx.welon && S.mg > 40) a = Math.max(a, (S.mg - 40) / 60 * 0.7);
+  const k = `linear-gradient(180deg, ${rgba(sw.welon.map((v) => v * 0.85), 1)}, ${rgba(mixC(sw.welon, sw.gora, 0.2), 1)})`;
+  if (welon._k !== k) { welon.style.background = k; welon._k = k; }
+  welon.style.opacity = clamp(a, 0, 0.95).toFixed(3);
+}
+
+/* ================= pętla ================= */
+let ostatnia = performance.now(), klatki = 0, czasRys = 0, pomiarT = performance.now(), fps = 0, msKl = 0, widoczna = true;
+new IntersectionObserver((e) => { widoczna = e[0].isIntersecting; }).observe(scena);
+let gra = false;
+function petla(teraz) {
+  requestAnimationFrame(petla);
+  if (!widoczna || document.hidden) { ostatnia = teraz; return; }
+  const odstep = 1000 / JAK[S.jakosc].fps;
+  if (teraz - ostatnia < odstep - 1.5) return;
+  const dt = Math.min(0.1, (teraz - ostatnia) / 1000);
+  ostatnia = teraz;
+  if (gra) {
+    S.ms += dt * 86400000 / 90;
+    synchronizujCzas();
+    ustawNiebo(false);
+  }
+  const t0 = performance.now();
+  const sw = swiatlo();
+  gN.clearRect(0, 0, W, H);
+  zorzaKroku();
+  meteoryKroku(dt);
+  welonKroku(sw);
+  gP.clearRect(0, 0, W, H);
+  chmuryKroku(dt, sw);
+  piorunKroku(dt);
+  mglaKroku(dt, sw);
+  opadKroku(dt, sw);
+  wiatrKroku(dt);
+  szybaKroku(dt);
+  czasRys += performance.now() - t0; klatki++;
+  if (teraz - pomiarT > 1000) {
+    fps = klatki * 1000 / (teraz - pomiarT); msKl = czasRys / klatki;
+    klatki = 0; czasRys = 0; pomiarT = teraz;
+    odczyt2();
+  }
+}
+
+/* ================= panel ================= */
+const STANY = [
+  ["sunny", "sunny: słonecznie", { cl: 4, cm: 3, ch: 10, int: 0, mg: 0 }],
+  ["clear-night", "clear-night: pogodna noc", { cl: 2, cm: 2, ch: 5, int: 0, mg: 0 }],
+  ["partlycloudy", "partlycloudy: częściowe", { cl: 35, cm: 25, ch: 20, int: 0, mg: 0 }],
+  ["cloudy", "cloudy: pochmurno", { cl: 88, cm: 70, ch: 40, int: 0, mg: 0 }],
+  ["fog", "fog: mgła", { cl: 55, cm: 20, ch: 10, int: 0, mg: 85 }],
+  ["rainy", "rainy: deszcz", { cl: 82, cm: 70, ch: 40, int: 0.45, mg: 10 }],
+  ["pouring", "pouring: ulewa", { cl: 97, cm: 85, ch: 50, int: 1, mg: 20 }],
+  ["lightning", "lightning: burza bez deszczu", { cl: 70, cm: 60, ch: 40, int: 0, mg: 0 }],
+  ["lightning-rainy", "lightning-rainy: burza z deszczem", { cl: 96, cm: 85, ch: 60, int: 0.8, mg: 10 }],
+  ["snowy", "snowy: śnieg", { cl: 88, cm: 70, ch: 40, int: 0.6, mg: 15 }],
+  ["snowy-rainy", "snowy-rainy: deszcz ze śniegiem", { cl: 92, cm: 70, ch: 40, int: 0.6, mg: 15 }],
+  ["hail", "hail: grad", { cl: 92, cm: 80, ch: 40, int: 0.8, mg: 0 }],
+  ["windy", "windy: wietrznie", { cl: 18, cm: 12, ch: 15, int: 0, mg: 0, wi: 55 }],
+  ["windy-variant", "windy-variant: wietrznie, pochmurno", { cl: 70, cm: 50, ch: 30, int: 0, mg: 0, wi: 55 }],
+  ["exceptional", "exceptional: wyjątkowe", { cl: 96, cm: 90, ch: 70, int: 0.6, mg: 0, wi: 70 }],
+];
+$("stan").innerHTML = STANY.map(([k, n]) => `<option value="${k}">${n}</option>`).join("");
+const EFEKTY = [
+  ["welon", "welon nieba"], ["chmury", "chmury warstwowe"], ["deszcz", "deszcz"], ["rozbryzgi", "rozbryzgi"],
+  ["szyba", "krople na szybie"], ["snieg", "śnieg"], ["grad", "grad"], ["mgla", "mgła"],
+  ["piorun", "błyskawice"], ["smugi", "wiatr: smugi"], ["liscie", "wiatr: liście <small>(IX–XI)</small>"], ["zorza", "zorza"],
+];
+$("efekty").innerHTML = EFEKTY.map(([k, n]) => `<label><input type="checkbox" data-fx="${k}"> ${n}</label>`).join("");
+
+const SUWAKI = { int: (v) => Math.round(v * 100) + " %", cl: (v) => v + " %", cm: (v) => v + " %", ch: (v) => v + " %",
+  mg: (v) => v + " %", wi: (v) => v, wk: (v) => v + "°", zo: (v) => Math.round(v * 100) + " %", lm: (v) => (+v).toFixed(1) };
+function doPanelu() {
+  for (const k of Object.keys(SUWAKI)) { $(k).value = S[k]; $(k + "-o").textContent = SUWAKI[k](S[k]); }
+  $("stan").value = S.stan; $("zo-tryb").value = S.zoTryb; $("met").value = S.met; $("mnoz").value = String(S.mnoz);
+  $("jakosc").value = S.jakosc; $("ksiezyc").checked = S.ksiezyc; $("chmury-met").checked = S.chmuryMet;
+  for (const el of document.querySelectorAll("[data-fx]")) el.checked = !!S.fx[el.dataset.fx];
+  synchronizujCzas();
+}
+function synchronizujCzas() {
+  const c = czesciPL(S.ms);
+  $("data").value = `${c.y}-${dwa(c.m)}-${dwa(c.d)}`;
+  $("godz").value = c.h * 60 + c.min;
+  $("godz-o").textContent = `${dwa(c.h)}:${dwa(c.min)}`;
+}
+function zCzasuPanelu() {
+  const [y, m, d] = $("data").value.split("-").map(Number);
+  if (!y) return;
+  S.ms = plDoUtc(y, m, d, +$("godz").value);
+  synchronizujCzas(); ustawNiebo(true); dzisNoc();
+}
+$("data").addEventListener("change", zCzasuPanelu);
+$("godz").addEventListener("input", zCzasuPanelu);
+for (const k of Object.keys(SUWAKI)) $(k).addEventListener("input", () => {
+  S[k] = +$(k).value; $(k + "-o").textContent = SUWAKI[k](S[k]);
+  if (k === "lm") { ustawNiebo(true); dzisNoc(); rysujWykres(); tabelaRojow(); }
+});
+$("stan").addEventListener("change", () => {
+  S.stan = $("stan").value;
+  const pre = STANY.find((s) => s[0] === S.stan)[2];
+  Object.assign(S, { wi: Math.min(S.wi, 25) }, pre);
+  doPanelu(); odczyt();
+});
+$("zo-tryb").addEventListener("change", () => { S.zoTryb = $("zo-tryb").value; });
+$("met").addEventListener("change", () => { S.met = $("met").value; zastosujKarte(); });
+$("mnoz").addEventListener("change", () => { S.mnoz = +$("mnoz").value; });
+$("jakosc").addEventListener("change", () => { S.jakosc = $("jakosc").value; rozmiar(); });
+$("ksiezyc").addEventListener("change", () => { S.ksiezyc = $("ksiezyc").checked; ustawNiebo(true); dzisNoc(); rysujWykres(); tabelaRojow(); });
+$("chmury-met").addEventListener("change", () => { S.chmuryMet = $("chmury-met").checked; });
+$("efekty").addEventListener("change", (e) => { if (e.target.dataset.fx) S.fx[e.target.dataset.fx] = e.target.checked; });
+$("graj").addEventListener("click", () => { gra = !gra; $("graj").classList.toggle("on", gra); $("graj").textContent = gra ? "■ zatrzymaj" : "▶ doba w 90 s"; if (!gra) dzisNoc(); });
+$("teraz").addEventListener("click", () => { S.ms = RD.now(); synchronizujCzas(); ustawNiebo(true); dzisNoc(); });
+$("odpal").addEventListener("click", () => {
+  const l = (niebo.zr && niebo.zr.lista.filter((z) => z.roj !== SPORADYCZNE).sort((a, b) => b.hr - a.hr)) || [];
+  const z = l[0] || { roj: SPORADYCZNE, alt: null, az: null, hr: 0 };
+  for (let i = 0; i < 4; i++) setTimeout(() => odpalMeteor(z), i * 350);
+});
+
+function odczyt() {
+  const pok = Math.round(pokrycie() * 100);
+  const k = niebo.ksiezyc || { alt: 0, osw: 0 };
+  $("odczyt").innerHTML =
+    `<span><b>${fmtData(S.ms)} ${fmtGodz(S.ms)}</b></span>` +
+    `<span>Słońce <b>${niebo.e.toFixed(1)}°</b></span>` +
+    `<span>Księżyc <b>${Math.round(k.osw * 100)} %</b>, ${k.alt > 0 ? "nad horyzontem " + k.alt.toFixed(0) + "°" : "pod horyzontem"}</span>` +
+    `<span>zachmurzenie łączne <b>${pok} %</b></span>` +
+    `<span>stan <b>${S.stan}</b></span>`;
+}
+function odczyt2() {
+  const n = krople.length + platki.length + grad.length + plusk.length + smugi.length + liscie.length + szyba.length;
+  const zr = niebo.zr || { lista: [] };
+  const roje = zr.lista.filter((z) => z.roj !== SPORADYCZNE && z.hr >= 0.3).sort((a, b) => b.hr - a.hr).slice(0, 3)
+    .map((z) => `${z.roj.kod} ${z.hr.toFixed(1)}/h`).join(", ");
+  const zak = S.chmuryMet ? (OPAD[S.stan] ? 1 : pokrycie()) : 0;
+  $("odczyt2").innerHTML =
+    `<span><b>${fps.toFixed(0)}</b> fps, <b>${msKl.toFixed(1)}</b> ms rysowania na klatkę</span>` +
+    `<span>cząstek <b>${n}</b></span>` +
+    `<span>meteory teraz: <b>${(sumaHR(zr) * S.mnoz * (1 - zak)).toFixed(1)}/h</b>${roje ? " (" + roje + ")" : ""}</span>` +
+    `<span>narysowane: <b>${licznikMet}</b></span>`;
+}
+
+/* ================= roje: noc, rok, tabela ================= */
+function najlepszaGodzina(polnocMs, lm, moonOn) {   // polnocMs = 12:00 lokalnie dnia wieczoru
+  let best = { hr: 0, ms: null, z: null };
+  for (let m = 6 * 60; m <= 19 * 60; m += 20) {
+    const ms = polnocMs + m * 60000, z = zrodla(ms, lm, moonOn);
+    if (!z.lista.length) continue;
+    const hr = sumaHR(z);
+    if (hr > best.hr) best = { hr, ms, z };
+  }
+  return best;
+}
+function poludnie(ms) { const c = czesciPL(ms); return plDoUtc(c.y, c.m, c.d, 12 * 60); }
+function dzisNoc() {
+  const c = czesciPL(S.ms);
+  // przed 12:00 noc, która trwa, zaczęła się wczoraj
+  const pol = poludnie(S.ms - (c.h < 12 ? 86400000 : 0));
+  const b = najlepszaGodzina(pol, S.lm, S.ksiezyc), b0 = najlepszaGodzina(pol, S.lm, false);
+  const roje = b.z ? b.z.lista.filter((z) => z.roj !== SPORADYCZNE).sort((x, y) => y.hr - x.hr) : [];
+  let html = `<div><b>Noc ${fmtData(pol)}</b><br>najlepiej o ${b.ms ? fmtGodz(b.ms) : "—"}: <b>${b.hr.toFixed(1)}/h</b>
+    (bez Księżyca ${b0.hr.toFixed(1)}/h), bezchmurnie, lm ${S.lm.toFixed(1)}<br>
+    <span class="note">tło sporadyczne w tym ${b.z ? b.z.lista.find((z) => z.roj === SPORADYCZNE).hr.toFixed(1) : 0}/h</span></div>`;
+  for (const z of roje.slice(0, 5)) {
+    html += `<div><b>${z.roj.nazwa}</b> (${z.roj.kod})<br>${z.hr.toFixed(1)}/h o ${fmtGodz(b.ms)}, radiant ${z.alt.toFixed(0)}° nad horyzontem,
+      az ${z.az.toFixed(0)}°<br><span class="note">V ${z.roj.v} km/s${z.roj.zhr ? ", ZHR teraz " + zhrW(z.roj, slonce(julian(b.ms)).lam2000).toFixed(1) : ""}</span></div>`;
+  }
+  $("dzis").innerHTML = html;
+}
+
+let ROK = [];
+function liczRok() {
+  const start = poludnie(RD.now());
+  ROK = [];
+  for (let i = 0; i < 366; i++) {
+    const pol = start + i * 86400000;
+    const b = najlepszaGodzina(pol, S.lm, true), b0 = najlepszaGodzina(pol, S.lm, false);
+    const dom = b0.z ? b0.z.lista.filter((z) => z.roj !== SPORADYCZNE).sort((x, y) => y.hr - x.hr)[0] : null;
+    ROK.push({ pol, hr: b.hr, hr0: b0.hr, ms: b.ms || b0.ms, dom: dom ? dom.roj : null });
+  }
+}
+function rysujWykres() {
+  liczRok();
+  const svg = $("wykres"), bw = svg.clientWidth || 1000, bh = 300, ml = 40, mr = 12, mt = 26, mb = 26;
+  const maxY = Math.max(10, ...ROK.map((d) => d.hr0)) * 1.08;
+  const x = (i) => ml + (bw - ml - mr) * i / (ROK.length - 1), y = (v) => mt + (bh - mt - mb) * (1 - v / maxY);
+  let s = "";
+  const krok = maxY > 80 ? 20 : maxY > 40 ? 10 : 5;
+  for (let v = 0; v <= maxY; v += krok) s += `<line class="${v ? "siatka" : "os"}" x1="${ml}" x2="${bw - mr}" y1="${y(v)}" y2="${y(v)}"/><text x="${ml - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  ROK.forEach((d, i) => { const c = czesciPL(d.pol); if (c.d === 1) s += `<text x="${x(i)}" y="${bh - 8}">${MIES[c.m - 1]}</text><line class="siatka" x1="${x(i)}" x2="${x(i)}" y1="${mt}" y2="${bh - mb}"/>`; });
+  const linia = (k, kol) => `<polyline fill="none" stroke="${kol}" stroke-width="2" stroke-linejoin="round" points="${ROK.map((d, i) => x(i).toFixed(1) + "," + y(d[k]).toFixed(1)).join(" ")}"/>`;
+  s += linia("hr0", "var(--s2)") + linia("hr", "var(--s1)");
+  // etykiety maksimów: najsilniejsze noce różnych rojów, bez nakładania
+  const kandydaci = [];
+  ROK.forEach((d, i) => { if (d.dom && d.dom.zhr >= 10 && (i === 0 || d.hr0 >= ROK[i - 1].hr0) && (i === ROK.length - 1 || d.hr0 >= ROK[i + 1].hr0)) kandydaci.push(i); });
+  kandydaci.sort((a, b) => ROK[b].hr0 - ROK[a].hr0);
+  const zajete = [], kody = new Set();
+  for (const i of kandydaci) {
+    const d = ROK[i];
+    if (kody.has(d.dom.kod) || zajete.some((j) => Math.abs(x(j) - x(i)) < 70)) continue;
+    kody.add(d.dom.kod); zajete.push(i);
+    s += `<circle cx="${x(i)}" cy="${y(d.hr0)}" r="4" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"/>` +
+         `<text class="etykieta" x="${x(i)}" y="${y(d.hr0) - 9}" text-anchor="middle">${d.dom.nazwa}</text>`;
+  }
+  s += `<line id="kursor" class="os" x1="0" x2="0" y1="${mt}" y2="${bh - mb}" style="display:none;stroke:rgba(255,255,255,.4)"/>`;
+  s += `<rect x="${ml}" y="${mt}" width="${bw - ml - mr}" height="${bh - mt - mb}" fill="transparent" id="lapacz" style="cursor:pointer"/>`;
+  svg.setAttribute("viewBox", `0 0 ${bw} ${bh}`);
+  svg.innerHTML = s;
+  const lap = svg.querySelector("#lapacz"), kursor = svg.querySelector("#kursor"), dym = $("dymek");
+  const indeks = (ev) => { const r = svg.getBoundingClientRect(); return clamp(Math.round((ev.clientX - r.left - ml) / (bw - ml - mr) * (ROK.length - 1)), 0, ROK.length - 1); };
+  lap.onmousemove = (ev) => {
+    const i = indeks(ev), d = ROK[i];
+    kursor.setAttribute("x1", x(i)); kursor.setAttribute("x2", x(i)); kursor.style.display = "";
+    dym.style.display = "block"; dym.style.left = ev.clientX + 14 + "px"; dym.style.top = ev.clientY + 14 + "px";
+    dym.innerHTML = `<b>noc ${fmtData(d.pol)}</b><br>z Księżycem: ${d.hr.toFixed(1)}/h<br>bez Księżyca: ${d.hr0.toFixed(1)}/h` +
+      (d.ms ? `<br>najlepiej o ${fmtGodz(d.ms)}` : "") + (d.dom ? `<br>główny rój: ${d.dom.nazwa}` : "");
+  };
+  lap.onmouseleave = () => { dym.style.display = "none"; kursor.style.display = "none"; };
+  lap.onclick = (ev) => { const d = ROK[indeks(ev)]; if (d.ms) skocz(d.ms); };
+}
+function skocz(ms) { S.ms = ms; if (OPAD[S.stan] || pokrycie() > 0.5) { S.stan = "clear-night"; Object.assign(S, STANY[1][2]); } doPanelu(); ustawNiebo(true); dzisNoc(); scena.scrollIntoView({ behavior: "smooth", block: "center" }); }
+
+function dataLam(lam, odMs) {     // najbliższa data po odMs, w której λ☉(J2000) = lam
+  let ms = odMs;
+  const l0 = slonce(julian(ms)).lam2000;
+  ms += (((lam - l0) % 360 + 360) % 360) / 0.9856 * 86400000;
+  for (let i = 0; i < 4; i++) ms += wrap180(lam - slonce(julian(ms)).lam2000) / 0.9856 * 86400000;
+  return ms;
+}
+function tabelaRojow() {
+  const od = RD.now() - 3 * 86400000, wiersze = [];
+  for (const r of ROJE) {
+    const max = dataLam(r.lam, od), pol = poludnie(max - 6 * 3600000);
+    // własna najlepsza godzina roju, nie całej nocy
+    let wlasna = { hr: 0, ms: null, alt: null };
+    for (let m = 6 * 60; m <= 19 * 60; m += 20) {
+      const ms = pol + m * 60000, z = zrodla(ms, S.lm, false), q = z.lista.find((x) => x.roj === r);
+      if (q && q.hr > wlasna.hr) wlasna = { hr: q.hr, ms, alt: q.alt };
+    }
+    const zM = wlasna.ms ? zrodla(wlasna.ms, S.lm, true).lista.find((x) => x.roj === r) : null;
+    const k = ksiezyc(julian(wlasna.ms || max));
+    wiersze.push({ r, max, wlasna, zM: zM ? zM.hr : 0, ksiez: k.osw, aktywny: zhrW(r, slonce(julian(RD.now())).lam2000) > 0 });
+  }
+  wiersze.sort((a, b) => a.max - b.max);
+  const fmtMD = (md) => { const [m, d] = md.split("-").map(Number); return `${d} ${MIES[m - 1]}`; };
+  $("roje").querySelector("tbody").innerHTML = wiersze.map((w) => `<tr class="${w.aktywny ? "aktywny" : ""}">
+    <td><b>${w.r.nazwa}</b> <span class="note">${w.r.kod}${w.r.dzienny ? ", dzienny" : ""}</span></td>
+    <td>${fmtMD(w.r.od)} – ${fmtMD(w.r.do)}</td>
+    <td>${fmtData(w.max)} <span class="note">λ☉ ${w.r.lam}°</span></td>
+    <td class="num">${w.r.zhr ?? "Var"}</td><td class="num">${w.r.v}</td>
+    <td class="num">${w.r.ra}° ${w.r.dec >= 0 ? "+" : "−"}${Math.abs(w.r.dec)}°</td>
+    <td>${w.wlasna.ms ? fmtGodz(w.wlasna.ms) + ", radiant " + w.wlasna.alt.toFixed(0) + "°" : "—"}</td>
+    <td class="num">${w.wlasna.hr.toFixed(1)}</td><td class="num">${w.zM.toFixed(1)}</td>
+    <td class="num">${Math.round(w.ksiez * 100)} %</td>
+    <td class="note">IMO 2027, tab. 5 i 6</td>
+    <td>${w.wlasna.ms ? `<button data-skok="${w.wlasna.ms}">pokaż</button>` : ""}</td></tr>`).join("");
+}
+$("roje").addEventListener("click", (e) => { const b = e.target.closest("[data-skok]"); if (b) skocz(+b.dataset.skok); });
+
+/* ================= tabela porównania ================= */
+const P = POGODA;
+const POR = [
+  ["Niebo zależne od pogody", "tak, paleta na każdy stan", "nie, tylko Słońce", `weather.openweathermap = ${P.stan}, cloud_coverage ${P.zachmurzenie} %`, "znikomy (1 div)", "wdrożyć jako welon nad paletą", "tak"],
+  ["Chmury w warstwach", "tak, trzy głębie", "nie", `astroweather: niskie ${P.chmury_niskie} %, średnie ${P.chmury_srednie} %, wysokie ${P.chmury_wysokie} %`, "średni (canvas) albo znikomy (warstwy CSS)", "wdrożyć", "tak"],
+  ["Deszcz z głębią, rozbryzgi", "tak", "nie", `sensor.openweathermap_rain = ${P.opad_mmh} mm/h, czujnik deszczu = ${P.deszcz_lokalny}`, "wysoki (do 1400 kropel)", "wdrożyć, jakość medium", "tak"],
+  ["Krople na szybie", "tak, na karcie", "nie", "te same co deszcz", "niski", "opcja, domyślnie wyłączona (punkt 4)", "czesc"],
+  ["Śnieg", "tak, płatki się kołyszą", "nie", "stan snowy / snowy-rainy z OWM", "średni", "wdrożyć", "tak"],
+  ["Grad", "tak, odbija się", "nie", "stan hail z OWM", "średni", "do decyzji", "czesc"],
+  ["Mgła", "tak, dryfujące pasma", "nie", `astroweather fog_area_fraction = ${P.mgla} %, widoczność OWM ${P.widocznosc_km} km`, "niski", "wdrożyć", "tak"],
+  ["Błyskawice", "tak, pioruny i błysk", "nie", `stan lightning / lightning-rainy z OWM; lifted_index ${P.lifted_index} (stabilnie); brak encji z wyładowaniami`, "znikomy poza chwilą błysku", "wdrożyć", "tak"],
+  ["Wiatr: porywy i liście", "tak, liście cały rok: zielone, w IX–XI jesienne", "nie", `OWM ${P.wiatr_kmh} km/h z ${P.wiatr_kierunek}°, anemometr poryw ${P.poryw_lokalny_kmh} km/h`, "niski", "smugi tak, liście tylko IX–XI", "czesc"],
+  ["Gwiazdy, Księżyc w fazie", "tak", "tak, plus planety, Droga Mleczna, ISS", "sun.sun, Sol, N2YO", "jest", "bez zmian", "jest"],
+  ["Spadające gwiazdy", "tak, okazjonalne, losowe", "tak, 28/h z punktu [78 %, 12 %] przez cały rok", "żadnych, model liczony lokalnie", "jak dziś", "roje IMO z radiantami", "tak"],
+  ["Zorza", "tak, show_aurora, bez danych", "nie", "brak encji Kp i aurora w HA", "niski", "tylko z danymi Kp, przy krawędziach", "nie"],
+  ["Promienie, flara", "tak", "promienie tak, flary nie", "sun.sun", "jest", "bez zmian", "jest"],
+  ["Jakość, pauza, reduce motion", "tak: 60/30/20 fps, pauza poza ekranem", "kontrakt: tylko transform i opacity", "—", "—", "przejąć razem z canvasem", "tak"],
+];
+const ETYK = { tak: ["tak", "wdrożyć"], czesc: ["czesc", "do decyzji"], nie: ["nie", "raczej nie"], jest: ["tak", "już jest"] };
+$("porownanie").querySelector("tbody").innerHTML = POR.map((r) =>
+  `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td class="note">${r[3]}</td><td>${r[4]}</td>
+   <td><span class="tag ${ETYK[r[6]][0]}">${ETYK[r[6]][1]}</span> ${r[5]}</td></tr>`).join("");
+
+/* ================= presety i start ================= */
+function przyNajblizszymMaksimum(kod) {
+  const r = ROJE.find((x) => x.kod === kod), max = dataLam(r.lam, RD.now() - 3 * 86400000);
+  const pol = poludnie(max - 6 * 3600000);
+  let best = { hr: -1, ms: max };
+  for (let m = 6 * 60; m <= 19 * 60; m += 20) {
+    const ms = pol + m * 60000, q = zrodla(ms, S.lm, false).lista.find((x) => x.roj === r);
+    if (q && q.hr > best.hr) best = { hr: q.hr, ms };
+  }
+  return best.ms;
+}
+const naDzien = (y, m, d, hh, mm) => plDoUtc(y, m, d, hh * 60 + mm);
+const PRESETY = [
+  ["Teraz z HA (" + fmtGodz(new RD(P.pobrano).getTime()) + ")", () => zHA()],
+  ["Ulewa w południe", () => ({ ms: naDzien(2026, 10, 14, 12, 30), stan: "pouring", wi: 30, wk: 250 })],
+  ["Burza o zmierzchu", () => ({ ms: naDzien(2027, 7, 15, 21, 15), stan: "lightning-rainy", wi: 35, wk: 230 })],
+  ["Śnieg nocą", () => ({ ms: naDzien(2027, 1, 20, 22, 0), stan: "snowy", wi: 10, wk: 60 })],
+  ["Grad latem", () => ({ ms: naDzien(2027, 6, 20, 16, 0), stan: "hail", wi: 40, wk: 270 })],
+  ["Mgła o świcie", () => ({ ms: naDzien(2026, 10, 20, 7, 25), stan: "fog", wi: 3, wk: 90 })],
+  ["Jesienna wichura", () => ({ ms: naDzien(2026, 10, 28, 15, 0), stan: "windy-variant", wi: 75, wk: 260 })],
+  ["Deszcz na szybie", () => ({ ms: naDzien(2026, 11, 3, 17, 0), stan: "rainy", wi: 15, wk: 240, fx: { ...S.fx, szyba: true } })],
+  ["Zorza", () => ({ ms: naDzien(2026, 11, 10, 23, 0), stan: "clear-night", zo: 0.8, wi: 5 })],
+  ["Drakonidy (DRA)", () => ({ ms: przyNajblizszymMaksimum("DRA"), stan: "clear-night", mnoz: 3 })],
+  ["Orionidy (ORI)", () => ({ ms: przyNajblizszymMaksimum("ORI"), stan: "clear-night", mnoz: 3 })],
+  ["Geminidy (GEM)", () => ({ ms: przyNajblizszymMaksimum("GEM"), stan: "clear-night", mnoz: 3 })],
+  ["Kwadrantydy (QUA)", () => ({ ms: przyNajblizszymMaksimum("QUA"), stan: "clear-night", mnoz: 3 })],
+  ["Perseidy (PER)", () => ({ ms: przyNajblizszymMaksimum("PER"), stan: "clear-night", mnoz: 3 })],
+];
+function zHA() {
+  return { ms: new RD(P.pobrano).getTime(), stan: P.stan, cl: P.chmury_niskie, cm: P.chmury_srednie, ch: P.chmury_wysokie,
+    mg: P.mgla, wi: Math.round(P.wiatr_kmh), wk: P.wiatr_kierunek, int: clamp(P.opad_mmh / 6, 0, 1), zo: 0, mnoz: 1 };
+}
+$("presety").innerHTML = PRESETY.map(([n], i) => `<button data-p="${i}">${n}</button>`).join("");
+$("presety").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-p]"); if (!b) return;
+  const wynik = PRESETY[+b.dataset.p][1]();
+  const pre = STANY.find((s) => s[0] === wynik.stan)[2];
+  Object.assign(S, { zo: 0, mnoz: 1, fx: { ...S.fx, szyba: false } }, pre, wynik);
+  for (const el of $("presety").querySelectorAll("button")) el.classList.toggle("on", el === b);
+  doPanelu(); ustawNiebo(true); dzisNoc(); odczyt();
+});
+
+Object.assign(S, zHA());
+rozmiar();
+doPanelu();
+zastosujKarte();
+ustawNiebo(true);
+dzisNoc();
+rysujWykres();
+tabelaRojow();
+window.addEventListener("resize", () => { clearTimeout(rysujWykres._t); rysujWykres._t = setTimeout(rysujWykres, 200); });
+requestAnimationFrame(petla);
+window.__poc = { statMet, odpalMeteor, meteory, S, ROJE, zrodla, najlepszaGodzina, dataLam, ROK: () => ROK, fps: () => [fps, msKl] };
+})();
+</script>
+</body>
+</html>
