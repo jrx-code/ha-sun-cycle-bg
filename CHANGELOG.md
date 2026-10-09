@@ -3,6 +3,14 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 2.2.0
+
+### Added
+- `weather.effects_style: new` (the default) draws clouds, fog, snow and the aurora with WebGL shaders on one canvas, and hail, wind with leaves and lightning on one 2D canvas, instead of the classic layers. Clouds in perspective lit from the sun with a silver lining, cirrus and an overcast deck; fog thickening towards the horizon in drifting banks with the sun scattering in it; snow in six depths with out-of-focus near flakes; aurora curtains with rays and altitude colours; hail streaks that bounce; leaves that flutter and turn over; branched lightning with a leader and several return strokes. One WebGL context for the four shader effects, at most 15 to 30 frames a second, nothing runs when nothing is on. `effects_style: classic` keeps the 2.1 layers, and without WebGL the shader effects fall back to them. Measured on the Pi 5 kiosk: 0 to 0.3 % janky frames for each effect. Editor field, `window.sunCycleBg.fxState()` for tests.
+
+### Changed
+- At most 10 drops on the glass at once, in the shader and in the classic glass (trail beads included). The shader's drops are no longer a hash grid (several hundred in a downpour) but a list of ten placed and moved by the script: they land, sit 8 to 22 s and dry, about a third slide down in fits and starts and clear a trail.
+
 ## 2.1.2
 
 ### Fixed

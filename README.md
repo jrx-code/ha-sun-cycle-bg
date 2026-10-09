@@ -814,6 +814,7 @@ weather:
   wind: true
   leaves: autumn
   rain_style: shader                # shader | classic
+  effects_style: new                # new | classic
 ```
 
 | Key | Default | What it does |
@@ -835,6 +836,7 @@ weather:
 | `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
 | `season_entity` | none | Optional season sensor for the leaves: `spring`, `summer`, `autumn` or `winter`, e.g. HA's Season integration (astronomical or meteorological, as you set it up). Without it, or while it is unavailable, the month decides: March to May spring, June to August summer, September to November autumn (1.28.0). |
 | `glass` | `false` | Raindrops on the glass while it rains: they land, sit and dry, and big ones slide down leaving a trail (1.24.0). |
+| `effects_style` | `new` | How clouds, fog, snow, hail, lightning, wind with leaves and the aurora are drawn: `new` = one WebGL canvas for clouds, fog, snow and aurora plus one 2D canvas for hail, wind and lightning (2.2.0), `classic` = the layers of 1.16 to 2.1. Without WebGL the four shader effects fall back to `classic` by themselves. |
 | `rain_style` | `shader` | How rain, splashes and the drops on the glass are drawn: `shader` = one WebGL canvas (2.1.0), `classic` = the DOM strips and drops of 1.18 to 2.0. Without WebGL the card falls back to `classic` by itself. |
 | `aurora` | none | `{kp_entity, min_kp: 5, placement: edges}`: northern lights when the Kp index reaches `min_kp`, at night, under cover below 60 % (1.25.0). |
 
@@ -872,6 +874,39 @@ reshuffling the sky.
   (with the default window a westerly pushes clouds to the left). Speed is a
   playback rate on the loop, so a change of wind bends the motion without a jump.
   Low clouds move fastest and cirrus slowest; with no wind they still drift slowly.
+
+### `effects_style: new` (default since 2.2.0)
+
+Two canvases replace the classic layers, whatever is on:
+
+- **one WebGL canvas** (`webgl2` first, then `webgl`; one context, one program per
+  effect, one loop) draws, in this order: the **aurora** (two curtains with rays
+  from folded triangle noise, green low and red high, a soft violet fringe where
+  rays reach the lower edge; added as light), the **clouds** (the sky as a plane
+  in perspective, so clouds are big near the top and small and flat at the
+  horizon and nearer ones move faster; lit from a tap towards the sun, a silver
+  lining, cirrus along the wind, an overcast deck with rolls), the **fog**
+  (density growing exponentially towards the horizon, Beer's law for the alpha,
+  two banks of warped noise at two speeds, forward scattering round the sun, a
+  town's glow at night) and the **snow** (six depths in one pass, far flakes small
+  and pale, near ones big, fast and out of focus as bokeh);
+- **one 2D canvas** draws the **hail** (short bright streaks in three depths,
+  pellets that bounce once or twice and lie a moment, a dark rim on a bright sky),
+  the **wind** (gusts as slow sines, wisps along a flow field, pollen, and the
+  season's leaves with flutter physics: drag towards the wind, gliding and
+  turning back, turning over to their paler underside) and **lightning** (a
+  midpoint-displaced channel with branches, a faint leader, 3 to 5 return strokes
+  40 to 120 ms apart, the cloud lit around the channel; the loop runs only for
+  the second of a strike).
+
+Same cost rules as the rain shader: rastered at 0.75 / 0.5 / 0.4 of the frame
+(`high` / `medium` / `low`, at most 1280 px wide), at most 15 frames a second
+for clouds and fog alone and 30 (20 on `low`) with snow, aurora, hail or wind,
+no loop when nothing is on, while the page is hidden or once the card is out of
+the document, one still frame with *reduce motion*. Measured on the Raspberry Pi
+5 kiosk (Android WebView, `quality: low`): every effect at 0 to 0.3 % janky
+frames. The design page with the classic layers, the proposals and the card
+side by side is `demo/tlo-pogoda-efekty.html`.
 
 ### Rain
 
@@ -926,12 +961,13 @@ The wind already tilts the rain and snow and pushes the clouds. Past about 22 km
 
 Off unless `glass: true`. With `rain_style: shader` the glass is drawn by the
 same canvas as the rain: it fogs over, drops slide down in fits and starts and
-clear a trail with beads left in it, small ones sit still, and each drop is a
-lens showing the sky upside down with a highlight and a dark rim. The drops
+clear a trail, small ones sit still, and each drop is a lens showing the sky
+upside down with a highlight and a dark rim. Never more than 10 drops at once
+(2.2.0): more rain lands them more often, not more of them. The drops
 gather over a few seconds and dry out over about twenty after the rain stops,
 then the canvas goes away. The paragraph below is the `classic` glass.
 
-While it rains (or sleets) a timer lets drops land, from one every couple of seconds in a drizzle to several a second in a downpour, capped at 40 on screen at `high`. Each is one element: a lens gradient, a highlight and a soft shadow, on one Web Animation that lands it, keeps it and dries it over 8 to 22 s. One drop in five is big enough to slide: it moves down in fits and starts, squashing a little as it moves, and leaves a trail of small droplets that appear as it passes and dry after it.
+While it rains (or sleets) a timer lets drops land, from one every couple of seconds in a drizzle to several a second in a downpour, capped at 10 on screen, the trail beads of a sliding drop included (2.2.0; 40 before). Each is one element: a lens gradient, a highlight and a soft shadow, on one Web Animation that lands it, keeps it and dries it over 8 to 22 s. One drop in five is big enough to slide: it moves down in fits and starts, squashing a little as it moves, and leaves a trail of small droplets that appear as it passes and dry after it.
 
 The card paints the view background, which lies under the dashboard cards, so the drops sit under the cards too. That keeps text readable, and it also means the glass is between you and the sky, not between you and the cards.
 

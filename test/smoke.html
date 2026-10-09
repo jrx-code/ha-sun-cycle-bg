@@ -325,7 +325,9 @@ function pogoda(elev, wcfg, stan, atr, chmury, extra) {
   document.getElementById('host').appendChild(cont);
   const card = document.createElement('sun-cycle-bg-card');
   card.setConfig(Object.assign({ assets: '../demo/assets/', stars: { count: 40 } },
-    wcfg === undefined ? {} : { weather: wcfg }, extra || {}));
+    // the scenes before 2.2.0 read the classic layers; the new ones ask for effects_style: new
+    wcfg === undefined ? {} : { weather: (wcfg && typeof wcfg === 'object' && !('effects_style' in wcfg))
+      ? Object.assign({ effects_style: 'classic' }, wcfg) : wcfg }, extra || {}));
   cont.insertBefore(card, cont.firstChild);
   const states = { 'sun.sun': { attributes: { elevation: elev, azimuth: 200 } } };
   if (stan) states['weather.t'] = { state: stan, attributes: atr || {} };
@@ -719,6 +721,54 @@ out.push(['SHADER snowy: brak warstwy', czytajShader(pogoda(10, { entity: 'weath
   z.card.hass = { states: Object.assign({}, z.states, { 'weather.t': { state: 'cloudy', attributes: { cloud_coverage: 90 } } }),
                   config: { latitude: 52.2297, longitude: 21.0122 } };
   out.push(['SHADER deszcz ustaje, glass, szyba jeszcze sucha: warstwa znika', czytajShader(z)]);
+}
+
+// --- 2.2.0: effects_style new: dwa plotna zamiast warstw classic ---------
+function czytajFX(z) {
+  const w = z.cont.querySelector('.sun-cycle-weather');
+  const dzieci = w ? [...w.children].filter((k) => k.tagName !== 'STYLE').map((k) => k.className.replace('scw ', '')) : [];
+  const st = window.sunCycleBg.fxState(z.cont);
+  if (w) w.scsStop();                       // oddaj kontekst WebGL przed kolejna scena
+  return { dzieci, gl: st.gl && { efekty: st.gl.effects, fps: st.gl.fps, factor: st.gl.factor, w: st.gl.width },
+           p2d: st.canvas2d && { grad: st.canvas2d.hail, wiatr: st.canvas2d.wind, burza: st.canvas2d.lightning,
+                                 liscie: st.canvas2d.leafSet, fps: st.canvas2d.fps }, broken: st.broken };
+}
+const NOWE = { entity: 'weather.t', effects_style: 'new', quality: 'low' };
+out.push(['FX config', ['domyslnie', 'classic', 'new', 'cos'].map((v) =>
+  window.sunCycleBg.readWeatherConfig(v === 'domyslnie' ? {} : { effects_style: v }).effects_style)]);
+out.push(['FX chmury 70% dzien', czytajFX(pogoda(30, NOWE, 'cloudy', { cloud_coverage: 70 }))]);
+out.push(['FX mgla', czytajFX(pogoda(10, NOWE, 'fog', { cloud_coverage: 60 }))]);
+out.push(['FX snieg noc', czytajFX(pogoda(-20, NOWE, 'snowy', { cloud_coverage: 95, wind_speed: 30 }))]);
+out.push(['FX grad + deszcz shader', czytajFX(pogoda(15, NOWE, 'hail', { cloud_coverage: 95 }))]);
+out.push(['FX burza', czytajFX(pogoda(-20, NOWE, 'lightning-rainy', { cloud_coverage: 100 }))]);
+out.push(['FX wiatr, leaves always (sierpien: summer)', czytajFX(pogoda(20, Object.assign({ leaves: 'always' }, NOWE), 'windy',
+  { cloud_coverage: 0, wind_speed: 45 }))]);
+{
+  const z = pogoda(-25, Object.assign({ aurora: { kp_entity: 'sensor.kp' } }, NOWE), 'clear-night', { cloud_coverage: 0 });
+  z.card.hass = { states: Object.assign({}, z.states, { 'sensor.kp': { state: '7' } }), config: { latitude: 52.2297, longitude: 21.0122 } };
+  out.push(['FX zorza kp 7 czysto noc', czytajFX(z)]);
+}
+out.push(['FX clear-night, nic', czytajFX(pogoda(-25, NOWE, 'clear-night', { cloud_coverage: 0 }))]);
+out.push(['FX effects_style classic: stare warstwy', czytajFX(pogoda(30, Object.assign({}, NOWE, { effects_style: 'classic' }),
+  'cloudy', { cloud_coverage: 70 }))]);
+{
+  // limit kropel: shader (symulacja glassStep) i classic (paciorki sladu licza sie do limitu)
+  const R = { cv: { width: 768, height: 432 }, glassOn: true, glassI: 1, drops: [] };
+  let maks = 0;
+  for (let i = 0; i < 3000; i++) { window.sunCycleBg.glassStep(R, 0.05); maks = Math.max(maks, R.drops.length); }
+  // classic: ta sama bramka co glassPlan (nowa kropla tylko ponizej limitu), co trzecia duza ze sladem
+  const host = document.createElement('div'); document.body.appendChild(host);
+  let cmaks = 0;
+  for (let i = 0; i < 60; i++) {
+    if (host.querySelectorAll('.scw-drop').length < window.sunCycleBg.GLASS_MAX) {
+      const losowo = Math.random; if (i % 3 === 0) Math.random = () => 0.1;   // 0.1 < 0.2: duza
+      window.sunCycleBg.glassDrop(host, { W: 1920, H: 1080, I: 1 });
+      Math.random = losowo;
+    }
+    cmaks = Math.max(cmaks, host.querySelectorAll('.scw-drop').length);
+  }
+  host.remove();
+  out.push(['SZYBA max kropel', { GLASS_MAX: window.sunCycleBg.GLASS_MAX, shader_maks_150s: maks, classic_maks: cmaks }]);
 }
 
 // --- 2.1.2: gwiazdy pod zamknietym welonem schodza ze strony --------------
