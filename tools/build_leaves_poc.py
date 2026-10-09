@@ -27,9 +27,11 @@ OUT = ROOT / "demo" / "tlo-liscie.html"
 META = {
     "tytul": "Tło: liście na wietrze według pory roku",
     "grupa": "Tło (sun-cycle-bg)",
-    "status": "aktualne",
+    "status": "wdrozone",
     "kolejnosc": 105,
-    "opis": ("Propozycja do decyzji: wiatr w sun-cycle-bg niesie zamiast kolorowych elips "
+    "opis": ("WDROŻONE 09.10.2026 w sun-cycle-bg 1.28.0, na panelu salonu leaves: seasons z porą "
+             "roku z sensor.pora_roku. Poniżej pierwotna propozycja. "
+             "Propozycja do decyzji: wiatr w sun-cycle-bg niesie zamiast kolorowych elips "
              "sprite'y liści i kwiatów według pory roku. Jesień: klon i dąb; wiosna: płatki i kwiaty "
              "wiśni, młode liście buka i lipy; lato: liście lipy i klonu, mak, stokrotki, jaskier. "
              "Obrazy z google/gemini-nano-banana-2.1 przez OpenRouter. Prawdziwa karta z gałęzi "
