@@ -813,6 +813,7 @@ weather:
   lightning: true
   wind: true
   leaves: autumn
+  rain_style: shader                # shader | classic
 ```
 
 | Key | Default | What it does |
@@ -834,6 +835,7 @@ weather:
 | `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
 | `season_entity` | none | Optional season sensor for the leaves: `spring`, `summer`, `autumn` or `winter`, e.g. HA's Season integration (astronomical or meteorological, as you set it up). Without it, or while it is unavailable, the month decides: March to May spring, June to August summer, September to November autumn (1.28.0). |
 | `glass` | `false` | Raindrops on the glass while it rains: they land, sit and dry, and big ones slide down leaving a trail (1.24.0). |
+| `rain_style` | `shader` | How rain, splashes and the drops on the glass are drawn: `shader` = one WebGL canvas (2.1.0), `classic` = the DOM strips and drops of 1.18 to 2.0. Without WebGL the card falls back to `classic` by itself. |
 | `aurora` | none | `{kp_entity, min_kp: 5, placement: edges}`: northern lights when the Kp index reaches `min_kp`, at night, under cover below 60 % (1.25.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
@@ -848,7 +850,8 @@ update does not blink the panel. The first frame after a page load lands at once
 **Same contract as the rest of the card.** The weather layer sits above every
 sky layer and under the dashboard cards. Its state is fingerprinted the way the
 planet sensors are, so `hass` updates from the rest of the house cost a string
-comparison, and nothing in it animates in JS. With the system setting *reduce
+comparison, and nothing in it animates in JS except the rain shader (below),
+which runs its own capped loop only while something falls. With the system setting *reduce
 motion* on, everything the weather layer animates holds still.
 
 ### Clouds
@@ -872,7 +875,24 @@ reshuffling the sky.
 
 ### Rain
 
-Three depths: far streaks short, faint and slow, near ones long, bright and fast. Each depth is one canvas tile that repeats every half frame height, painted once at a reduced raster scale (the three together hold about 2 MB at `medium` on a 1280 × 400 view) and slid down by one transform loop.
+**`rain_style: shader` (default since 2.1.0).** Rain, the splash rings and the
+drops on the glass are one WebGL1 canvas in the weather layer: one triangle over
+the frame and one fragment shader. Streaks are procedural in four depths (far
+ones dense, thin, slow and faint, near ones sparse, long and fast), tapered
+towards the tail, the density sweeping across in bands, the slant following the
+wind with gusts. They fade against a bright sky and show against a dark one: the
+shader reads the luminance of a small picture of the view background (its CSS
+gradients painted at 256 px, plus a 64 px blurred copy), rebuilt only when the
+weather print or the light changes, never per frame. Cost rules, for a GPU-bound
+kiosk: one canvas; rastered at 0.75 / 0.5 / 0.4 of the frame for `high` /
+`medium` / `low`, at most 1280 px wide, and scaled up by the compositor; at most
+30 frames a second (20 on `low`, which also drops the far depth and the splashes);
+no loop at all when nothing falls and the glass is dry, while the page is hidden
+or once the card is out of the document; with *reduce motion* one still frame.
+If WebGL or the shader is not available the card says so once in the console and
+draws the classic rain below.
+
+**`rain_style: classic`.** Three depths: far streaks short, faint and slow, near ones long, bright and fast. Each depth is one canvas tile that repeats every half frame height, painted once at a reduced raster scale (the three together hold about 2 MB at `medium` on a 1280 × 400 view) and slid down by one transform loop.
 
 The wind does not push anything sideways frame by frame. The whole depth is sheared with `skewX` from its top edge, which slants the streaks and the fall together, as a steady drift would, and the shear eases to a new angle over 20 s when the wind changes. Near depths lean more than far ones.
 
@@ -904,7 +924,14 @@ The wind already tilts the rain and snow and pushes the clouds. Past about 22 km
 
 ### Raindrops on the glass
 
-Off unless `glass: true`. While it rains (or sleets) a timer lets drops land, from one every couple of seconds in a drizzle to several a second in a downpour, capped at 40 on screen at `high`. Each is one element: a lens gradient, a highlight and a soft shadow, on one Web Animation that lands it, keeps it and dries it over 8 to 22 s. One drop in five is big enough to slide: it moves down in fits and starts, squashing a little as it moves, and leaves a trail of small droplets that appear as it passes and dry after it.
+Off unless `glass: true`. With `rain_style: shader` the glass is drawn by the
+same canvas as the rain: it fogs over, drops slide down in fits and starts and
+clear a trail with beads left in it, small ones sit still, and each drop is a
+lens showing the sky upside down with a highlight and a dark rim. The drops
+gather over a few seconds and dry out over about twenty after the rain stops,
+then the canvas goes away. The paragraph below is the `classic` glass.
+
+While it rains (or sleets) a timer lets drops land, from one every couple of seconds in a drizzle to several a second in a downpour, capped at 40 on screen at `high`. Each is one element: a lens gradient, a highlight and a soft shadow, on one Web Animation that lands it, keeps it and dries it over 8 to 22 s. One drop in five is big enough to slide: it moves down in fits and starts, squashing a little as it moves, and leaves a trail of small droplets that appear as it passes and dry after it.
 
 The card paints the view background, which lies under the dashboard cards, so the drops sit under the cards too. That keeps text readable, and it also means the glass is between you and the sky, not between you and the cards.
 

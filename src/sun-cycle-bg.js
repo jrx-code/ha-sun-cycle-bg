@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.0.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.1.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1751,7 +1751,7 @@
   const WEATHER_ORDER = ['scw-aurora', 'scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
                          'scw-clouds-low', 'scw-bolt', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
-                         'scw-hail-1', 'scw-wind', 'scw-flash', 'scw-glass'];
+                         'scw-hail-1', 'scw-gl', 'scw-wind', 'scw-flash', 'scw-glass'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w, assets) {
@@ -1776,6 +1776,8 @@
       lightning: w.lightning !== false,
       wind: w.wind !== false,
       glass: w.glass === true,
+      // rain and the glass drops: one WebGL shader, or the classic DOM strips
+      rain_style: w.rain_style === 'classic' ? 'classic' : 'shader',
       aurora: (() => {
         const a = w.aurora;
         if (!a || typeof a !== 'object' || !str(a.kp_entity)) return null;
@@ -1924,6 +1926,7 @@
       layer._scwBurza = null;
       layer._scwWiatr = null;
       layer._scwSzyba = null;
+      glDestroy(layer);
       for (const a of layer.getAnimations ? layer.getAnimations({ subtree: true }) : []) a.cancel();
     };
     return layer;
@@ -2836,17 +2839,462 @@
     }
   }
 
+  /* --- rain_style: shader (2.1.0) --------------------------------------------
+     Rain and the drops on the glass drawn by one WebGL1 canvas: one triangle
+     over the frame and one fragment shader. Streaks are procedural in four
+     depths (far ones dense, slow and faint, near ones sparse, fast and long),
+     the density sweeps across in bands, the wind bends them with gusts. The
+     glass is fogged; drops slide down in fits and starts and clear a trail,
+     and each one is a lens showing the sky upside down. The CPU sets a few
+     uniforms per frame; the two sky textures (sharp 256 px, blurred 64 px) are
+     painted from the view background only when the weather print changes.
+     Cost rules for a GPU-bound kiosk: one canvas, raster at a share of the
+     frame (GL_RES, at most 1280 px wide), 30 fps cap (20 on low), no loop
+     when nothing falls and the glass is dry, the page is hidden or the layer
+     left the document. If WebGL or the shader fails, the classic DOM path
+     takes over and the console says so once. */
+  const GL_RES = { high: 0.75, medium: 0.5, low: 0.4 };
+  const GL_FPS = { high: 30, medium: 30, low: 20 };
+  const GL_MAX_W = 1280;
+  let GL_BROKEN = false;
+  let GL_LOST = 0;                  // contexts the browser took back (too many open, GPU reset)
+  function glBroken(why) {
+    if (!GL_BROKEN) console.warn('sun-cycle-bg: WebGL rain unavailable (' + why + '), falling back to rain_style: classic');
+    GL_BROKEN = true;
+  }
+  const GL_VS = 'attribute vec2 p; varying vec2 vUv; void main(){ vUv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }';
+  const GL_FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform vec2 uRes;
+uniform float uT, uI, uGI, uAng, uVis, uGlass, uFogA, uJas, uSplash, uFar;
+uniform vec3 uRainCol, uFogCol;
+uniform sampler2D uSharp, uBlur;
+
+float hs(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p+23.45); return fract(p.x*p.y); }
+vec4 over(vec4 dst, vec3 c, float a){ return vec4(c*a + dst.rgb*(1.-a), a + dst.a*(1.-a)); }
+
+// one depth of falling streaks; p in frame-height units, y down
+float streaks(vec2 p, float ang, float cols, float len, float v, float wd, float dens, float seed){
+  float s = sin(ang), c = cos(ang);
+  p = vec2(c*p.x + s*p.y, -s*p.x + c*p.y);
+  float cx = p.x*cols, ci = floor(cx);
+  float r1 = hs(vec2(ci, seed)), r2 = hs(vec2(ci, seed+3.7));
+  float per = len*(2.5 + 5.*r2);
+  float y = p.y - uT*v*(0.85+0.3*r1) + r1*17.;
+  float cyc = floor(y/per);
+  float ly = fract(y/per)*per;                  // 0 at the head, grows up the tail
+  float on = step(hs(vec2(ci, cyc + seed)), dens);
+  float dx = abs((fract(cx) - 0.5 - (hs(vec2(ci, cyc))-0.5)*0.6)/cols)*uRes.y;
+  float f = ly/len;
+  float w = wd*(uRes.y/1080.)*(1. - 0.85*clamp(f,0.,1.));        // tapered towards the tail
+  float body = smoothstep(w*0.5+0.75, w*0.5-0.25, dx)*min(1., w + 0.35);   // sub-pixel streaks fade, not fatten
+  float tail = smoothstep(1.0, 0.25, f)*smoothstep(-0.02, 0.06, f);
+  return body*tail*on;
+}
+
+// sliding drops on a hash grid: mask, normal and the cleared trail
+void sliders(vec2 q, vec2 sc, float sh, inout float m, inout vec2 n, inout float trail){
+  vec2 g = q*sc + vec2(sh, 0.);
+  vec2 id = floor(g), st = fract(g) - 0.5;
+  float h = hs(id + sh);
+  if (h > 0.25 + 0.65*uGI) return;
+  float h2 = hs(id + 7.3), h3 = hs(id + 2.1);
+  float ph = fract(uT*(0.035 + 0.05*h2) + h3);
+  float yd = -0.42 + 0.84*(ph + 0.035*sin(ph*31.4));               // stick and slip
+  float wob = (h - 0.5)*0.4;
+  float xd = wob + 0.1*sin(yd*7. + h2*6.) + 0.04*sin(yd*19. + h*9.);
+  float xt = wob + 0.1*sin(st.y*7. + h2*6.) + 0.04*sin(st.y*19. + h*9.);   // the path it came down
+  vec2 dq = vec2((st.x - xd)/sc.x, (st.y - yd)/sc.y);
+  float r = (0.008 + 0.010*h2)*(0.8 + 0.4*uGI);
+  vec2 e = vec2(dq.x, dq.y*(dq.y > 0. ? 0.85 : 1.25));             // heavier at the bottom
+  float d = length(e);
+  float mm = smoothstep(r, r*0.86, d);
+  if (mm > m){ m = mm; n = e/r; }
+  float above = (yd - st.y)/sc.y;
+  float tx = abs((st.x - xt)/sc.x);
+  float sl = smoothstep(r*0.7, r*0.3, tx)*step(0., above)*smoothstep(0.32, 0.0, above)*step(-0.45, st.y);
+  trail = max(trail, sl);
+  // beads left in the trail
+  float band = above/(r*2.6);
+  float bi = floor(band);
+  vec2 bq = vec2(tx, (fract(band) - 0.5)*r*2.6);
+  float br = r*0.3*hs(vec2(bi, h));
+  float bm = smoothstep(br, br*0.8, length(bq))*sl*step(0.45, hs(vec2(bi, h2)))*step(0.5, bi);
+  if (bm > m){ m = bm; n = bq/max(br, 1e-4); }
+}
+
+// small drops that sit still
+void sitters(vec2 q, float dens, float rmax, float seed, float trail, inout float m, inout vec2 n){
+  vec2 g = q*dens, id = floor(g), st = fract(g) - 0.5;
+  float h = hs(id + seed);
+  if (h > 0.06 + 0.24*uGI) return;
+  vec2 o = vec2(hs(id + 1.7 + seed), hs(id + 5.3 + seed)) - 0.5;
+  float r = rmax*(0.35 + 0.65*hs(id + 9.1))*(0.5 + 0.5*smoothstep(0.0, 0.08, fract(uT*0.02 + h*5.)));
+  vec2 e = (st - o*0.6)/dens;
+  float mm = smoothstep(r, r*0.75, length(e))*(1. - trail);
+  if (mm > m){ m = mm; n = e/r; }
+}
+
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);                 // y down like the frame
+  vec2 p = vec2(uv.x*uRes.x/uRes.y, uv.y);
+  vec4 o = vec4(0.);
+  if (uI > 0.){
+    // haze, thicker near the ground
+    o = over(o, uRainCol, (0.03 + 0.13*uI)*(0.6 + 0.4*uVis)*(0.5 + 0.5*uv.y));
+    float bands = 0.45 + 0.55*(0.5 + 0.5*sin((p.x*0.8 + p.y*0.6)*5. - uT*0.9));
+    float a = 0.;
+    if (uFar > 0.5) a += 0.11*streaks(p, uAng*0.84, 150., 0.028, 0.75, 1.0, 0.55*uI, 1.);
+    a += 0.15*streaks(p, uAng*0.90, 80., 0.036, 1.15, 1.4, 0.45*uI, 2.);
+    a += 0.21*streaks(p, uAng*0.95, 40., 0.060, 1.65, 2.0, 0.35*uI, 3.);
+    a += 0.28*streaks(p, uAng, 18., 0.11, 2.3, 3.2, 0.25*uI, 4.);
+    o = over(o, uRainCol, clamp(a*uVis*bands, 0., 1.));
+    // rare splash rings along the ground
+    if (uSplash > 0.5 && uv.y > 0.88){
+      float cel = floor(p.x*28.);
+      float e = uT*(0.6 + hs(vec2(cel, 1.))) + hs(vec2(cel, 2.))*9.;
+      float ci = floor(e), f = fract(e);
+      if (hs(vec2(cel, ci)) < uI*0.35 && f < 0.35){
+        float ff = f/0.35;
+        vec2 c = vec2((cel + hs(vec2(cel, ci+1.)))/28., 0.9 + 0.09*hs(vec2(cel, ci+2.)));
+        vec2 dd = (p - c)*vec2(1., 3.6);
+        float rr = 0.002 + 0.01*ff;
+        float ring = smoothstep(1.2/uRes.y, 0., abs(length(dd) - rr));
+        o = over(o, uRainCol, ring*0.35*uVis*(1. - ff));
+      }
+    }
+  }
+  if (uGlass > 0.){
+    float m = 0., trail = 0.; vec2 n = vec2(0.);
+    sliders(p, vec2(9., 2.2), 0., m, n, trail);
+    sliders(p, vec2(6., 1.6), 0.5, m, n, trail);
+    sitters(p, 30., 0.0055, 0., trail, m, n);
+    // fogged glass: lighter and flatter than the scene, a quarter of blurred sky, cleared along trails
+    vec3 fog = mix(uFogCol, texture2D(uBlur, uv).rgb, 0.25);
+    o = over(o, fog, uFogA*uGlass*(1. - 0.85*trail));
+    if (m > 0.){
+      float l = length(n);
+      // lens: the world flipped, sky in 0..0.72 of the texture and ground below
+      vec2 suv = vec2(clamp(uv.x - n.x*0.2, 0.002, 0.998), clamp(0.6 - n.y*0.32, 0.002, 0.998));
+      vec3 c = texture2D(uSharp, suv).rgb*1.04 + vec3(0.14, 0.155, 0.19)*(1. - uJas);   // a lens gathers light
+      c *= 1. - 0.38*smoothstep(0.78, 1., l);                                        // dark rim
+      c += 0.85*smoothstep(0.24, 0.0, length(n - vec2(-0.34, -0.4)));               // highlight
+      c += 0.24*smoothstep(0.55, 0.85, l)*smoothstep(0.2, 0.7, n.y);                 // caustic at the bottom
+      o = over(o, c, m*uGlass);
+    }
+  }
+  gl_FragColor = o;
+}`;
+  const GL_UNIFORMS = ['uRes', 'uT', 'uI', 'uGI', 'uAng', 'uVis', 'uGlass', 'uFogA', 'uJas', 'uSplash', 'uFar',
+                       'uRainCol', 'uFogCol', 'uSharp', 'uBlur'];
+
+  // the view background as a picture: its CSS gradients painted on a 2D canvas
+  function cssSplit(s) {            // split on top-level commas
+    const out = []; let g = 0, a = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (c === '(') g++; else if (c === ')') g--;
+      else if (c === ',' && g === 0) { out.push(s.slice(a, i).trim()); a = i + 1; }
+    }
+    out.push(s.slice(a).trim());
+    return out.filter(Boolean);
+  }
+  function cssColor(t) {
+    const m = t.match(/rgba?\(([^)]*)\)/);
+    if (!m) return [0, 0, 0, 0];
+    const v = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+    return [v[0], v[1], v[2], v.length > 3 ? v[3] : 1];
+  }
+  function cssStops(parts) {
+    return parts.map((x) => {
+      const m = x.match(/^(rgba?\([^)]*\)|transparent)\s*([-\d.]+%)?/);
+      return m ? [m[1] === 'transparent' ? [0, 0, 0, 0] : cssColor(m[1]), m[2] ? parseFloat(m[2]) / 100 : null] : null;
+    }).filter(Boolean).map((s, i, a) => [s[0], s[1] === null ? i / Math.max(1, a.length - 1) : s[1]]);
+  }
+  function paintCssBackground(g, w, h, img) {
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    const col = (c) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + c[3] + ')';
+    for (const L of cssSplit(img).reverse()) {          // CSS: the last layer is at the bottom
+      const m = L.match(/^(linear|radial)-gradient\(([\s\S]*)\)$/);
+      if (!m) continue;
+      const parts = cssSplit(m[2]);
+      if (m[1] === 'linear') {
+        let ang = 180;
+        if (/deg$/.test(parts[0])) ang = parseFloat(parts.shift());
+        const a = ang * D2R, dx = Math.sin(a), dy = -Math.cos(a);
+        const half = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+        const gr = g.createLinearGradient(w / 2 - dx * half, h / 2 - dy * half, w / 2 + dx * half, h / 2 + dy * half);
+        for (const [c, p] of cssStops(parts)) gr.addColorStop(clamp(p, 0, 1), col(c));
+        g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      } else {
+        const k = parts.shift().match(/([\d.]+)%\s+([\d.]+)%\s+at\s+([-\d.]+)%\s+([-\d.]+)%/);
+        if (!k) continue;
+        const rx = Math.max(0.5, +k[1] / 100 * w), ry = Math.max(0.5, +k[2] / 100 * h);
+        const cx = +k[3] / 100 * w, cy = +k[4] / 100 * h;
+        g.save();
+        g.translate(cx, cy); g.scale(1, ry / rx);
+        const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+        for (const [c, p] of cssStops(parts)) gr.addColorStop(clamp(p, 0, 1), col(c));
+        g.fillStyle = gr; g.fillRect(-cx, -cy * rx / ry, w, h * rx / ry);
+        g.restore();
+      }
+    }
+  }
+
+  /* Sharp 256x144 sky with ground below (256x200, what a lens sees upside
+     down) and a blurred 64x36 copy for the fogged glass. Also the mean colour
+     and luminance: streaks fade against a bright sky and show against a dark one. */
+  function glSky(R, layer, ws, ctx, I) {
+    const bg = layer.parentNode && layer.parentNode.querySelector('hui-view-background');
+    const img = (bg && getComputedStyle(bg).backgroundImage) || '';
+    const veil = ctx.light.veil.map(Math.round);
+    const cover = ws ? clamp(ws.cover, 0, 1) : 0;
+    const key = podpis([img, veil, Math.round(cover * 20), Math.round(I * 20)]);
+    if (key === R.skyKey) return false;
+    R.skyKey = key;
+    const S = R.sky || (R.sky = { sharp: document.createElement('canvas'), blur: document.createElement('canvas'),
+                                  world: document.createElement('canvas') });
+    S.sharp.width = 256; S.sharp.height = 144;
+    S.blur.width = 64; S.blur.height = 36;
+    S.world.width = 256; S.world.height = 200;
+    const c = S.sharp.getContext('2d', { willReadFrequently: true });
+    paintCssBackground(c, 256, 144, /gradient/.test(img) ? img :
+      'linear-gradient(180deg, rgb(60,70,90) 0%, rgb(30,35,45) 100%)');
+    // the card hides most of that gradient under its cloud deck when it rains
+    const a = (0.45 + 0.5 * I) * Math.max(0.5, cover);
+    const g = c.createLinearGradient(0, 0, 0, 144);
+    g.addColorStop(0, 'rgba(' + veil + ',' + a.toFixed(3) + ')');
+    g.addColorStop(0.75, 'rgba(' + veil + ',' + (a * 0.8).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(' + veil + ',' + (a * 0.35).toFixed(3) + ')');
+    c.fillStyle = g; c.fillRect(0, 0, 256, 144);
+    const b = S.blur.getContext('2d');
+    b.filter = 'blur(2px)';
+    b.drawImage(S.sharp, -4, -4, 72, 44);
+    b.filter = 'none';
+    const d = c.getImageData(0, 0, 256, 144).data;
+    let n = 0, rs = 0, gs = 0, bs = 0;
+    for (let i = 0; i < d.length; i += 16) { rs += d[i]; gs += d[i + 1]; bs += d[i + 2]; n++; }
+    R.mean = [rs / n, gs / n, bs / n];
+    R.lum = (0.2126 * rs + 0.7152 * gs + 0.0722 * bs) / n / 255;
+    // fog scatters light: a little lighter and flatter than the scene behind it
+    const f = 0.08 + 0.4 * R.lum;
+    R.fog = R.mean.map((v, i) => v * (1 - f) + [200, 205, 212][i] * f);
+    const w = S.world.getContext('2d');
+    w.drawImage(S.sharp, 0, 0);
+    const low = c.getImageData(0, 140, 1, 1).data;
+    const gz = w.createLinearGradient(0, 144, 0, 200);
+    gz.addColorStop(0, 'rgb(' + [low[0] * 0.7, low[1] * 0.7, low[2] * 0.68].map(Math.round) + ')');
+    gz.addColorStop(1, 'rgb(' + [low[0] * 0.28, low[1] * 0.3, low[2] * 0.3].map(Math.round) + ')');
+    w.fillStyle = gz; w.fillRect(0, 144, 256, 56);
+    R.skyDirty = true;
+    return true;
+  }
+
+  // canvas, context, program; null (and classic from then on) when any step fails
+  function glCreate(layer) {
+    const cv = weatherChild(layer, 'scw-gl', 'canvas');      // its place in WEATHER_ORDER
+    let gl = null;
+    try {
+      gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false, depth: false,
+                                    stencil: false, powerPreference: 'low-power' });
+    } catch (e) { gl = null; }
+    if (!gl) { cv.remove(); glBroken('no webgl context'); return null; }
+    const sh = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'compile');
+      return s;
+    };
+    let prog;
+    try {
+      prog = gl.createProgram();
+      gl.attachShader(prog, sh(gl.VERTEX_SHADER, GL_VS));
+      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, GL_FS));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || 'link');
+    } catch (e) {
+      glBroken('shader: ' + e.message);
+      const x = gl.getExtension('WEBGL_lose_context'); if (x) x.loseContext();
+      cv.remove();
+      return null;
+    }
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // one big triangle
+    const loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    const u = {};
+    for (const k of GL_UNIFORMS) u[k] = gl.getUniformLocation(prog, k);
+    const tex = () => {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                            [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+        gl.texParameteri(gl.TEXTURE_2D, k, v);
+      return t;
+    };
+    const R = { layer, cv, gl, u, tSharp: tex(), tBlur: tex(), raf: 0, last: 0, t0: performance.now(),
+                rain: 0, glassI: 0, glassOn: false, glassA: 0, skyKey: '', skyDirty: true,
+                mean: [128, 128, 128], fog: [128, 128, 128], lum: 0.5, wx: 0, splash: true, far: true,
+                fps: 30, factor: 0.5, calm: false, frames: 0 };
+    gl.uniform1i(u.uSharp, 0); gl.uniform1i(u.uBlur, 1);
+    cv.style.cssText = 'width:100%;height:100%;';
+    // A lost context is redrawn on the next sync; one lost again and again
+    // (a GPU that keeps resetting) sends the card to the classic path.
+    cv.addEventListener('webglcontextlost', () => {
+      if (layer._scwGL !== R) return;
+      if (layer.isConnected && ++GL_LOST >= 3) glBroken('context lost ' + GL_LOST + ' times');
+      glDestroy(layer);
+      layer._print = null;
+    });
+    R.onVis = () => { if (!document.hidden) glKick(R); };
+    document.addEventListener('visibilitychange', R.onVis);
+    return R;
+  }
+
+  function glDestroy(layer) {
+    const R = layer._scwGL;
+    if (!R) return;
+    layer._scwGL = null;
+    if (R.raf) cancelAnimationFrame(R.raf);
+    R.raf = 0;
+    document.removeEventListener('visibilitychange', R.onVis);
+    const x = R.gl && !R.gl.isContextLost() && R.gl.getExtension('WEBGL_lose_context');
+    if (x) x.loseContext();
+    R.cv.remove();
+  }
+
+  function glDraw(R, now) {
+    const gl = R.gl, u = R.u, cv = R.cv;
+    gl.viewport(0, 0, cv.width, cv.height);
+    if (R.skyDirty) {                                  // upload only when the sky changed
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, R.tSharp);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, R.sky.world);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, R.tBlur);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, R.sky.blur);
+      R.skyDirty = false;
+    }
+    const t = (now - R.t0) / 1000;
+    // wind: a base slant from the speed across the frame, gusts as slow sines on top;
+    // a positive angle leans the streaks to the left, so rightward wind is negative
+    const w = clamp(R.wx / 80, -1, 1), sgn = R.wx < 0 ? -1 : 1;
+    const gust = R.calm ? 0 : (Math.sin(t * 0.37) * 0.6 + Math.sin(t * 1.13 + 1) * 0.3 +
+                               Math.sin(t * 2.7 + 2) * 0.1) * (4 + 11 * Math.abs(w));
+    const ang = -(w * 26 + sgn * gust) * D2R;
+    const m = R.mean;
+    gl.uniform2f(u.uRes, cv.width, cv.height);
+    gl.uniform1f(u.uT, t % 1000);
+    gl.uniform1f(u.uI, R.rain);
+    gl.uniform1f(u.uGI, R.glassI);
+    gl.uniform1f(u.uAng, ang);
+    gl.uniform1f(u.uVis, clamp(1.22 - R.lum * 1.1, 0.42, 1));
+    gl.uniform1f(u.uJas, R.lum);
+    gl.uniform1f(u.uGlass, R.glassA);
+    gl.uniform1f(u.uFogA, 0.3 + 0.22 * R.glassI);
+    gl.uniform1f(u.uSplash, R.splash ? 1 : 0);
+    gl.uniform1f(u.uFar, R.far ? 1 : 0);
+    gl.uniform3f(u.uRainCol, Math.min(255, m[0] * 0.5 + 150) / 255, Math.min(255, m[1] * 0.5 + 155) / 255,
+                 Math.min(255, m[2] * 0.5 + 165) / 255);
+    gl.uniform3f(u.uFogCol, R.fog[0] / 255, R.fog[1] / 255, R.fog[2] / 255);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    R.frames++;
+  }
+
+  // the loop: frame skipping to the fps cap, stops itself when there is nothing to do
+  function glFrame(R, now) {
+    R.raf = 0;
+    if (R.layer._scwGL !== R || document.hidden) return;
+    // a layer out of the document gives its context back; the next sync after
+    // it returns builds a new one
+    if (!R.layer.isConnected) { glDestroy(R.layer); R.layer._print = null; return; }
+    R.raf = requestAnimationFrame((ts) => glFrame(R, ts));
+    if (now - R.last < 1000 / R.fps - 3) return;
+    const dt = R.last ? Math.min(0.25, (now - R.last) / 1000) : 0;
+    R.last = now;
+    // drops gather over a few seconds and dry out over about twenty
+    R.glassA = R.glassOn ? Math.min(1, R.glassA + dt / 4) : Math.max(0, R.glassA - dt / 20);
+    if (!R.rain && R.glassA <= 0) { glDestroy(R.layer); return; }
+    glDraw(R, now);
+  }
+  function glKick(R) {
+    if (R.raf || R.calm || R.layer._scwGL !== R || !R.layer.isConnected || document.hidden) return;
+    R.last = 0;
+    R.raf = requestAnimationFrame((ts) => glFrame(R, ts));
+  }
+
+  /* Called from drawWeather. true: the shader owns rain and glass (even when
+     it is not raining, so the classic layers stay off); false: classic. */
+  function weatherShader(layer, cfg, ws, ctx) {
+    if (cfg.rain_style !== 'shader' || GL_BROKEN) { glDestroy(layer); return false; }
+    const kind = ws && ws.precip;
+    const I = ws ? clamp(ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity || 0, 0, 1) : 0;
+    const rain = cfg.rain && (kind === 'rain' || kind === 'sleet' || kind === 'hail')
+      ? I * (kind === 'sleet' ? 0.55 : kind === 'hail' ? 0.6 : 1) : 0;
+    const glassOn = !!(cfg.glass && (kind === 'rain' || kind === 'sleet') && I > 0);
+    let R = layer._scwGL;
+    const calm = weatherCalm();
+    // nothing falls and the glass is dry (or nobody waits for it to dry)
+    if (!rain && !glassOn && (!R || calm || R.glassA <= 0)) { glDestroy(layer); return true; }
+    if (!R) {
+      R = glCreate(layer);
+      if (!R) return false;
+      layer._scwGL = R;
+    }
+    R.rain = rain;
+    R.glassOn = glassOn;
+    if (glassOn) R.glassI = I;
+    R.wx = weatherWindX(ws, ctx);
+    R.splash = cfg.splashes && cfg.quality !== 'low';
+    R.far = cfg.quality !== 'low';
+    R.fps = GL_FPS[cfg.quality];
+    R.factor = GL_RES[cfg.quality];
+    R.calm = calm;
+    const s = Math.min(R.factor, GL_MAX_W / Math.max(1, ctx.W));
+    const w = Math.max(2, Math.round(ctx.W * s)), h = Math.max(2, Math.round(ctx.H * s));
+    if (R.cv.width !== w || R.cv.height !== h) { R.cv.width = w; R.cv.height = h; }
+    glSky(R, layer, ws, ctx, Math.max(rain, glassOn ? I : 0));
+    if (calm) {                                       // one still frame, no loop
+      if (R.raf) cancelAnimationFrame(R.raf);
+      R.raf = 0;
+      R.glassA = glassOn ? 1 : 0;
+      glDraw(R, R.t0 + 12000);
+    } else {
+      glKick(R);
+    }
+    return true;
+  }
+
+  // for tests: the renderer of the first weather layer under `root`
+  function rainShaderState(root) {
+    const layer = (root || document).querySelector('.sun-cycle-weather');
+    const R = layer && layer._scwGL;
+    if (!R) return { active: false, looping: false, broken: GL_BROKEN };
+    return { active: true, looping: !!R.raf, broken: GL_BROKEN, fps: R.fps, factor: R.factor,
+             width: R.cv.width, height: R.cv.height, rain: +R.rain.toFixed(3), glass: R.glassOn,
+             glassA: +R.glassA.toFixed(3), calm: R.calm, frames: R.frames };
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherAurora(layer, cfg, ws, ctx);
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
     weatherFog(layer, cfg, ws, ctx);
-    weatherRain(layer, cfg, ws, ctx);
+    // rain_style shader: one WebGL canvas takes rain, splashes and the glass,
+    // and the classic strips and DOM drops are told there is nothing to draw
+    const gpu = weatherShader(layer, cfg, ws, ctx);
+    const own = gpu ? Object.assign({}, cfg, { rain: false, glass: false }) : cfg;
+    weatherRain(layer, own, ws, ctx);
     weatherSnow(layer, cfg, ws, ctx);
     weatherHail(layer, cfg, ws, ctx);
     weatherLightning(layer, cfg, ws, ctx);
     weatherWind(layer, cfg, ws, ctx);
-    weatherGlass(layer, cfg, ws, ctx);
+    weatherGlass(layer, own, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -3072,6 +3520,8 @@
       if (layer._scwBurza && !layer._scwT.bolt && layer.isConnected) lightningPlan(layer, 2);
       if (layer._scwWiatr && !layer._scwT.wind && layer.isConnected) windPlan(layer, 1);
       if (layer._scwSzyba && !layer._scwT.glass && layer.isConnected) glassPlan(layer, 1);
+      // a shader loop that stopped while the layer was out of the document
+      if (layer._scwGL && layer.isConnected) glKick(layer._scwGL);
       const ws = readWeather(st, cfg);
       // meteors behind cloud: rain or snow takes them all, cover its share
       const gw = c.querySelector('.sun-cycle-stars');
@@ -3747,6 +4197,8 @@
         o: 'What the wind carries: autumn leaves in Sept-Nov only; seasons adds cherry petals in spring and summer leaves and flowers; always also blows dry leaves in winter; or nothing.' },
       { k: 'weather.glass', et: 'drops on the glass', typ: 'bool', dom: false, w: 'glass',
         o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
+      { k: 'weather.rain_style', et: 'rain style', typ: 'wybor', opcje: ['shader', 'classic'], dom: 'shader', w: 'rain_style',
+        o: 'shader: rain and the glass drops drawn by one WebGL canvas (thin streaks in four depths, lens drops on fogged glass), 30 fps cap. classic: the older DOM strips; also the fallback without WebGL.' },
       { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'encja', domeny: ['sensor', 'input_number'], dom: '', hint: 'sensor.planetary_k_index',
         o: 'Northern lights only when this Kp index reaches the threshold below, on a dark and mostly clear night.' },
       { k: 'weather.aurora.min_kp', et: 'aurora: from Kp', typ: 'zakres', min: 1, max: 9, krok: 1, dom: 5,
@@ -4471,7 +4923,7 @@
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
-                       windGust, windLeaf, glassDrop, leafSeason, LEAF_SETS, seasonOfMonth,
+                       windGust, windLeaf, glassDrop, rainShaderState, leafSeason, LEAF_SETS, seasonOfMonth,
                        profileMerge, profileOwn, showerSources, showerMeteor, SHOWERS,
                        SHOWER_TAB, showerZhr,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
