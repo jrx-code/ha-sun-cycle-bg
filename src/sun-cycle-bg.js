@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.20.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.21.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -87,6 +87,7 @@
  *     splashes: true                # droplets flickering along the horizon
  *     snow: true                    # three depths, swaying; mixed with rain for sleet
  *     hail: true                    # pellets in two depths, bouncing at the horizon
+ *     fog: true                     # haze and drifting banks
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
@@ -1478,7 +1479,7 @@
   };
   // children of the weather layer, bottom to top
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
-                         'scw-clouds-low', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
+                         'scw-clouds-low', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
                          'scw-hail-1'];
 
@@ -1499,6 +1500,7 @@
       splashes: w.splashes !== false,
       snow: w.snow !== false,
       hail: w.hail !== false,
+      fog: w.fog !== false,
     };
   }
 
@@ -1656,7 +1658,10 @@
     if (!cfg.veil || !ws) { weatherDrop(layer, 'scw-veil'); return; }
     const v = weatherChild(layer, 'scw-veil');
     const L = ctx.light;
-    const a = clamp(smoothstep(clamp((ws.cover - 0.35) / 0.65, 0, 1)) * 0.82 + ws.storm * 0.12, 0, 0.95);
+    let a = smoothstep(clamp((ws.cover - 0.35) / 0.65, 0, 1)) * 0.82 + ws.storm * 0.12;
+    // a thick fog hides the sky as surely as cloud does
+    if (cfg.fog && ws.fog > 0.4) a = Math.max(a, (ws.fog - 0.4) / 0.6 * 0.7);
+    a = clamp(a, 0, 0.95);
     v.style.background = 'linear-gradient(180deg,' + rgb(L.veil.map((x) => x * 0.85)) + ',' +
       rgb(lerpA(L.veil, L.top, 0.2)) + ')';
     v.style.opacity = a.toFixed(3);
@@ -2075,9 +2080,63 @@
     }
   }
 
+  /* Fog: a haze thickening towards the horizon (a static gradient, one
+     opacity) and soft banks on a strip that repeats every frame width,
+     drifting with the wind far slower than cloud. Coloured from the sky, so a
+     dawn fog is warm and a night fog is dark. */
+  function weatherFog(layer, cfg, ws, ctx) {
+    const f = cfg.fog && ws ? ws.fog : 0;
+    if (f <= 0.02) { weatherDrop(layer, 'scw-fog'); return; }
+    const L = ctx.light, W = ctx.W, H = ctx.H;
+    const kol = lerpA(L.veil, [230, 234, 240], L.e > 0 ? 0.35 : 0.08);
+    const box = weatherChild(layer, 'scw-fog');
+    box.style.overflow = 'hidden';
+    let haze = box.firstElementChild;
+    if (!haze) {
+      haze = document.createElement('div');
+      haze.style.cssText = 'position:absolute;inset:0;transition:opacity 60s linear;';
+      box.appendChild(haze);
+      const cv = document.createElement('canvas');
+      cv.style.cssText = 'position:absolute;left:0;width:200%;will-change:transform;';
+      box.appendChild(cv);
+    }
+    haze.style.background = 'linear-gradient(180deg,' + rgba([...kol, 1], 0.15 * f) + ' 25%,' +
+      rgba([...kol, 1], 0.6 * f) + ' 58%,' + rgba([...kol, 1], 0.95 * f) + ' 100%)';
+    const cv = box.children[1];
+    const res = WEATHER_QUALITY[cfg.quality].res * 0.5;     // banks are soft: half the raster
+    const top = 0.3 * H, bh = 0.7 * H;
+    cv.style.top = top + 'px'; cv.style.height = bh + 'px';
+    const cw = Math.max(2, Math.round(2 * W * res)), ch = Math.max(2, Math.round(bh * res));
+    if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, cw, ch);
+    const rnd = weatherRng(616), fw = cw / 2;
+    const jasny = lerpA(kol, [255, 255, 255], 0.15);
+    // few and thick: thin long banks read as lines drawn across the sky
+    for (let i = 0; i < 5; i++) {
+      const x = rnd() * fw, y = (0.2 + i * 0.16 + rnd() * 0.06) * ch;
+      const rx = fw * (0.28 + rnd() * 0.22), ry = ch * 0.22;
+      for (const dx of [-fw, 0, fw]) {
+        g.save(); g.translate(x + dx, y); g.scale(1, ry / rx);
+        const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+        r.addColorStop(0, rgba([...jasny, 1], 0.5 * f)); r.addColorStop(1, rgba([...kol, 1], 0));
+        g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+    }
+    const wx = weatherWindX(ws, ctx);
+    const left = wx < 0;
+    const anim = weatherLoop(cv, left
+      ? [{ transform: 'translateX(0)' }, { transform: 'translateX(-50%)' }]
+      : [{ transform: 'translateX(-50%)' }, { transform: 'translateX(0)' }],
+    Math.max(1000, W / 3 * 1000), left ? 'l' : 'r', true);
+    // banks crawl: 1.5 px/s in calm air, a little more in a breeze
+    anim.playbackRate = (1.5 + Math.abs(wx) * 0.12) * (W / 1280) / 3;
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
+    weatherFog(layer, cfg, ws, ctx);
     weatherRain(layer, cfg, ws, ctx);
     weatherSnow(layer, cfg, ws, ctx);
     weatherHail(layer, cfg, ws, ctx);
@@ -2847,6 +2906,8 @@
         o: 'Snow in three depths, swaying as it falls; mixed with rain for sleet.' },
       { k: 'weather.hail', et: 'hail', typ: 'bool', dom: true, w: 'hail',
         o: 'Hard bright pellets with rain behind them, bouncing where they land.' },
+      { k: 'weather.fog', et: 'fog', typ: 'bool', dom: true, w: 'fog',
+        o: 'Haze towards the horizon and drifting banks, from the condition, fog fraction or low visibility.' },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },

@@ -493,6 +493,28 @@ out.push(['GRAD hail: false (deszcz zostaje)', czytajGrad(pogoda(30, { entity: '
 out.push(['GRAD pouring: bez gradu', czytajGrad(pogoda(30, { entity: 'weather.t' }, 'pouring',
   { cloud_coverage: 95 }).cont)]);
 
+// --- 1.21.0: mgla -------------------------------------------------------
+function czytajMgle(cont) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  const f = w && w.querySelector('.scw-fog');
+  const v = w && w.querySelector('.scw-veil');
+  if (!f) return { mgla: false, welon: v ? +v.style.opacity : null };
+  const cv = f.querySelector('canvas'), a = cv.getAnimations()[0];
+  return { mgla: true, kanwa: cv.width + 'x' + cv.height, tempo: +a.playbackRate.toFixed(3),
+           kierunek: cv._scwKey, welon: v ? +v.style.opacity : null,
+           zamglenie: f.firstElementChild.style.background.slice(0, 70) };
+}
+out.push(['MGLA fog o swicie', czytajMgle(pogoda(-2, { entity: 'weather.t' }, 'fog',
+  { cloud_coverage: 60, wind_speed: 3, wind_bearing: 90 }).cont)]);
+out.push(['MGLA z widocznosci 300 m', czytajMgle(pogoda(20, { entity: 'weather.t' }, 'cloudy',
+  { cloud_coverage: 70, visibility: 0.3 }).cont)]);
+out.push(['MGLA z astroweather fog 50%', czytajMgle(pogoda(20, { entity: 'weather.t',
+  clouds_entity: 'weather.c' }, 'partlycloudy', { cloud_coverage: 20 },
+  { cloud_area_fraction_low: 10, cloud_area_fraction_medium: 0, cloud_area_fraction_high: 0,
+    fog_area_fraction: 50 }).cont)]);
+out.push(['MGLA sunny: brak', czytajMgle(pogoda(20, { entity: 'weather.t' }, 'sunny', {}).cont)]);
+out.push(['MGLA fog: false', czytajMgle(pogoda(20, { entity: 'weather.t', fog: false }, 'fog', {}).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');
