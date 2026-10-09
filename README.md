@@ -661,6 +661,7 @@ weather:
   clouds_entity: weather.astroweather   # optional, see below
   quality: medium                   # high | medium | low
   veil: true
+  clouds: true
 ```
 
 | Key | Default | What it does |
@@ -669,6 +670,7 @@ weather:
 | `clouds_entity` | none | Cover per height and fog, read from the [AstroWeather](https://github.com/mawinkler/astroweather) attributes `cloud_area_fraction_low/medium/high` and `fog_area_fraction`. Without it the total cover is spread over the heights. |
 | `quality` | `medium` | Share of the particle budget and the resolution painted strips are rastered at: `high` 100 %, `medium` 60 % / 0.75, `low` 35 % / 0.5. |
 | `veil` | `true` | Overcast greys and dims the sky over everything the card draws, so a cloudy night has no stars and a grey noon no sun disc. |
+| `clouds` | `true` | Clouds at three heights (cirrus, alto, cumulus) and a stratus deck once low cover passes 75 %, drifting with the wind (1.17.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -684,6 +686,24 @@ sky layer and under the dashboard cards. Its state is fingerprinted the way the
 planet sensors are, so `hass` updates from the rest of the house cost a string
 comparison, and nothing in it animates in JS. With the system setting *reduce
 motion* on, everything the weather layer animates holds still.
+
+### Clouds
+
+Each height is one strip twice the frame wide, painted once and slid by one
+transform loop, so the compositor moves a picture and nothing redraws. The strip
+repeats every frame width, so the loop has no seam. Cover per height comes from
+`clouds_entity`, or from the total cover spread over the heights. Clouds are added
+in a fixed order as cover rises, so a growing cover adds clouds instead of
+reshuffling the sky.
+
+- **Light.** White tops and grey bases by day, warm undersides lit from below
+  while the sun is low, dark blue-grey at night and a little lighter under a high
+  moon. Repainted when the sun moves half a degree, which is every two to four
+  minutes.
+- **Wind.** Direction from `wind_bearing`, mapped into the card's azimuth window
+  (with the default window a westerly pushes clouds to the left). Speed is a
+  playback rate on the loop, so a change of wind bends the motion without a jump.
+  Low clouds move fastest and cirrus slowest; with no wind they still drift slowly.
 
 ## Tuning the palette
 
@@ -884,8 +904,8 @@ weather.
   [Planets](#planets). Computing the positions in the card, and with them a
   real magnitude, is still open.
 - **Clouds.** ~~The sky is painted from solar elevation alone, so it is always
-  clear.~~ **The veil shipped in 1.16.0** (see [Weather](#weather)); drawn clouds
-  are next. Originally: An optional `weather` entity could dim and desaturate the palette,
+  clear.~~ **The veil shipped in 1.16.0 and drawn clouds in 1.17.0** (see
+  [Weather](#weather)). Originally: An optional `weather` entity could dim and desaturate the palette,
   soften the aureole and thin out the stars as cover rises — `cloudcover_percentage`
   from [AstroWeather](https://github.com/mawinkler/astroweather), or plain
   `cloud_coverage` from any HA weather entity. Cover should move slowly (a

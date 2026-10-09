@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.16.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.17.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -82,6 +82,7 @@
  *     clouds_entity: weather.astro  # optional: cover per height, fog fraction
  *     quality: medium               # high | medium | low
  *     veil: true                    # overcast greys the sky over everything
+ *     clouds: true                  # three heights + a deck, drifting with the wind
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
  *   # Both are independent; whatever is left out keeps the drawn version. The
@@ -1471,7 +1472,8 @@
     exceptional: [95, 0.8, 'rain', 0.6],
   };
   // children of the weather layer, bottom to top
-  const WEATHER_ORDER = ['scw-veil'];
+  const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
+                         'scw-clouds-low'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1484,6 +1486,7 @@
       clouds_entity: str(w.clouds_entity),
       quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
       veil: w.veil !== false,
+      clouds: w.clouds !== false,
     };
   }
 
@@ -1640,8 +1643,164 @@
     v.style.opacity = a.toFixed(3);
   }
 
+  /* Small seeded generator: the same tier gets the same clouds every time it
+     is repainted, so a rising cover adds clouds instead of reshuffling them. */
+  function weatherRng(seed) {
+    let s = seed % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return () => (s = (s * 16807) % 2147483647) / 2147483647;
+  }
+
+  /* One Web Animation on transform, paused when the system asks for less
+     motion. Speed and direction are a playback rate on top, so a change of
+     wind bends the motion instead of restarting it. */
+  const weatherCalm = () => !!(window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  // A negative playback rate cannot run an infinite animation backwards from
+  // its start, so direction is part of the key and a turn of the wind starts
+  // a new loop from where the old one stood.
+  function weatherLoop(el, frames, ms, key) {
+    if (el._scwAnim && el._scwKey === key) return el._scwAnim;
+    let at = 0;
+    if (el._scwAnim) { at = el._scwAnim.effect.getComputedTiming().progress || 0; el._scwAnim.cancel(); }
+    const a = el.animate(frames, { duration: ms, iterations: Infinity, easing: 'linear' });
+    a.currentTime = (1 - at) * ms;
+    if (weatherCalm()) a.pause();
+    el._scwAnim = a;
+    el._scwKey = key;
+    return a;
+  }
+
+  // the wind's push across the frame, km/h: + is rightwards (rising azimuth)
+  function weatherWindX(ws, ctx) {
+    const toward = ((ws.bearing === null ? 270 : ws.bearing) + 180) % 360;
+    const centre = (ctx.az0 + ctx.az1) / 2;
+    return ws.wind * Math.sin((toward - centre) * D2R);
+  }
+
+  /* Clouds at three heights plus a deck. Each tier is one canvas twice the
+     frame wide, painted so that it repeats every frame width, and moved by
+     one transform loop: the compositor slides a picture, nothing redraws.
+     The canvas is repainted only when the cover or the light changes. */
+  const CLOUD_TIERS = [
+    // tier, cover key, max clouds, band [top, bottom] in frame height, size, opacity, speed share
+    { k: 'high', cls: 'scw-clouds-high', max: 9, y: [0.03, 0.26], s: 0.42, a: 0.62, v: 0.45, typ: 'cirrus' },
+    { k: 'mid', cls: 'scw-clouds-mid', max: 8, y: [0.10, 0.44], s: 0.30, a: 0.92, v: 0.7, typ: 'alto' },
+    { k: 'low', cls: 'scw-clouds-low', max: 9, y: [0.20, 0.62], s: 0.30, a: 1, v: 1, typ: 'cumulus' },
+  ];
+
+  function cloudPuffs(g, typ, w, h, rnd) {
+    if (typ === 'cirrus') {
+      for (let k = 0; k < 12; k++) {
+        // kept inside the sprite: a wisp cut by the canvas edge is a hard line
+        const x = w * (0.3 + rnd() * 0.4), y = h * (0.3 + rnd() * 0.4);
+        const rx = w * (0.1 + rnd() * 0.18), ry = h * (0.06 + rnd() * 0.1);
+        g.save(); g.translate(x, y); g.rotate((rnd() - 0.5) * 0.25); g.scale(1, ry / rx);
+        const r = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+        r.addColorStop(0, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = r; g.beginPath(); g.arc(0, 0, rx, 0, Math.PI * 2); g.fill(); g.restore();
+      }
+      return;
+    }
+    // Radii and the hump are shares of the width and the sprite is 0.48 w
+    // tall, so no puff reaches past an edge: a puff cut by the canvas shows
+    // as a straight line across the sky.
+    const n = typ === 'cumulus' ? 22 : 28, flat = typ === 'alto' ? 0.55 : 1;
+    const base = h * 0.8;
+    for (let k = 0; k < n; k++) {
+      const t = k / n, x = w * (0.18 + rnd() * 0.64);
+      const hump = Math.sin(Math.PI * (x / w - 0.18) / 0.64) * w * 0.19 * flat;
+      const y = base - rnd() * Math.max(0, hump);
+      const r = w * (0.05 + rnd() * 0.08) * (0.7 + 0.5 * (1 - t));
+      const gr = g.createRadialGradient(x, y, r * 0.15, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.65, 'rgba(255,255,255,.55)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    // flat base: cumulus are cut off at the condensation level
+    g.globalCompositeOperation = 'destination-out';
+    const p = g.createLinearGradient(0, h * 0.78, 0, h * 0.92);
+    p.addColorStop(0, 'rgba(0,0,0,0)'); p.addColorStop(1, 'rgba(0,0,0,1)');
+    g.fillStyle = p; g.fillRect(0, h * 0.78, w, h * 0.22);
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  // one cloud, shaded: lit from above by day, from below while the sun is low
+  function cloudSprite(typ, w, h, seed, L) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
+    const g = c.getContext('2d');
+    cloudPuffs(g, typ, c.width, c.height, weatherRng(seed));
+    g.globalCompositeOperation = 'source-in';
+    const low = L.e < 6 && L.e > -8;
+    const gr = g.createLinearGradient(0, 0, 0, c.height);
+    gr.addColorStop(0, rgb(low ? L.bot : L.top));
+    gr.addColorStop(0.55, rgb(lerpA(L.top, L.bot, 0.5)));
+    gr.addColorStop(1, rgb(low ? L.top : L.bot));
+    g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height);
+    return c;
+  }
+
+  function weatherClouds(layer, cfg, ws, ctx) {
+    const res = WEATHER_QUALITY[cfg.quality].res;
+    const W = ctx.W, H = ctx.H, L = ctx.light;
+    const wx = ws ? weatherWindX(ws, ctx) : 0;
+    for (const t of CLOUD_TIERS) {
+      const cover = ws && cfg.clouds ? ws[t.k] : 0;
+      const n = Math.round(cover * t.max * (0.6 + 0.4 * WEATHER_QUALITY[cfg.quality].n) + (cover > 0.04 ? 1 : 0));
+      if (!n) { weatherDrop(layer, t.cls); continue; }
+      const box = weatherChild(layer, t.cls);
+      box.style.overflow = 'hidden';
+      let cv = box.firstElementChild;
+      // the band the clouds' tops may sit in, plus room for the tallest one
+      // below it: a cloud running off the canvas is cut by a straight line
+      const ratio = t.typ === 'cirrus' ? 0.22 : 0.48;
+      const top = t.y[0] * H, band = (t.y[1] - t.y[0]) * H;
+      const bandH = band + W * t.s * 1.25 * ratio;
+      if (!cv) {
+        cv = document.createElement('canvas');
+        cv.style.cssText = 'position:absolute;left:0;width:200%;will-change:transform;';
+        box.appendChild(cv);
+      }
+      cv.style.top = top.toFixed(0) + 'px';
+      cv.style.height = bandH.toFixed(0) + 'px';
+      const cw = Math.max(2, Math.round(2 * W * res)), ch = Math.max(1, Math.round(bandH * res));
+      if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+      const g = cv.getContext('2d');
+      g.clearRect(0, 0, cw, ch);
+      const rnd = weatherRng(t.max * 7919 + t.k.length);
+      const fw = cw / 2;
+      for (let i = 0; i < n; i++) {
+        const x = rnd() * fw, y = rnd() * band * res;
+        const sc = 0.75 + rnd() * 0.5, seed = 1 + i * 104729 + t.max;
+        const sw = W * t.s * sc * res, sh = sw * ratio;
+        const sp = cloudSprite(t.typ, sw, sh, seed, L);
+        g.globalAlpha = t.a * (0.75 + rnd() * 0.25) * clamp(cover * 1.6, 0.25, 1);
+        // three copies make the strip repeat every frame width
+        for (const dx of [-fw, 0, fw]) g.drawImage(sp, x + dx, y, sw, sh);
+      }
+      g.globalAlpha = 1;
+      // px/s across a 1280 px frame: a still day still drifts a little
+      const v = (3 + Math.abs(wx) * 0.45) * t.v * (W / 1280);
+      const left = wx < 0;
+      const anim = weatherLoop(cv, left
+        ? [{ transform: 'translateX(0)' }, { transform: 'translateX(-50%)' }]
+        : [{ transform: 'translateX(-50%)' }, { transform: 'translateX(0)' }],
+      Math.max(1000, W / 3 * 1000), left ? 'l' : 'r');
+      // setting the rate keeps the current position (Web Animations, playbackRate)
+      anim.playbackRate = v / 3;
+    }
+    // overcast: past ~75 % low cover the clouds stop being separate
+    const deck = ws && cfg.clouds ? smoothstep(clamp((ws.low - 0.75) / 0.25, 0, 1)) : 0;
+    if (deck <= 0.01) { weatherDrop(layer, 'scw-clouds-deck'); return; }
+    const d = weatherChild(layer, 'scw-clouds-deck');
+    d.style.background = 'linear-gradient(180deg,' + rgba([...L.bot, 1], 0.95 * deck) + ' 0%,' +
+      rgba([...lerpA(L.bot, L.top, 0.35), 1], 0.75 * deck) + ' 52%,' + rgba([...L.top, 1], 0) + ' 75%)';
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
+    weatherClouds(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2398,6 +2557,8 @@
         o: 'Particle count and the resolution strips are painted at. low suits a weak kiosk.' },
       { k: 'weather.veil', et: 'sky veil', typ: 'bool', dom: true, w: 'veil',
         o: 'Overcast greys the sky and hides the stars, the moon and the sun disc.' },
+      { k: 'weather.clouds', et: 'clouds', typ: 'bool', dom: true, w: 'clouds',
+        o: 'Clouds at three heights drifting with the wind, and a deck when it is overcast.' },
     ] },
     { tytul: 'Discs and files', pola: [
       { k: 'sun_image_width', et: 'sun: width (%)', typ: 'zakres', min: 3, max: 25, krok: 0.5, dom: 10.5,

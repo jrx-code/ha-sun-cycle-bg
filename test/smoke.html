@@ -375,6 +375,54 @@ out.push(['POGODA readWeather (m/s, kierunek WSW)', window.sunCycleBg.readWeathe
   out.push(['POGODA zdjecie bloku weather', { przed, po: !!cont.querySelector('.sun-cycle-weather') }]);
 }
 
+// --- 1.17.0: chmury ------------------------------------------------------
+function czytajChmury(cont) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  if (!w) return { warstwa: false };
+  const o = {};
+  for (const k of ['high', 'mid', 'low']) {
+    const box = w.querySelector('.scw-clouds-' + k);
+    if (!box) { o[k] = null; continue; }
+    const cv = box.querySelector('canvas');
+    // czytane przez wlasna kanwe: odczyt z kanwy karty sypie ostrzezeniami
+    const kopia = document.createElement('canvas');
+    kopia.width = cv.width; kopia.height = cv.height;
+    const kg = kopia.getContext('2d', { willReadFrequently: true });
+    kg.drawImage(cv, 0, 0);
+    const d = kg.getImageData(0, 0, cv.width, cv.height).data;
+    let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 8) n++;
+    const a = cv.getAnimations()[0];
+    o[k] = { kanwa: cv.width + 'x' + cv.height, pokryte: +(n / (cv.width * cv.height)).toFixed(3),
+             kierunek: cv._scwKey, tempo: a ? +a.playbackRate.toFixed(2) : null,
+             // pasek musi sie powtarzac co szerokosc kadru, inaczej petla skacze
+             szew: (() => {
+               const h = cv.height, fw = cv.width / 2;
+               const a1 = kg.getImageData(0, 0, 1, h).data;
+               const b1 = kg.getImageData(fw, 0, 1, h).data;
+               let r = 0; for (let i = 3; i < a1.length; i += 4) r = Math.max(r, Math.abs(a1[i] - b1[i]));
+               return r;
+             })() };
+  }
+  o.poklad = !!w.querySelector('.scw-clouds-deck');
+  o.kolejnosc = [...w.children].filter((k) => k.tagName !== 'STYLE').map((k) => k.className.replace('scw ', ''));
+  return o;
+}
+out.push(['CHMURY sunny', czytajChmury(pogoda(40, { entity: 'weather.t' }, 'sunny',
+  { cloud_coverage: 0 }).cont)]);
+out.push(['CHMURY partlycloudy, wiatr z zachodu 20 km/h', czytajChmury(pogoda(40,
+  { entity: 'weather.t' }, 'partlycloudy', { cloud_coverage: 40, wind_speed: 20, wind_bearing: 270 }).cont)]);
+out.push(['CHMURY partlycloudy, wiatr ze wschodu 20 km/h', czytajChmury(pogoda(40,
+  { entity: 'weather.t' }, 'partlycloudy', { cloud_coverage: 40, wind_speed: 20, wind_bearing: 90 }).cont)]);
+out.push(['CHMURY cloudy noc, poklad', czytajChmury(pogoda(-20, { entity: 'weather.t' }, 'cloudy',
+  { cloud_coverage: 95, wind_speed: 40, wind_bearing: 260 }).cont)]);
+out.push(['CHMURY warstwy z astroweather (tylko wysokie)', czytajChmury(pogoda(5, {
+  entity: 'weather.t', clouds_entity: 'weather.c' }, 'sunny', { cloud_coverage: 10 },
+  { cloud_area_fraction_low: 0, cloud_area_fraction_medium: 0, cloud_area_fraction_high: 70 }).cont)]);
+out.push(['CHMURY clouds: false', czytajChmury(pogoda(40, { entity: 'weather.t', clouds: false },
+  'cloudy', { cloud_coverage: 95 }).cont)]);
+out.push(['CHMURY quality low', czytajChmury(pogoda(40, { entity: 'weather.t', quality: 'low' },
+  'partlycloudy', { cloud_coverage: 40 }).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');
