@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.25.0
+
+### Added
+- Aurora from a Kp index (`weather.aurora`: `kp_entity`, `min_kp`, `placement: edges | sky`): only with data, at night, under thin cover; at the frame edges where the north is by default. Curtains painted once, drifting and breathing on transform and opacity. ([#12](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/12))
+
 ## 1.24.0
 
 ### Added

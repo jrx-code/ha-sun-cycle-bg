@@ -690,6 +690,7 @@ weather:
 | `leaves` | `autumn` | Tumbling leaves with the wind: `autumn` (September to November only), `always` (green outside autumn) or `off` (1.23.0). |
 | `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
 | `glass` | `false` | Raindrops on the glass while it rains: they land, sit and dry, and big ones slide down leaving a trail (1.24.0). |
+| `aurora` | none | `{kp_entity, min_kp: 5, placement: edges}`: northern lights when the Kp index reaches `min_kp`, at night, under cover below 60 % (1.25.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -761,6 +762,22 @@ The wind already tilts the rain and snow and pushes the clouds. Past about 22 km
 Off unless `glass: true`. While it rains (or sleets) a timer lets drops land, from one every couple of seconds in a drizzle to several a second in a downpour, capped at 40 on screen at `high`. Each is one element: a lens gradient, a highlight and a soft shadow, on one Web Animation that lands it, keeps it and dries it over 8 to 22 s. One drop in five is big enough to slide: it moves down in fits and starts, squashing a little as it moves, and leaves a trail of small droplets that appear as it passes and dry after it.
 
 The card paints the view background, which lies under the dashboard cards, so the drops sit under the cards too. That keeps text readable, and it also means the glass is between you and the sky, not between you and the cards.
+
+### Aurora
+
+```yaml
+weather:
+  aurora:
+    kp_entity: sensor.planetary_k_index   # any sensor whose state is the Kp index
+    min_kp: 5
+    placement: edges                      # edges | sky
+```
+
+Only with data: without `kp_entity` there is no aurora at all, because one drawn on every clear night would be a decoration pretending to be a measurement. It shows when the Kp index reaches `min_kp` (around 53° N it takes about 5), the sun is below −10° and the cover is under 60 %; it grows with the index and fades as cloud comes in. NOAA SWPC publishes the planetary K-index as JSON, and several Home Assistant integrations turn it into a sensor.
+
+`placement: edges` (default) puts it where the north is. The card's sky window runs from azimuth 50° to 310° through the south, so the north is past both edges: the curtains rise at the edges and fade towards the middle. `placement: sky` lays them across the top of the frame instead, for a window that does not look south or for the look of it.
+
+The curtains are painted once and only move: a slow sideways drift (90 s per loop) and an opacity breath (11 s), in `screen` blend, under the veil and the clouds.
 
 ## Tuning the palette
 

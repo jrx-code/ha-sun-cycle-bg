@@ -597,6 +597,27 @@ out.push(['SZYBA glass: true, rainy', czytajSzybe(pogoda(10, { entity: 'weather.
 out.push(['SZYBA glass: true, snowy: brak', czytajSzybe(pogoda(10, { entity: 'weather.t', glass: true },
   'snowy', { cloud_coverage: 90 }).cont)]);
 
+// --- 1.25.0: zorza -------------------------------------------------------
+function zorza(elev, kp, aur, atr) {
+  const z = pogoda(elev, { entity: 'weather.t', aurora: aur }, 'clear-night', atr || { cloud_coverage: 5 });
+  const st = Object.assign({}, z.states, { 'sensor.kp': { state: String(kp) } });
+  z.card.hass = { states: st, config: { latitude: 52.2297, longitude: 21.0122 } };
+  const w = z.cont.querySelector('.sun-cycle-weather'), b = w.querySelector('.scw-aurora');
+  if (!b) return { zorza: false };
+  const okna = [...b.children];
+  return { zorza: true, krycie: +b.style.opacity, tryb: b._scwTryb, okien: okna.length,
+           okna: okna.map((o) => ({ left: o.style.left, width: o.style.width,
+             animacji: o.querySelector('canvas').getAnimations().length,
+             kanwa: o.querySelector('canvas').width + 'x' + o.querySelector('canvas').height })),
+           pod_welonem: w.children[1] === b || [...w.children].indexOf(b) < [...w.children].findIndex((k) => k.classList.contains('scw-veil')) };
+}
+out.push(['ZORZA kp 6 noc, krawedzie', zorza(-25, 6, { kp_entity: 'sensor.kp' })]);
+out.push(['ZORZA kp 8 noc, sky', zorza(-25, 8, { kp_entity: 'sensor.kp', placement: 'sky' })]);
+out.push(['ZORZA kp 4 ponizej progu', zorza(-25, 4, { kp_entity: 'sensor.kp' })]);
+out.push(['ZORZA kp 7 zmierzch -6', zorza(-6, 7, { kp_entity: 'sensor.kp' })]);
+out.push(['ZORZA kp 7 pochmurno', zorza(-25, 7, { kp_entity: 'sensor.kp' }, { cloud_coverage: 80 })]);
+out.push(['ZORZA bez kp_entity', zorza(-25, 9, {})]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');
