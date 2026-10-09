@@ -1,12 +1,12 @@
-# What this guards: dist/ is a copy, and nothing but discipline keeps a copy in
-# step with its original. HACS installs dist/, so a stale copy means a fresh
-# install silently gets the *previous* card under the new version number — the
-# repository looks right, the tuning pages look right, and only somebody's
-# clean install is broken. The zip_release attempt in 1.10.0 was the same class
-# of mistake: a publishing mechanism with nothing checking it.
+# What this guards: custom_components/sun_cycle_bg/www/ holds copies of the
+# card (src/) and its pictures (demo/assets/), and nothing but discipline keeps
+# a copy in step with its original. HACS installs custom_components/sun_cycle_bg/,
+# so a stale copy means a fresh install silently gets the *previous* card under
+# the new version number. Until 1.29 the same held for dist/ of the plugin.
 #
-# So: rebuild dist/ here and fail if that changes anything, and on a tag check
-# that the version in the card is the version being tagged.
+# So: rebuild www/ here and fail if that changes anything; check that the
+# integration's Python compiles and its manifest has what HACS reads; and on a
+# tag check that the card, the manifest and the tag name one version.
 name: release
 on:
   push:
@@ -39,56 +39,51 @@ jobs:
           # `git log` sits in less until the job is cancelled
           git --no-pager log -1 --oneline
 
-      - name: dist/ is what tools/make_dist.py produces
+      - name: www/ is what tools/make_dist.py produces
         run: |
           python3 tools/make_dist.py
-          if ! git diff --quiet -- dist/; then
-            echo "::error::dist/ is stale — run 'python3 tools/make_dist.py' and commit it"
-            git --no-pager diff --stat -- dist/
+          if ! git diff --quiet -- custom_components/ || [ -n "$(git status --porcelain -- custom_components/)" ]; then
+            echo "::error::custom_components/sun_cycle_bg/www/ is stale: run 'python3 tools/make_dist.py' and commit it"
+            git --no-pager status --short -- custom_components/
             exit 1
           fi
-          echo "dist/ matches the sources"
+          echo "www/ matches the sources"
 
-      - name: the card in dist/ is the card in src/
-        run: cmp dist/sun-cycle-bg.js src/sun-cycle-bg.js
+      - name: the card in www/ is the card in src/
+        run: cmp custom_components/sun_cycle_bg/www/sun-cycle-bg.js src/sun-cycle-bg.js
 
-      - name: the tag is the version the card announces
+      - name: the integration compiles and its manifest has what HACS reads
+        run: |
+          python3 -m py_compile custom_components/sun_cycle_bg/*.py
+          python3 - <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path("custom_components")
+          dirs = [d for d in root.iterdir() if d.is_dir()]
+          if [d.name for d in dirs] != ["sun_cycle_bg"]:
+              sys.exit(f"HACS manages one integration per repository, found {[d.name for d in dirs]}")
+          m = json.loads((root / "sun_cycle_bg" / "manifest.json").read_text())
+          need = ["domain", "name", "version", "documentation", "issue_tracker", "codeowners"]
+          missing = [k for k in need if not m.get(k)]
+          if missing:
+              sys.exit(f"manifest.json lacks {missing}")
+          rest = [k for k in m if k not in ("domain", "name")]
+          if list(m)[:2] != ["domain", "name"] or rest != sorted(rest):
+              sys.exit("manifest.json keys: domain, name, then the rest sorted (hassfest)")
+          for f in ("brand/icon.png", "brand/icon@2x.png", "www/loader.js", "www/panel.js"):
+              if not (root / "sun_cycle_bg" / f).is_file():
+                  sys.exit(f"missing custom_components/sun_cycle_bg/{f}")
+          print(f"manifest {m['domain']} {m['version']}: ok")
+          PY
+
+      - name: the tag is the version the card and the manifest announce
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           KARTA=$(sed -n '1s/.*sun-cycle-bg \([0-9][0-9.]*\).*/\1/p' src/sun-cycle-bg.js)
+          MANIFEST=$(python3 -c 'import json;print(json.load(open("custom_components/sun_cycle_bg/manifest.json"))["version"])')
           TAG=${GITHUB_REF#refs/tags/v}
-          echo "card: $KARTA, tag: $TAG"
-          [ "$KARTA" = "$TAG" ] || { echo "::error::card says $KARTA, tag says $TAG"; exit 1; }
-
-      # HACS takes dist/ only while nothing shadows it from the root: with a
-      # root copy of the card present it fetches that one file and the artwork
-      # never arrives (repositories/plugin.py, update_filenames).
-      - name: nothing shadows dist/ from the repository root
-        run: |
-          if [ -e sun-cycle-bg.js ]; then
-            echo "::error::sun-cycle-bg.js in the root shadows dist/ for HACS"
-            exit 1
-          fi
-          echo "root is clear, dist/ is what HACS will take"
-
-      - name: every file dist/ names is actually there
-        run: |
-          python3 - <<'PY'
-          import pathlib, sys
-          d = pathlib.Path("dist")
-          brak = [str(p) for p in
-                  [d / "sun-cycle-bg.js", d / "sun.png", d / "moon.png",
-                   d / "milky-way.jpg", d / "milky-way-cutout.webp",
-                   d / "leaves-autumn.webp", d / "leaves-spring.webp",
-                   d / "leaves-summer.webp", d / "CREDITS.md"]
-                  + [d / f"{c}.png" for c in
-                     ("mercury", "venus", "earth", "mars", "jupiter",
-                      "saturn", "uranus", "neptune", "pluto")]
-                  if not p.exists()]
-          if brak:
-              sys.exit("missing from dist/: " + ", ".join(brak))
-          print(f"dist/: {len(list(d.rglob('*')))} entries, all present")
-          PY
+          echo "card: $KARTA, manifest: $MANIFEST, tag: $TAG"
+          [ "$KARTA" = "$TAG" ] && [ "$MANIFEST" = "$TAG" ] || {
+            echo "::error::card says $KARTA, manifest $MANIFEST, tag $TAG"; exit 1; }
 
       # The smoke suite needs a browser (test/smoke.html + tools/run_smoke.py).
       # The runner has neither chromium nor playwright — checked on LXC 131,

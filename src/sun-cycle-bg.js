@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.29.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.0.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -137,6 +137,12 @@
  * its opacity is driven too (fades at dawn, returns at dusk).
  */
 (() => {
+  // Loaded twice (the integration's copy and a leftover dashboard resource of
+  // 1.x): the first one wins, the second must not register anything again.
+  if (customElements.get('sun-cycle-bg-card')) {
+    console.warn('sun-cycle-bg: the card is loaded twice; remove the old dashboard resource');
+    return;
+  }
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 
   /* Where the artwork lives. HACS unpacks the release archive into
@@ -146,7 +152,10 @@
      A manual install puts the same files wherever it likes and says so:
      every path is a plain option (`planets.images`, `milky_way.image`,
      `sun_image`, `moon_image`), and `assets:` moves them all at once. */
-  const HACS_BASE = '/hacsfiles/hassio-sun-cycle-bg/';
+  // Where the pictures are: next to the card in the sun_cycle_bg integration
+  // (its loader sets SUN_CYCLE_BG_BASE before importing the card), or, for a
+  // card installed on its own as a dashboard resource, the HACS folder of 1.x.
+  const HACS_BASE = (typeof window !== 'undefined' && window.SUN_CYCLE_BG_BASE) || '/hacsfiles/hassio-sun-cycle-bg/';
 
   /* A layer is built once and then only driven. That is right while the config
      stands still, and wrong the moment it does not: Lovelace calls setConfig
@@ -4455,9 +4464,9 @@
     return bledy;
   }
 
-  customElements.define('sun-cycle-bg-card-editor', SunCycleBgCardEditor);
+  if (!customElements.get('sun-cycle-bg-card-editor')) customElements.define('sun-cycle-bg-card-editor', SunCycleBgCardEditor);
 
-  customElements.define('sun-cycle-bg-card', SunCycleBgCard);
+  if (!customElements.get('sun-cycle-bg-card')) customElements.define('sun-cycle-bg-card', SunCycleBgCard);
 
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,

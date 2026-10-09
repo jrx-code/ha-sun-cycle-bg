@@ -3,10 +3,18 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 1.29.0 (unreleased)
+## 2.0.0
+
+### Changed (breaking: the HACS category)
+- The repository is one Home Assistant integration, `sun_cycle_bg`, instead of a Dashboard plugin. It serves the card and its pictures from `custom_components/sun_cycle_bg/www/` at `/sun_cycle_bg/` and loads the card on every frontend page, so no dashboard resource is needed. Upgrading: remove the Dashboard entry in HACS (and its resource), add the repository as Integration, install, restart, add the integration. Card configs are unchanged. ([#33](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/33))
+- `dist/` is gone; `tools/make_dist.py` fills the integration's `www/`, and CI checks it against `src/` and `demo/assets/`, the manifest, and that card, manifest and tag carry one version.
 
 ### Added
-- Shared profiles: `profile: <name>` takes the card config from the [Sun Cycle Background profiles](https://github.com/jrx-code/hassio-sun-cycle-bg-profiles) integration, live over a websocket subscription, with the card's own YAML laid over it. The visual editor edits the profile itself (administrators), saves as it goes and can undo back to how it was when opened; the dashboard keeps one line per card. Without the integration the card runs on its own YAML.
+- Shared profiles: `profile: <name>` takes the card config from `.storage/sun_cycle_bg`, live over a websocket subscription, with the card's own YAML laid over it object by object; the last profile seen is cached in the browser. Reading is open to every user (a non-admin wall kiosk follows changes without a reload), writing to administrators.
+- A settings page behind the integration's Configure button: profiles (new, duplicate, rename, delete), which dashboards use which, the card's form next to a preview, Save and Discard.
+- Entity fields in the form are Home Assistant entity pickers, searchable and limited to the fitting domains.
+- A brand icon (`brand/icon.png`, `icon@2x.png`), which Home Assistant 2026.9 serves for custom integrations.
+- A card loaded twice (a leftover 1.x resource) keeps the first copy and warns instead of failing.
 
 ## 1.28.0
 
