@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tło: wiatr, propozycje</title>
+<style>
+  :root { --bg:#0e1420; --surface:#161e2e; --surface2:#1d2738; --ink:#e6ebf3; --muted:#9aa6b8;
+          --accent:#7cb3f9; --line:#2a3548; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width:1280px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  h2 { font-size:17px; margin:28px 0 10px; }
+  p { margin:6px 0; color:var(--muted); max-width:80ch; }
+  code { color:#cfd6e2; }
+  a { color:var(--accent); }
+  hui-view-container#scena { position:relative; display:block; width:100%; aspect-ratio:16/9;
+           border-radius:12px; overflow:hidden; background:#000; border:1px solid var(--line); margin-top:14px; }
+  hui-view-background { position:absolute; inset:0; display:block; z-index:0; }
+  canvas.warstwa { position:absolute; inset:0; width:100%; height:100%; display:block;
+                   pointer-events:none; z-index:50; }
+  .panel { display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; margin:14px 0 4px;
+           background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .grupa { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .grupa > span { color:var(--muted); font-size:13px; margin-right:4px; }
+  button { background:var(--surface2); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+           padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  button.on { background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600; }
+  input[type=range] { width:150px; }
+  .odczyt { font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #fps { font-size:14px; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .opis { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-top:10px; }
+  .opis b { color:var(--ink); }
+  .blad { position:absolute; inset:auto 12px 12px 12px; z-index:60; background:#3a1720; color:#ffd7dd;
+          border-radius:8px; padding:8px 12px; font-size:14px; }
+  table { border-collapse:collapse; font-size:13.5px; margin-top:6px; width:100%; }
+  td, th { border-bottom:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .tabw { overflow-x:auto; }
+</style>
+</head>
+<body>
+<script>
+/* Simulated clock: the card computes the sun, moon and stars from `new Date()`. */
+const RD = Date;
+let SIM_OFF = 0;
+class SimDate extends RD {
+  constructor(...a) { if (a.length) super(...a); else super(RD.now() + SIM_OFF); }
+  static now() { return RD.now() + SIM_OFF; }
+}
+window.Date = SimDate;
+</script>
+<main>
+  <h1>Tło: wiatr, 5 propozycji</h1>
+  <p>Dziś wiatr na tle to białe smugi płynące w poprzek nieba (wariant A). Tu pięć innych sposobów: wiatr widać
+  przez to, co niesie i co ugina, a nie przez kreski. Na scenie rysuje prawdziwa karta <code>__WERSJA__</code> z
+  konfiguracją panelu salonu; w propozycjach jej własny wiatr jest wyłączony, a propozycja rysuje się na jednym
+  płótnie nad nią. Porywy to fronty, które przechodzą przez kadr w kierunku wiatru (siła wiatru zmieniana szumem
+  w czasie i przestrzeni), więc widać je jako falę, a nie jako miganie całego ekranu.</p>
+
+  <div class="panel">
+    <div class="grupa" id="warianty"><span>Wariant</span></div>
+  </div>
+  <div class="panel">
+    <div class="grupa"><span>Wiatr</span><input type="range" id="wiatr" min="10" max="80" step="1" value="40">
+      <span class="odczyt" id="wiatrV"></span></div>
+    <div class="grupa"><span>Porywy</span><input type="range" id="poryw" min="0" max="1" step="0.05" value="0.6">
+      <span class="odczyt" id="porywV"></span></div>
+    <div class="grupa" id="dzien"><span>Pora dnia</span></div>
+    <div class="grupa" id="liscie"><span>Liście</span></div>
+    <div class="grupa" id="skala"><span>Rozdzielczość płótna</span></div>
+    <div class="grupa"><span id="fps">FPS: -</span></div>
+  </div>
+  <hui-view-container id="scena">
+    <hui-view-background></hui-view-background>
+    <sun-cycle-bg-card id="karta"></sun-cycle-bg-card>
+  </hui-view-container>
+  <div class="opis" id="opisWariantu"></div>
+
+  <h2>Warianty</h2>
+  <div class="tabw"><table>
+    <tr><th>Wariant</th><th>Co widać</th><th>Technika</th><th>Koszt</th></tr>
+    <tr><td>A. Dziś</td><td>białe smugi z gradientem wzdłuż pola przepływu, pyłki, liście (karta 2.2.2)</td><td>Canvas 2D karty</td><td>mały</td></tr>
+    <tr><td>1. Pył i puch</td><td>drobiny w trzech głębokościach (bliskie rozmyte), puch dmuchawców koziołkujący w podmuchach; front porywu przyspiesza i zagęszcza drobiny</td><td>Canvas 2D, pole zawirowań (curl noise) + front porywu</td><td>kilkaset punktów, 1 złożenie</td></tr>
+    <tr><td>2. Pole przepływu</td><td>cienkie, zanikające ślady wielu cząstek, jak długi czas naświetlania; zakręcają w zawirowaniach, wydłużają się w porywie</td><td>Canvas 2D, cząstki w polu zawirowań jak na mapach wiatru, ślad z ostatnich 14 pozycji, płótno czyszczone co klatkę</td><td>ok. 360 nitek po 14 punktów</td></tr>
+    <tr><td>3. Welony powietrza</td><td>półprzezroczyste pasma mgiełki rozciągnięte wzdłuż wiatru, dwie głębokości, gęstnieją w porywie</td><td>WebGL, fbm z tekstury szumu</td><td>ok. 8 próbek na piksel, 30 kl./s</td></tr>
+    <tr><td>4. Linia drzew i trawa</td><td>sylwetka koron drzew i źdźbeł przy dolnej krawędzi, ugina się falą porywu; w porywie z koron odrywają się liście</td><td>Canvas 2D, linia drzew jako jeden profil z szumu, źdźbła jako krzywe</td><td>1 wielokąt + ok. 400 krzywych</td></tr>
+    <tr><td>5. Strzępy chmur</td><td>poszarpane niskie chmury (fractus) pędzące przez kadr z prędkością wiatru, szybsze w porywie</td><td>WebGL, fbm z zawinięciem dziedziny, wycięcie progiem</td><td>ok. 12 próbek na piksel, 30 kl./s</td></tr>
+  </table></div>
+
+  <h2>Źródła (idee, kod napisany od zera)</h2>
+  <ul class="odczyt">
+    <li>Sucker Punch, <a href="https://www.gamedeveloper.com/design/using-vorticles-to-simulate-wind-in-i-ghost-of-tsushima-i-">wiatr w Ghost of Tsushima</a>: stały kierunek, siła zmieniana szumem Perlina, porywy widoczne jako fronty na trawie i w cząstkach.</li>
+    <li><a href="https://github.com/oppenheimmer/earth">earth (nullschool)</a> i <a href="https://medium.com/@juniormarch48/how-i-built-a-wind-map-with-webgl-d74769282484">wind map w WebGL</a>: cząstki niesione polem, ślady wygaszane co klatkę.</li>
+    <li><a href="https://realtimevfx.com/t/zelda-breath-of-the-wild-dust-particles/10639">Breath of the Wild, pył</a>: drobiny skierowane z wiatrem, kierunek trawy i chmur zgodny z wiatrem.</li>
+    <li>SLYNYRD, <a href="https://www.slynyrd.com/blog/2021/7/16/pixelblog-33-wind-effects">Pixelblog 33: Wind effects</a>: wiatr pokazany ruchem otoczenia, smugi tylko jako dodatek.</li>
+    <li>Bridson, Hourihan, Nordenstam 2007, <a href="https://www.cs.ubc.ca/~rbridson/docs/bridson-siggraph2007-curlnoise.pdf">Curl-noise for procedural fluid flow</a>: pole bez źródeł z rotacji szumu, cząstki się nie zbijają.</li>
+  </ul>
+  <p>Zbudowano __ZBUDOWANO__. Strona jest generowana przez <code>tools/build_wind_poc.py</code>: karta wkleja się przy budowaniu.</p>
+</main>
+
+<script>
+/* ---- sun-cycle-bg.js, pasted in at build time ---- */
+__KARTA__
+</script>
+
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KONFIG = __KONFIG__;
+const ZASOBY = new URLSearchParams(location.search).get("assets") || "__ZASOBY__";
+const DZIEN = [["Dzień", 13, 30], ["Zmierzch", 19, -3], ["Noc", 23, -25]];
+const WARIANTY = [["A", "A. Dziś"], ["1", "1. Pył i puch"], ["2", "2. Pole przepływu"], ["3", "3. Welony"],
+                  ["4", "4. Drzewa i trawa"], ["5", "5. Strzępy chmur"]];
+const q = new URLSearchParams(location.search);
+const S = { w: q.get("w") || "1", wiatr: +(q.get("wiatr") || 40), poryw: +(q.get("poryw") || 0.6),
+            dzien: +(q.get("dzien") || 0), liscie: q.get("liscie") !== "0", skala: +(q.get("skala") || 0.5) };
+const karta = $("karta"), scena = $("scena");
+const SCB = () => window.sunCycleBg;
+
+const OPISY = {
+  A: "<b>A. Dziś (karta).</b> Białe smugi płyną polem przepływu i żyją 1,5 do 3 s, drobne pyłki, liście z fizyką trzepotania. To te kreski.",
+  1: "<b>1. Pył i puch.</b> Bez żadnych kresek: wiatr widać po tym, co niesie. Kilkaset drobin w trzech głębokościach (dalekie drobne i blade, bliskie większe i rozmyte), kilkanaście puchów dmuchawca, które koziołkują i wznoszą się w podmuchu. Wszystko płynie polem zawirowań (rotacja szumu, więc drobiny nie zbijają się w kupki), a front porywu przechodzi przez kadr: drobiny w nim przyspieszają, jaśnieją i jest ich więcej.",
+  2: "<b>2. Pole przepływu.</b> Pomysł z map wiatru (earth.nullschool, Windy), ale cicho: ok. 360 cząstek niesionych głównie zawirowaniami, a wiatr tylko je znosi. Każda ciągnie krótką nitkę z ostatnich pozycji, zwężającą się i blednącą ku ogonowi, więc nitki zakręcają i zwijają się, zamiast leżeć prostymi kreskami. W porywie ruch przyspiesza i nitki się wydłużają.",
+  3: "<b>3. Welony powietrza.</b> Shader: dwie warstwy półprzezroczystej mgiełki z szumu, rozciągniętej wzdłuż wiatru i przesuwanej z jego prędkością (bliższa szybciej). Front porywu zagęszcza welon i przyspiesza go. Krycie najwyżej kilkanaście procent, niebo i gwiazdy pod spodem zostają.",
+  4: "<b>4. Linia drzew i trawa.</b> Przy dolnej krawędzi sylwetka koron drzew i pas źdźbeł. Każde źdźbło i korona ugina się z wiatrem, a fala porywu przechodzi przez nie z boku na bok, jak na łące. W porywie z koron odrywają się liście. To jedyna propozycja, która dokłada do tła element krajobrazu.",
+  5: "<b>5. Strzępy chmur.</b> Wiatr pokazany niebem: niskie, poszarpane strzępy chmur (fractus) pędzą przez dolną połowę kadru z prędkością wiatru, w porywie szybciej, i rozpadają się na brzegach. Kolor z oświetlenia karty (dzień, zmierzch, noc).",
+};
+
+/* ---------- the card ---------- */
+function konfig() {
+  const k = JSON.parse(JSON.stringify(KONFIG), (key, v) =>
+    typeof v === "string" && v.startsWith("__ZASOBY__") ? ZASOBY + v.slice("__ZASOBY__".length) : v);
+  k.assets = ZASOBY;
+  if (k.stars) delete k.stars.iss;
+  const pw = k.weather || {};
+  k.weather = { entity: "weather.sim", clouds_entity: "weather.sim_chmury", quality: pw.quality || "low",
+                glass: false, leaves: S.w === "A" && S.liscie ? "always" : false, effects_style: "new",
+                wind: S.w === "A" };
+  return k;
+}
+function stany() {
+  const [, , elev] = DZIEN[S.dzien];
+  return {
+    "sun.sun": { state: elev > 0 ? "above_horizon" : "below_horizon", attributes: { elevation: elev, azimuth: 225 } },
+    // `windy` has no cover floor (windy-variant forces 65 %): a few clouds, so the wind is what you see
+    "weather.sim": { state: "windy", attributes: { wind_speed: S.wiatr, wind_speed_unit: "km/h", wind_bearing: 270,
+                     cloud_coverage: 15, temperature: 9 } },
+    "weather.sim_chmury": { state: "windy", attributes: { cloud_area_fraction_low: 15, cloud_area_fraction_medium: 8,
+                            cloud_area_fraction_high: 0 } },
+  };
+}
+function ustawKarte() {
+  const [, godz] = DZIEN[S.dzien];
+  const d = new RD(RD.UTC(new RD().getUTCFullYear(), 9, 9, godz - 2, 0));
+  SIM_OFF = d.getTime() - RD.now();
+  karta.setConfig(konfig());
+  karta.hass = { config: { latitude: 53.5, longitude: 14.5 }, states: stany() };
+  if (typeof karta._apply === "function") karta._apply();
+}
+// what the card would see: light and the wind's direction across the frame
+const WE = { L: null, kier: -1, e: 30 };
+function wejscie() {
+  const elev = DZIEN[S.dzien][2];
+  WE.e = elev;
+  WE.L = SCB().weatherLight(elev, 0.05, null);
+  const az0 = isFinite(karta._az0) ? karta._az0 : 50, az1 = isFinite(karta._az1) ? karta._az1 : 310;
+  WE.kier = Math.sin((((270 + 180) % 360) - (az0 + az1) / 2) * Math.PI / 180) < 0 ? -1 : 1;
+}
+
+/* ---------- shared loop with an fps cap and a counter ---------- */
+const PETLA = { id: 0, ost: 0, rysuj: null, cap: 30, klatki: 0, czas: 0, okno: RD.now() };
+function petla(t) {
+  PETLA.id = 0;
+  if (!PETLA.rysuj || document.hidden) return;
+  PETLA.id = requestAnimationFrame(petla);
+  if (t - PETLA.ost < 1000 / PETLA.cap - 3) return;
+  const dt = Math.min(0.1, (t - PETLA.ost) / 1000);
+  PETLA.ost = t;
+  const t0 = performance.now();
+  PETLA.rysuj(t / 1000, dt);
+  PETLA.czas += performance.now() - t0;
+  PETLA.klatki++;
+}
+function startPetli(f, cap) {
+  PETLA.rysuj = f; PETLA.cap = cap || 30;
+  if (!PETLA.id && !document.hidden) PETLA.id = requestAnimationFrame(petla);
+}
+function stopPetli() { PETLA.rysuj = null; if (PETLA.id) cancelAnimationFrame(PETLA.id); PETLA.id = 0; }
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { cancelAnimationFrame(PETLA.id); PETLA.id = 0; }
+  else if (PETLA.rysuj && !PETLA.id) PETLA.id = requestAnimationFrame(petla);
+});
+let rafStrony = 0;
+(function licz() { rafStrony++; requestAnimationFrame(licz); })();
+const LICZNIK = { fps: 0, ms: 0 };
+setInterval(() => {
+  const now = RD.now(), s = (now - PETLA.okno) / 1000;
+  if (S.w !== "A") {
+    LICZNIK.fps = PETLA.klatki / s; LICZNIK.ms = PETLA.klatki ? PETLA.czas / PETLA.klatki : 0;
+    $("fps").textContent = "FPS: " + LICZNIK.fps.toFixed(1) + " (limit " + PETLA.cap + "), rysowanie " + LICZNIK.ms.toFixed(2) + " ms/kl. (CPU)";
+  } else {
+    LICZNIK.fps = rafStrony / s;
+    $("fps").textContent = "FPS strony: " + LICZNIK.fps.toFixed(1);
+  }
+  PETLA.klatki = 0; PETLA.czas = 0; rafStrony = 0; PETLA.okno = now;
+}, 1000);
+window.wiatrLicznik = LICZNIK;
+
+function nowePlotno() {
+  const c = document.createElement("canvas");
+  c.className = "warstwa";
+  scena.appendChild(c);
+  return c;
+}
+function wymiary(c) {
+  const w = Math.max(2, Math.round(scena.clientWidth * S.skala)), h = Math.max(2, Math.round(scena.clientHeight * S.skala));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; return true; }
+  return false;
+}
+const rgb01 = (c) => c.map((v) => v / 255);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+function blad(t) {
+  const d = document.createElement("div"); d.className = "blad"; d.textContent = t; scena.appendChild(d);
+}
+
+/* ---------- wind: base speed from the slider, gusts as fronts travelling with the wind ---------- */
+// 2D value noise, smooth, 0..1
+function hash2(x, y) { let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function noise2(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+  return lerp(lerp(a, b, u), lerp(c, d, u), v);
+}
+// the gust field: 0..1 at a point of the frame (x, y in 0..1) at time t; fronts move downwind
+function poryw(x, y, t) {
+  const along = WE.kier > 0 ? x : 1 - x;                       // 0 upwind, 1 downwind
+  const n = noise2(along * 2.2 - t * (0.12 + S.wiatr / 300), y * 1.3 + t * 0.03);
+  return clamp((n - 0.35) / 0.5, 0, 1) * S.poryw;
+}
+// wind speed in frame widths per second, gust included
+const predkosc = (g) => (0.05 + S.wiatr / 260) * (1 + 1.4 * g);
+// curl noise: a divergence-free swirl, so particles do not bunch up
+function curl(x, y, t) {
+  const e = 0.01, f = 3;
+  const n = (a, b) => noise2(a * f + t * 0.2, b * f - t * 0.13);
+  const dx = (n(x, y + e) - n(x, y - e)) / (2 * e), dy = (n(x + e, y) - n(x - e, y)) / (2 * e);
+  return [dx, -dy];
+}
+
+/* ---------- leaves: the card's sprites and flutter physics (same as effects_style new) ---------- */
+const Liscie = (() => {
+  let sprity = null, obraz = null, lista = [];
+  function zaladuj() {
+    if (obraz) return;
+    obraz = new Image();
+    obraz.onload = () => {
+      const h = obraz.naturalHeight, n = Math.round(obraz.naturalWidth / h), Sz = 96;
+      sprity = [];
+      for (let i = 0; i < n; i++) {
+        const war = [];
+        for (const f of ["none", "saturate(0.5) brightness(1.3)", "blur(1.5px)", "blur(1.5px) saturate(0.5) brightness(1.3)"]) {
+          const c = document.createElement("canvas"); c.width = c.height = Sz;
+          const x = c.getContext("2d"); x.filter = f;
+          x.drawImage(obraz, i * h, 0, h, h, 4, 4, Sz - 8, Sz - 8);
+          war.push(c);
+        }
+        sprity.push(war);
+      }
+    };
+    obraz.src = ZASOBY + "leaves-autumn.webp";
+  }
+  function dodaj(W, H, x, y) {
+    if (!sprity) return;
+    const k = H / 1080, z = [0.45, 0.7, 1][Math.random() * 3 | 0];
+    lista.push({ x: x !== undefined ? x : (WE.kier > 0 ? -60 * k : W + 60 * k), y: y !== undefined ? y : Math.random() * H * 0.7, z,
+                 kom: Math.random() * sprity.length | 0, bok: (34 + Math.random() * 22) * k * z, vx: 0, vy: 0,
+                 th: Math.random() * 6.3, om: 0, psi: Math.random() * 6.3, psiV: 2 + Math.random() * 5,
+                 os: Math.random() * 3.14, ph: Math.random() * 6.3, phV: 1.8 + Math.random() * 2.2 });
+  }
+  function rysuj(ctx, t, dt, W, H, spawn) {
+    if (!S.liscie) { lista = []; return; }
+    zaladuj();
+    if (!sprity) return;
+    const k = H / 1080, kier = WE.kier;
+    if (spawn && lista.length < 10 && Math.random() < dt * 0.8) dodaj(W, H);
+    lista = lista.filter((l) => {
+      const G = poryw(l.x / W, l.y / H, t);
+      const u = kier * predkosc(G) * W * (0.35 + 0.35 * l.z);
+      l.vx += (u - l.vx) * Math.min(1, 1.1 * dt);
+      l.ph += l.phV * dt;
+      const vt = H * 0.045 * (0.6 + 0.4 * l.z) * (1.3 - G);
+      const vyc = vt + H * 0.07 * Math.sin(l.ph) - H * 0.06 * G;
+      l.vy += (vyc - l.vy) * Math.min(1, 1.6 * dt);
+      l.x += (l.vx + Math.cos(l.ph) * H * 0.035) * dt; l.y += l.vy * dt;
+      l.om += ((kier * (1 + 3 * G)) - l.om) * dt * 0.8;
+      l.th += l.om * dt; l.psi += l.psiV * (0.4 + G) * dt;
+      const c = Math.cos(l.psi), sy = Math.sign(c) * Math.max(0.07, Math.abs(c));
+      const sp = sprity[l.kom][(c < 0 ? 1 : 0) + (l.z < 0.5 ? 2 : 0)];
+      ctx.globalAlpha = l.z < 0.5 ? 0.75 : 0.95;
+      ctx.setTransform(1, 0, 0, 1, l.x, l.y);
+      ctx.rotate(l.os); ctx.scale(1, sy); ctx.rotate(l.th - l.os);
+      ctx.drawImage(sp, -l.bok / 2, -l.bok / 2, l.bok, l.bok);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      return l.x > -120 * k && l.x < W + 120 * k && l.y < H + 60 * k;
+    });
+    ctx.globalAlpha = 1;
+  }
+  return { rysuj, dodaj, wyczysc() { lista = []; } };
+})();
+
+/* ---------- WebGL helpers (the same as on the effects page) ---------- */
+__GL_HELPERS__
+
+/* ================= 1. Dust and down ================= */
+const Pyl = (() => {
+  let cv, ctx, drob = [], puch = [], plamka = null;
+  function przygotuj() {
+    // one soft dot, drawn scaled: cheaper than arc + blur per mote
+    plamka = document.createElement("canvas"); plamka.width = plamka.height = 32;
+    const x = plamka.getContext("2d"), g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g; x.fillRect(0, 0, 32, 32);
+  }
+  function rysuj(t, dt) {
+    wymiary(cv);
+    const W = cv.width, H = cv.height, k = H / 540, kier = WE.kier, dzien = WE.e > 5;
+    ctx.clearRect(0, 0, W, H);
+    const n = Math.round(260 * W / 960 * (0.6 + S.wiatr / 100));
+    while (drob.length < n) drob.push({ x: Math.random(), y: Math.random(), z: Math.random(), f: Math.random() * 6 });
+    drob.length = Math.min(drob.length, n);
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of drob) {
+      const G = poryw(p.x, p.y, t), v = predkosc(G) * (0.35 + 0.65 * p.z);
+      const c = curl(p.x, p.y, t);
+      p.x += (kier * v + c[0] * 0.012 * (0.5 + G)) * dt;
+      p.y += (c[1] * 0.012 * (0.5 + G) + Math.sin(t * 2 + p.f) * 0.004) * dt;
+      if (p.x < -0.02) p.x += 1.04; if (p.x > 1.02) p.x -= 1.04; if (p.y < -0.02) p.y += 1.04; if (p.y > 1.02) p.y -= 1.04;
+      const r = (1.1 + 4.2 * p.z * p.z) * k;                    // near motes big and soft
+      const a = (dzien ? 0.34 : 0.16) * (0.35 + 0.65 * p.z) * (0.45 + 0.9 * G) * (p.z > 0.8 ? 0.6 : 1);
+      ctx.globalAlpha = a;
+      ctx.drawImage(plamka, p.x * W - r, p.y * H - r, 2 * r, 2 * r);
+    }
+    // dandelion down: a dot with a crown of fine hairs, tumbling, lifted in a gust
+    const m = Math.round(10 * (0.5 + S.wiatr / 80));
+    while (puch.length < m) puch.push({ x: Math.random(), y: 0.2 + Math.random() * 0.7, z: 0.4 + Math.random() * 0.6, a: Math.random() * 6, w: (Math.random() - 0.5) * 3 });
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = dzien ? "rgba(255,255,255,0.85)" : "rgba(210,218,232,0.6)";
+    ctx.fillStyle = ctx.strokeStyle;
+    for (const p of puch) {
+      const G = poryw(p.x, p.y, t), v = predkosc(G) * (0.25 + 0.5 * p.z);
+      const c = curl(p.x * 0.7, p.y * 0.7, t * 0.7);
+      p.x += (kier * v + c[0] * 0.02) * dt;
+      p.y += (0.006 - 0.05 * G + c[1] * 0.02 + Math.sin(t * 1.3 + p.a) * 0.01) * dt;
+      p.a += (p.w + kier * 2 * G) * dt;
+      if (p.x < -0.05 || p.x > 1.05 || p.y < -0.05 || p.y > 1.05) Object.assign(p, { x: kier > 0 ? -0.04 : 1.04, y: 0.2 + Math.random() * 0.7 });
+      const R = (5 + 6 * p.z) * k, X = p.x * W, Y = p.y * H;
+      ctx.globalAlpha = 0.35 + 0.45 * p.z;
+      ctx.lineWidth = Math.max(0.5, 0.5 * k);
+      ctx.beginPath();
+      for (let i = 0; i < 9; i++) {
+        const ang = p.a + i * 0.7 - 2.8;                          // a fan of hairs, not a full star
+        ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(ang) * R, Y - Math.abs(Math.sin(ang)) * R * 0.9);
+      }
+      ctx.stroke();
+      ctx.beginPath(); ctx.arc(X, Y + R * 0.15, Math.max(0.6, 0.9 * k), 0, 6.3); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    Liscie.rysuj(ctx, t, dt, W, H, true);
+  }
+  return {
+    start() { cv = nowePlotno(); ctx = cv.getContext("2d"); drob = []; puch = []; przygotuj(); wymiary(cv); startPetli(rysuj, 30); },
+    stop() { stopPetli(); if (cv) cv.remove(); cv = ctx = null; drob = []; puch = []; Liscie.wyczysc(); },
+  };
+})();
+
+/* ================= 2. Flow field (after earth.nullschool / Windy) ================= */
+// Each particle keeps its last positions and is drawn as a short tapering
+// thread, the whole canvas cleared every frame: no residue from alpha fading,
+// and the swirl dominates over the drift, so the threads curve instead of
+// lying in straight parallel lines.
+const Przeplyw = (() => {
+  let cv, ctx, czast = [];
+  const HIST = 14;
+  function nowa() { return { x: Math.random(), y: Math.random(), wiek: 0, max: 60 + Math.random() * 80 | 0, h: [] }; }
+  function rysuj(t, dt) {
+    wymiary(cv);
+    const W = cv.width, H = cv.height, kier = WE.kier, dzien = WE.e > 5, asp = W / H;
+    ctx.clearRect(0, 0, W, H);
+    const n = Math.round(360 * W * H / (960 * 540));
+    while (czast.length < n) { const p = nowa(); p.wiek = Math.random() * p.max | 0; czast.push(p); }
+    czast.length = Math.min(czast.length, n);
+    const kol = dzien ? "255,255,255" : "196,208,230";
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    // three alpha buckets along the thread, one path each
+    const kubly = [new Path2D(), new Path2D(), new Path2D()];
+    for (const p of czast) {
+      const G = poryw(p.x, p.y, t), v = predkosc(G) * 0.35;
+      const c = curl(p.x * 1.1, p.y * 1.1, t * 0.6);
+      p.x += (kier * v + c[0] * 0.06 * (0.6 + G)) * dt;
+      p.y += (c[1] * 0.06 * (0.6 + G)) * dt * asp * 0.6;
+      p.h.push([p.x * W, p.y * H]); if (p.h.length > HIST) p.h.shift();
+      p.wiek++;
+      if (p.wiek > p.max || p.x < -0.05 || p.x > 1.05 || p.y < -0.05 || p.y > 1.05) { Object.assign(p, nowa()); continue; }
+      const m = p.h.length;
+      if (m < 3) continue;
+      for (let s = 0; s < 3; s++) {
+        const i0 = Math.floor(s * (m - 1) / 3), i1 = Math.floor((s + 1) * (m - 1) / 3);
+        kubly[s].moveTo(p.h[i0][0], p.h[i0][1]);
+        for (let i = i0 + 1; i <= i1; i++) kubly[s].lineTo(p.h[i][0], p.h[i][1]);
+      }
+    }
+    // a particle fades in and out over its life; done per bucket as an average
+    const a = dzien ? 0.2 : 0.14;
+    for (let s = 0; s < 3; s++) {
+      ctx.lineWidth = Math.max(0.6, H / 540 * (0.5 + 0.35 * s));
+      ctx.strokeStyle = "rgba(" + kol + "," + (a * (0.25 + 0.375 * s)).toFixed(3) + ")";
+      ctx.stroke(kubly[s]);
+    }
+    Liscie.rysuj(ctx, t, dt, W, H, true);
+  }
+  return {
+    start() { cv = nowePlotno(); ctx = cv.getContext("2d"); czast = []; wymiary(cv); startPetli(rysuj, 30); },
+    stop() { stopPetli(); if (cv) cv.remove(); cv = ctx = null; czast = []; Liscie.wyczysc(); },
+  };
+})();
+
+/* ================= 3. Veils of air (WebGL) ================= */
+const Welony = (() => {
+  const gl = efektGL(`
+uniform float uV, uP, uKier, uA;
+uniform vec3 uCol;
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  vec2 p = vec2(uv.x*asp, uv.y);
+  // the gust front: slow noise moving downwind
+  float g = clamp((fbm2(vec2(p.x*0.9*uKier - uT*uV*0.5, p.y*1.2 + uT*0.03)) - 0.35)/0.5, 0., 1.)*uP;
+  float a = 0.;
+  for (int i = 0; i < 2; i++){
+    float z = float(i);
+    float sp = uV*(0.8 + 0.7*z)*(1. + 1.2*g);
+    vec2 q = vec2(p.x*(0.55 + 0.4*z) - uKier*uT*sp, p.y*(4.5 + 3.*z) + 3.7*z);
+    q.y += 0.6*fbm2(q*vec2(0.5, 0.3) + uT*0.05);                 // the sheets wave a little
+    float n = fbm4(q);
+    float sh = smoothstep(0.52, 0.78, n)*(0.55 + 0.45*z);
+    a += sh*(0.35 + 0.9*g)*(0.6 + 0.4*smoothstep(0.0, 0.5, uv.y));
+  }
+  a = clamp(a*uA, 0., 0.22);
+  gl_FragColor = vec4(uCol*a, a);
+}`, ["uV", "uP", "uKier", "uA", "uCol"], (g, u) => {
+    g.uniform1f(u.uV, 0.04 + S.wiatr / 500);
+    g.uniform1f(u.uP, S.poryw);
+    g.uniform1f(u.uKier, WE.kier);
+    g.uniform1f(u.uA, WE.e > 5 ? 0.55 : WE.e > -6 ? 0.45 : 0.32);
+    const L = WE.L, kol = WE.e > 5 ? [245, 247, 252] : L.top.map((v, i) => v * 0.6 + [150, 160, 185][i] * 0.4);
+    g.uniform3fv(u.uCol, rgb01(kol));
+  }, 30);
+  let lp, lctx;
+  function liscie(t, dt) { wymiary(lp); lctx.clearRect(0, 0, lp.width, lp.height); Liscie.rysuj(lctx, t, dt, lp.width, lp.height, true); }
+  return {
+    start() { gl.start(); lp = nowePlotno(); lctx = lp.getContext("2d"); const f = PETLA.rysuj; startPetli((t, dt) => { f(t, dt); liscie(t, dt); }, 30); },
+    stop() { gl.stop(); if (lp) lp.remove(); lp = lctx = null; Liscie.wyczysc(); },
+  };
+})();
+
+/* ================= 4. Treeline and grass ================= */
+// The treeline is one opaque silhouette: its top edge is multi-octave noise
+// (rounded crowns with a ragged leafy rim), each column leaning downwind by its
+// height and the local gust, so a gust front runs along it. Grass blades stand
+// in front of it and bend the same way.
+const Drzewa = (() => {
+  let cv, ctx, zdzbla = [], drzewa = [];
+  const n1 = (x) => noise2(x, 0.37);
+  function sadz() {
+    // crowns: domes along the bottom, each with its own place, width and height
+    let sd = 11;
+    const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    drzewa = [];
+    for (let x = -0.04; x < 1.04; x += 0.012 + r() * 0.022) {
+      const duze = r() < 0.18;
+      drzewa.push({ x, rr: (duze ? 0.028 : 0.014) + r() * 0.018, pien: 0.02 + r() * (duze ? 0.07 : 0.04), f: r() * 6 });
+    }
+  }
+  // the crown line at x for given per-tree leans (frame widths): max over the domes that cover x
+  function profil(x, asp, lean) {
+    let h = 0.02;
+    for (let i = 0; i < drzewa.length; i++) {
+      const d = drzewa[i], cx = d.x + lean[i], dx = (x - cx) / d.rr;
+      if (dx <= -1 || dx >= 1) continue;
+      h = Math.max(h, d.pien + d.rr * asp * Math.sqrt(1 - dx * dx) * 0.9);
+    }
+    return h;
+  }
+  function rysuj(t, dt) {
+    wymiary(cv);
+    if (!zdzbla.length) {
+      let sd = 7;
+      const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+      for (let i = 0; i < 420; i++) zdzbla.push({ x: r() * 1.04 - 0.02, h: 0.025 + r() * 0.045, w: 0.7 + r() * 1.0, f: r() * 6 });
+      sadz();
+    }
+    const W = cv.width, H = cv.height, kier = WE.kier, dzien = WE.e > 5, asp = W / H;
+    ctx.clearRect(0, 0, W, H);
+    const daleki = dzien ? "rgb(46,60,54)" : WE.e > -6 ? "rgb(30,27,38)" : "rgb(8,10,15)";
+    const bliski = dzien ? "rgb(30,40,34)" : WE.e > -6 ? "rgb(20,17,25)" : "rgb(3,4,7)";
+    // each tree leans downwind by the gust at its place, and shivers
+    const lean = drzewa.map((d) => {
+      const G = poryw(d.x, 0.86, t);
+      return kier * (0.2 + 0.8 * G) * (0.002 + S.wiatr / 16000) * (d.pien + d.rr) * 12
+             + Math.sin(t * (1.5 + 2 * G) + d.f) * 0.0012 * (0.3 + G);
+    });
+    const krok = Math.max(1, Math.round(W / 640));
+    ctx.fillStyle = daleki;
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let px = 0; px <= W + krok; px += krok) {
+      const x = px / W, G = poryw(x, 0.88, t);
+      // a ragged leafy rim on top of the domes, fluttering faster in a gust
+      const brzeg = (n1(x * 220 + t * (1.5 + 4 * G)) - 0.5) * 0.007 + (n1(x * 60) - 0.5) * 0.006;
+      const h = profil(x, asp, lean) + brzeg;
+      ctx.lineTo(px, H - h * H);
+    }
+    // a gust tears leaves off the bigger crowns
+    drzewa.forEach((d, i) => {
+      if (d.rr > 0.03 && poryw(d.x, 0.86, t) > 0.6 && Math.random() < dt * 0.06)
+        Liscie.dodaj(W, H, (d.x + lean[i]) * W, H - (d.pien + d.rr * asp * 0.8) * H);
+    });
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = bliski; ctx.lineCap = "round";
+    for (const z of zdzbla) {
+      const G = poryw(z.x, 0.97, t);
+      const zgiecie = kier * (0.25 + 0.75 * G) * (0.3 + S.wiatr / 90) + Math.sin(t * 3 + z.f + z.x * 30) * 0.08 * (0.4 + G);
+      const X = z.x * W, Y = H + 2, h = z.h * H;
+      ctx.lineWidth = Math.max(0.8, z.w * H / 540);
+      ctx.beginPath(); ctx.moveTo(X, Y);
+      ctx.quadraticCurveTo(X + zgiecie * h * 0.35, Y - h * 0.6, X + zgiecie * h * 0.9, Y - h * (1 - 0.35 * Math.abs(zgiecie)));
+      ctx.stroke();
+    }
+    Liscie.rysuj(ctx, t, dt, W, H, false);
+  }
+  return {
+    start() { cv = nowePlotno(); ctx = cv.getContext("2d"); zdzbla = []; wymiary(cv); startPetli(rysuj, 30); },
+    stop() { stopPetli(); if (cv) cv.remove(); cv = ctx = null; zdzbla = []; Liscie.wyczysc(); },
+  };
+})();
+
+/* ================= 5. Scud (WebGL) ================= */
+const Strzepy = (() => {
+  const gl = efektGL(`
+uniform float uV, uP, uKier;
+uniform vec3 uTop, uBot;
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  vec2 p = vec2(uv.x*asp, uv.y);
+  float g = clamp((fbm2(vec2(p.x*0.8*uKier - uT*uV*0.4, 3.1 + uT*0.02)) - 0.35)/0.5, 0., 1.)*uP;
+  float band = smoothstep(0.18, 0.42, uv.y)*smoothstep(0.98, 0.66, uv.y);      // low sky, under the main clouds
+  // stretched along the wind and torn: scud is ragged, not puffy
+  vec2 q = vec2(p.x*1.1 - uKier*uT*uV*(1. + 1.1*g), p.y*4.2);
+  vec2 w = vec2(fbm2(q*0.7 + vec2(0., uT*0.05)), fbm2(q*0.7 + vec2(4.1, -uT*0.04)));
+  float n = fbm4(q + 0.8*(w - 0.5)) + 0.2*(fbm2(q*vec2(3., 7.) + uT*0.1) - 0.5);
+  float d = smoothstep(0.5, 0.58, n)*band;
+  float lit = smoothstep(0.5, 0.75, n);
+  vec3 c = mix(uBot*0.92, uTop, 0.3 + 0.45*(1. - lit));
+  gl_FragColor = vec4(c*d*0.9, d*0.9);
+}`, ["uV", "uP", "uKier", "uTop", "uBot"], (g, u) => {
+    g.uniform1f(u.uV, 0.05 + S.wiatr / 350);
+    g.uniform1f(u.uP, S.poryw);
+    g.uniform1f(u.uKier, WE.kier);
+    const L = WE.L;
+    g.uniform3fv(u.uTop, rgb01(L.top.map((v, i) => v * 0.75 + L.veil[i] * 0.25)));
+    g.uniform3fv(u.uBot, rgb01(L.bot.map((v, i) => v * 0.7 + L.veil[i] * 0.3)));
+  }, 30);
+  let lp, lctx;
+  function liscie(t, dt) { wymiary(lp); lctx.clearRect(0, 0, lp.width, lp.height); Liscie.rysuj(lctx, t, dt, lp.width, lp.height, true); }
+  return {
+    start() { gl.start(); lp = nowePlotno(); lctx = lp.getContext("2d"); const f = PETLA.rysuj; startPetli((t, dt) => { f(t, dt); liscie(t, dt); }, 30); },
+    stop() { gl.stop(); if (lp) lp.remove(); lp = lctx = null; Liscie.wyczysc(); },
+  };
+})();
+
+const SILNIKI = { 1: Pyl, 2: Przeplyw, 3: Welony, 4: Drzewa, 5: Strzepy };
+const PUSTY = { start() { stopPetli(); }, stop() {} };
+let aktywny = null;
+function zmien() {
+  if (aktywny) aktywny.stop();
+  scena.querySelectorAll(".blad, canvas.warstwa").forEach((e) => e.remove());
+  ustawKarte();
+  wejscie();
+  aktywny = S.w === "A" ? PUSTY : SILNIKI[S.w];
+  aktywny.start();
+  $("opisWariantu").innerHTML = OPISY[S.w];
+  $("wiatrV").textContent = S.wiatr + " km/h";
+  $("porywV").textContent = S.poryw.toFixed(2);
+}
+function przyciski(id, lista, klucz, wartosc) {
+  const g = $(id);
+  lista.forEach((el, i) => {
+    const b = document.createElement("button");
+    b.textContent = el[1];
+    b.onclick = () => { S[klucz] = wartosc(el, i); odswiez(); zmien(); };
+    b.dataset.v = String(wartosc(el, i));
+    g.appendChild(b);
+  });
+}
+function odswiez() {
+  for (const [id, k] of [["warianty", "w"], ["dzien", "dzien"], ["liscie", "liscie"], ["skala", "skala"]])
+    for (const b of $(id).querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === String(S[k]));
+}
+przyciski("warianty", WARIANTY, "w", (el) => el[0]);
+przyciski("dzien", DZIEN, "dzien", (el, i) => i);
+przyciski("liscie", [[true, "wł."], [false, "wył."]], "liscie", (el) => el[0]);
+przyciski("skala", [[0.4, "0,4x"], [0.5, "0,5x"], [1, "1x"]], "skala", (el) => el[0]);
+$("wiatr").value = S.wiatr; $("poryw").value = S.poryw;
+$("wiatr").oninput = (e) => { S.wiatr = +e.target.value; $("wiatrV").textContent = S.wiatr + " km/h"; };
+$("wiatr").onchange = () => { ustawKarte(); wejscie(); };
+$("poryw").oninput = (e) => { S.poryw = +e.target.value; $("porywV").textContent = S.poryw.toFixed(2); };
+window.wiatrPOC = { S, zmien, WE, ustaw(o) { Object.assign(S, o); odswiez(); zmien(); } };
+odswiez();
+zmien();
+})();
+</script>
+</body>
+</html>
