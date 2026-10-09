@@ -10,6 +10,7 @@ prints one line per scene, then the console errors it caught (expect none).
     CHROMIUM=/usr/bin/chromium-browser python3 tools/run_smoke.py
 
 Needs: playwright (pip install playwright; playwright install chromium).
+On the agent CT that is the shared venv: ~/.venv-pw/bin/python tools/run_smoke.py
 """
 import json
 import os

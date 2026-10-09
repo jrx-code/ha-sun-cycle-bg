@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.27.0
+
+### Changed
+- Meteor showers (`showers: imo`) peak with their measured shape instead of a fall-off stretched over the activity window: exponential slopes per side from Jenniskens (1994, table 3b) for 19 showers, the Perseids as a peak on a broad background. Width at half maximum: Quadrantids 64 h to 8 h, Geminids 58 h to 29 h, Leonids 173 h to 38 h, Perseids 147 h to 57 h. Other showers keep the old profile. ([#29](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/29))
+
 ## 1.26.2
 
 ### Changed
