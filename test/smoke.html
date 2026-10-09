@@ -558,8 +558,14 @@ function czytajWiatr(cont) {
     ms: Math.round(e.getAnimations()[0].effect.getTiming().duration) } : null;
   return { wiatr: true, timer: !!w._scwT.wind, sila: +st.sila.toFixed(2), kier: st.kier,
            liscie: st.liscie, predkosc: Math.round(st.v), smuga: anim(g), lisc: anim(l),
-           lisc_kolor: l ? l.style.background : null };
+           lisc_sprite: l ? [l.dataset.lisc, l.style.backgroundImage, l.style.backgroundPosition, l.style.backgroundSize] : null };
 }
+// 1.28.0: sprite'y lisci wedlug pory roku, tryby x miesiace
+out.push(['LISCIE pora roku', Object.fromEntries(['autumn', 'seasons', 'always', false].map((m) =>
+  [String(m), [1, 4, 7, 10, 12].map((mc) => window.sunCycleBg.leafSeason(m, mc))]))]);
+out.push(['LISCIE zestawy', Object.fromEntries(Object.entries(window.sunCycleBg.LEAF_SETS))]);
+out.push(['LISCIE leafBase', [window.sunCycleBg.readWeatherConfig({ entity: 'weather.t' }).leafBase,
+  window.sunCycleBg.readWeatherConfig({ entity: 'weather.t' }, '/local/x/').leafBase]]);
 out.push(['WIATR 15 km/h: nic', czytajWiatr(pogoda(20, { entity: 'weather.t' }, 'partlycloudy',
   { cloud_coverage: 30, wind_speed: 15, wind_bearing: 270 }).cont)]);
 out.push(['WIATR 45 km/h z zachodu, leaves autumn w sierpniu', czytajWiatr(pogoda(20,

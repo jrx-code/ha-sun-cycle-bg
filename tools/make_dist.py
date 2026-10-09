@@ -58,7 +58,8 @@ DIST = ROOT / "dist"
 
 # (path in the repository, path inside the archive)
 ZAWARTOSC = [("src/sun-cycle-bg.js", "sun-cycle-bg.js")]
-for nazwa in ("sun.png", "moon.png", "milky-way.jpg", "milky-way-cutout.webp"):
+for nazwa in ("sun.png", "moon.png", "milky-way.jpg", "milky-way-cutout.webp",
+              "leaves-autumn.webp", "leaves-spring.webp", "leaves-summer.webp"):
     ZAWARTOSC.append((f"demo/assets/{nazwa}", nazwa))
 for ciało in ("mercury", "venus", "earth", "mars", "jupiter", "saturn",
               "uranus", "neptune", "pluto"):

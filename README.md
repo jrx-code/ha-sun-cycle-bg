@@ -734,7 +734,7 @@ weather:
 | `fog` | `true` | Haze towards the horizon and drifting banks, from `fog`, from `fog_area_fraction` of `clouds_entity`, or from visibility under 1 km (1.21.0). |
 | `lightning` | `true` | Strikes every 3-12 s for `lightning` and `lightning-rainy` (half as often for `exceptional`): a sky flash with return strokes, and a forked bolt or a glow in the cloud (1.22.0). |
 | `wind` | `true` | Gust streaks crossing the sky from about 22 km/h, or for `windy` / `windy-variant` (1.23.0). |
-| `leaves` | `autumn` | Tumbling leaves with the wind: `autumn` (September to November only), `always` (green outside autumn) or `off` (1.23.0). |
+| `leaves` | `autumn` | What the wind carries (1.23.0, sprites since 1.28.0): `autumn` maple and oak leaves in September to November only; `seasons` adds cherry petals, blossom and young leaves in March to May and lime and maple leaves, poppy petals, daisies and buttercups in June to August; `always` also blows the dry autumn leaves in winter; `off`. |
 | `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
 | `glass` | `false` | Raindrops on the glass while it rains: they land, sit and dry, and big ones slide down leaving a trail (1.24.0). |
 | `aurora` | none | `{kp_entity, min_kp: 5, placement: edges}`: northern lights when the Kp index reaches `min_kp`, at night, under cover below 60 % (1.25.0). |
@@ -803,7 +803,7 @@ The bolt sits behind the rain and the flash over everything, so the rain is lit 
 
 ### Wind
 
-The wind already tilts the rain and snow and pushes the clouds. Past about 22 km/h (or 80 % of a gust, or for the windy conditions) it also shows on its own: faint gust streaks cross the sky in the wind's direction with a slight wave, and in autumn leaves tumble across, turning over as they go (a rotation plus a vertical squash through nearly zero). Each streak or leaf is one element on one Web Animation that carries it across the frame and removes it at the far side. A timer only decides when the next one leaves, about twice a second at full strength, with at most 14 streaks and 16 leaves in flight at `high`.
+The wind already tilts the rain and snow and pushes the clouds. Past about 22 km/h (or 80 % of a gust, or for the windy conditions) it also shows on its own: faint gust streaks cross the sky in the wind's direction with a slight wave, and leaves tumble across, turning over as they go (a rotation plus a vertical squash through nearly zero). They are pictures, one strip of 128 px cells per season (`leaves-autumn.webp`, `leaves-spring.webp`, `leaves-summer.webp`, 56 to 79 kB), generated with google/gemini-nano-banana-2.1 and keyed out by `tools/leaves.py`; 38 to 70 px on a 1080 px frame, drifting across in 5 to 9 s at 45 km/h. Each streak or leaf is one element on one Web Animation that carries it across the frame and removes it at the far side. A timer only decides when the next one leaves, about twice a second at full strength, with at most 14 streaks and 16 leaves in flight at `high`.
 
 ### Raindrops on the glass
 
