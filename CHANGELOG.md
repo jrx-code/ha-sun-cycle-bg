@@ -3,7 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 2.2.1
+## 2.2.2
+
+### Fixed
+- Clouds at night (`effects_style: new`) looked like pale mould on the dark sky: the shader still lit them from the sun's side, with bright cauliflower edges and the cloud-top colour. From the sun at -4 deg to -12 deg the light turns into night light: from below (a town's warm grey glow, stronger towards the horizon and under a full deck) or from the moon when it is up (lit side and silver lining towards it); the modelling is nearly flat, cloud edges soften and thin out, cirrus and the middle tier fade, the deck's rolls calm down. Day and dusk are unchanged.
+
 
 ### Fixed
 - Clouds (`effects_style: new`): the cloud nearest the top of the frame was a big soft blob smeared outwards from the middle. The sky plane's perspective is milder (a cloud at the top about twice the size of one at the horizon, not four times), the low tier is denser, its edges are crisper near the top and the domain warp is weaker there.

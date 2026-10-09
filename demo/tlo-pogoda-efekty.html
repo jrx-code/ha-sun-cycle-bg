@@ -53,7 +53,7 @@ window.Date = SimDate;
 </script>
 <main>
   <h1>Tło: pozostałe efekty pogody, propozycje</h1>
-  <p>Na scenie rysuje prawdziwa karta <code>sun-cycle-bg 2.2.1</code> z konfiguracją panelu salonu
+  <p>Na scenie rysuje prawdziwa karta <code>sun-cycle-bg 2.2.2</code> z konfiguracją panelu salonu
   (jakość <code>low</code>, jak na kiosku). Wariant A to efekt, który karta ma dziś, wywołany stanem pogody.
   Wariant B wyłącza w karcie tylko ten jeden efekt (resztę nieba, welon i chmury innych efektów zostawia)
   i rysuje go na <b>jednym</b> płótnie nad kartą. Naraz działa jeden wariant.</p>
@@ -126,7 +126,7 @@ window.Date = SimDate;
 
 <script>
 /* ---- sun-cycle-bg.js, wklejone przy budowaniu strony ---- */
-/* sun-cycle-bg 2.2.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.2.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3511,9 +3511,10 @@ vec4 nad(vec4 d, vec3 c, float a){ return vec4(c*a + d.rgb*(1. - a), a + d.a*(1.
     /* Clouds: the sky as a plane in perspective (big near the top, small and
        flat at the horizon, nearer ones faster), light from a tap towards the
        sun, a silver lining, cirrus along the wind, a deck with rolls. */
-    clouds: { cap: 15, uniforms: ['uCov', 'uDeck', 'uWind', 'uSunA', 'uDusk', 'uSun', 'uTop', 'uBot', 'uVeil'], fs: `
+    clouds: { cap: 15, uniforms: ['uCov', 'uDeck', 'uWind', 'uSunA', 'uDusk', 'uSun', 'uTop', 'uBot', 'uVeil', 'uNoc', 'uGlow'], fs: `
 uniform vec3 uCov;
-uniform float uDeck, uWind, uSunA, uDusk;
+uniform float uDeck, uWind, uSunA, uDusk, uNoc;
+uniform vec3 uGlow;
 uniform vec2 uSun;
 uniform vec3 uTop, uBot, uVeil;
 // milder than a true plane (2.2.1): with 1/(1.3 - y) the cloud nearest the top was four times the size of
@@ -3529,6 +3530,11 @@ void main(){
   // a low layer near full cover hides what is above it and spreads the light:
   // less of the upper tiers, flatter light, no underlit bases (2.2.1)
   float zakr = smoothstep(0.55, 0.9, uCov.x);
+  // night (2.2.2): no sun to light the tops, so no bright cauliflower edges;
+  // what light there is comes from below (the town's glow, warmer and lighter
+  // towards the horizon) or from the moon, which then stands in uSun/uSunA
+  float noc = uNoc;
+  float luna = smoothstep(0.1, 1.05, uv.y);
   vec4 o = vec4(0.);
   if (uCov.z > 0.02 && uv.y < 0.8){
     vec2 p = plaszcz(uv, asp, 1.3) + vec2(uT*uWind*0.6, 0.);
@@ -3536,7 +3542,7 @@ void main(){
     float n = fbm3(vec2(p.x*0.9 + 0.7*w, p.y*7.0 + 2.*w));
     float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz);
     vec3 c = mix(uTop, uBot, 0.25) + 0.25*uSunA*exp(-dSun*2.5)*vec3(1., 0.92, 0.8);
-    o = nad(o, c, d*0.55*(1. - 0.8*zakr));
+    o = nad(o, c, d*0.55*(1. - 0.8*zakr)*(1. - 0.75*noc));
   }
   if (uCov.y > 0.02 && uv.y < 0.9){
     vec2 p = plaszcz(uv, asp, 2.4) + vec2(uT*uWind*1.4, uT*0.01);
@@ -3544,14 +3550,17 @@ void main(){
     float n2s = fbm3((p + vec2(sd.x, -0.6)*0.05)*2.0 + 1.7);
     float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz);
     float lit = clamp(0.6 + 4.0*(n - n2s - 0.02), 0., 1.);
-    o = nad(o, mix(uBot, uTop, lit), d*0.8*(1. - 0.75*zakr));
+    lit = mix(lit, 0.4, 0.7*noc);
+    vec3 c = mix(uBot, uTop, lit) + uGlow*noc*0.5*luna;
+    o = nad(o, c, d*0.8*(1. - 0.75*zakr)*(1. - 0.45*noc));
   }
   if (uDeck > 0.01){
     vec2 p = plaszcz(uv, asp, 1.6) + vec2(uT*uWind*2.0, 0.);
     float n = fbm4(p*vec2(0.9, 1.6) + 7.);
     float rolki = fbm3(vec2(p.x*0.5, p.y*2.4) + 1.2*n);
-    vec3 c = mix(uBot*0.86, mix(uBot, uTop, 0.4), smoothstep(0.3, 0.75, rolki));
+    vec3 c = mix(uBot*0.86, mix(uBot, uTop, 0.4), smoothstep(0.3, 0.75, rolki)*(1. - 0.6*noc));
     c = mix(c, mix(uVeil, uTop, 0.35), smoothstep(0.55, 1.0, uv.y)*0.6);
+    c += uGlow*noc*(0.25 + 0.75*luna)*(0.85 + 0.3*rolki);          // lit from below by the town
     float a = uDeck*clamp(0.88 + 0.25*(n - 0.5), 0., 1.)*(1. - 0.45*smoothstep(0.7, 1.05, uv.y));
     o = nad(o, c, a);
   }
@@ -3561,23 +3570,28 @@ void main(){
     float wa = mix(0.22, 0.45, smoothstep(0.0, 0.6, uv.y));           // less warp at the top: no smear
     vec2 qq = p + wa*(w - 0.5);
     float n = fbm4(qq*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qq*4.5) - 0.5);
-    vec2 ld = normalize(mix(vec2(0., -1.), sd, 0.45 + 0.3*uSunA));
+    vec2 ldD = mix(vec2(0., -1.), sd, 0.45 + 0.3*uSunA);              // day: sky above, sun's side
+    vec2 ldN = mix(vec2(0., 1.), sd, min(1., uSunA*2.));               // night: the town below, or the moon
+    vec2 ld = normalize(mix(ldD, ldN, noc) + vec2(0., 1e-4));
     vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 2.8) + vec2(uT*uWind*2.4, 0.);
     vec2 qs = ps + wa*(w - 0.5);
     float ns = fbm4(qs*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qs*4.5) - 0.5);
     float cov = uCov.x*(1. - 0.6*uDeck);
     float thr = mix(0.70, 0.30, cov);
-    float d = smoothstep(thr, thr + mix(0.03, 0.07, uv.y), n);              // crisper at the top
+    float d = smoothstep(thr, thr + mix(0.03, 0.07, uv.y) + 0.06*noc, n);  // crisper at the top, softer at night
+    d *= mix(1., smoothstep(thr, thr + 0.2, n), 0.65*noc);                 // night: thin edges thin out, no cut-outs
     float podst = smoothstep(thr - 0.04, thr + 0.10, ns + 0.08);
     float grub = clamp((n - thr)/0.3, 0., 1.);
     float lit = clamp(0.45 + 6.0*(n - ns), 0., 1.);
     lit = mix(lit, 0.55, 0.45*smoothstep(0.6, 0.95, cov));                 // overcast: diffuse light
+    lit = mix(lit, 0.3 + 0.25*lit, 0.8*noc);                               // night: hardly any modelling
     vec3 c = mix(mix(uBot, uVeil, 0.45), uTop, lit);
     c *= 1. - 0.22*grub*(1. - lit);
     c += (1. - grub)*smoothstep(0.0, 0.2, d)*exp(-dSun*3.2)*uSunA*vec3(1., 0.93, 0.8)*0.6;
     c += uDusk*vec3(0.25, 0.12, 0.05)*(1. - lit)*smoothstep(0.3, 0.9, uv.y)*(1. - 0.6*zakr);
     c = mix(c, mix(uVeil, uTop, 0.4), horyz*0.5);
-    o = nad(o, c, d*podst*0.97*(1. - 0.4*horyz));
+    c += uGlow*noc*(0.2 + 0.8*luna)*(1. - 0.4*grub);                        // undersides catch the town's glow
+    o = nad(o, c, d*podst*0.97*(1. - 0.4*horyz)*(1. - 0.25*noc - 0.25*noc*uDeck));
   }
   gl_FragColor = o;
 }` },
@@ -3824,11 +3838,22 @@ void main(){
     const sun = fxSun(ctx), sunA = clamp((e + 4) / 14, 0, 1);
     if (cfg.clouds && Math.max(ws.low, ws.mid, ws.high) > 0.02) {
       const szary = clamp((ws.cover - 0.5) / 0.5, 0, 1) * 0.5;
+      // at night the moon, when it is up, lights the clouds the way the sun does by day
+      const noc = clamp((-4 - e) / 8, 0, 1);
+      let lsun = sun, lA = sunA * (1 - szary);
+      const m = ctx.moon;
+      if (noc > 0 && m && m.alt > 0 && ctx.proj) {
+        const q = ctx.proj(m.alt, m.az);
+        lsun = [q.x / 100, q.y / 100];
+        lA = Math.max(lA, noc * 0.6 * m.k * Math.sin(m.alt * D2R) * (1 - 0.7 * szary));
+      }
       on.clouds = {
         uCov: [ws.low, ws.mid, ws.high], uDeck: clamp((ws.low - 0.72) / 0.28, 0, 1),
-        uWind: kier * (0.004 + ws.wind * 0.0006), uSunA: sunA * (1 - szary), uDusk: e < 6 && e > -8 ? 1 : 0,
-        uSun: sun, uTop: rgb01(lerpA(L.top, lerpA(L.veil, L.top, 0.4), szary)),
+        uWind: kier * (0.004 + ws.wind * 0.0006), uSunA: lA, uDusk: e < 6 && e > -8 ? 1 : 0,
+        uSun: lsun, uTop: rgb01(lerpA(L.top, lerpA(L.veil, L.top, 0.4), szary)),
         uBot: rgb01(lerpA(L.bot, L.veil, szary * 0.5)), uVeil: rgb01(L.veil),
+        // a town's glow under the clouds: warm grey, a little stronger under a full deck
+        uNoc: noc, uGlow: [0.075, 0.062, 0.055].map((v) => v * (0.8 + 0.4 * clamp(ws.low, 0, 1))),
       };
     }
     if (cfg.fog && ws.fog > 0.02) {
@@ -6850,7 +6875,7 @@ function zmien() {
   aktywny = S.w === "B" ? SILNIKI[S.e] : PUSTY;
   aktywny.start();
   $("opisWariantu").innerHTML = S.w === "C"
-    ? "<b>C. Karta " + "sun-cycle-bg 2.2.1".replace("sun-cycle-bg ", "") + ".</b> Ten sam efekt narysowany przez kartę z <code>effects_style: new</code>: shadery chmur, mgły, śniegu i zorzy na jednym płótnie WebGL, grad, wiatr z liśćmi i burza na jednym płótnie 2D."
+    ? "<b>C. Karta " + "sun-cycle-bg 2.2.2".replace("sun-cycle-bg ", "") + ".</b> Ten sam efekt narysowany przez kartę z <code>effects_style: new</code>: shadery chmur, mgły, śniegu i zorzy na jednym płótnie WebGL, grad, wiatr z liśćmi i burza na jednym płótnie 2D."
     : OPISY[S.e][S.w];
   $("akcje").style.display = S.e === "burza" ? "" : "none";
   stan();
@@ -6886,7 +6911,7 @@ function blyskTeraz() {
   } else Burza.teraz();
 }
 przyciski("efekty", EFEKTY, "e", (el) => el[0]);
-przyciski("warianty", [["A", "A. Classic"], ["B", "B. Propozycja"], ["C", "C. Karta (sun-cycle-bg 2.2.1)"]], "w", (el) => el[0]);
+przyciski("warianty", [["A", "A. Classic"], ["B", "B. Propozycja"], ["C", "C. Karta (sun-cycle-bg 2.2.2)"]], "w", (el) => el[0]);
 przyciski("dzien", DZIEN, "dzien", (el, i) => i);
 przyciski("welon", [["wł.", true], ["wył.", false]], "welon", (el) => el[1]);
 przyciski("skala", [["0,5x", 0.5], ["1x", 1]], "skala", (el) => el[1]);

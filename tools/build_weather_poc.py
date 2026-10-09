@@ -131,7 +131,18 @@ def konfig_z_panelu() -> dict:
     szukaj(dash)
     if not znalezione:
         sys.exit(f"brak custom:sun-cycle-bg-card w {PANEL}")
-    return znalezione[0]
+    karta = znalezione[0]
+    # Since 09.10.2026 the panel's cards say only `profile: salon`; the config is
+    # SUN_CYCLE_PROFIL in the panel's generate_dashboard.py, the seed of that profile.
+    if karta.get("profile"):
+        import importlib.util
+        gen = PANEL.parent.parent / "scripts" / "generate_dashboard.py"
+        spec = importlib.util.spec_from_file_location("generate_dashboard", gen)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        karta = dict({"type": karta["type"]}, **mod.SUN_CYCLE_PROFIL,
+                     **{k: v for k, v in karta.items() if k not in ("type", "profile")})
+    return karta
 
 
 def main() -> int:
