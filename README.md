@@ -762,7 +762,8 @@ reshuffling the sky.
 - **Light.** White tops and grey bases by day, warm undersides lit from below
   while the sun is low, dark blue-grey at night and a little lighter under a high
   moon. Repainted when the sun moves half a degree, which is every two to four
-  minutes.
+  minutes. Past 50 % cover the clouds take on the veil's grey and lose some
+  opacity: an overcast sky is flat, and light dashboard text stays readable (1.26.1).
 - **Wind.** Direction from `wind_bearing`, mapped into the card's azimuth window
   (with the default window a westerly pushes clouds to the left). Speed is a
   playback rate on the loop, so a change of wind bends the motion without a jump.

@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.26.1
+
+### Fixed
+- Overcast clouds stayed bright white over the grey veil; past 50 % cover they now take on the veil's tone and lose some opacity, which is how an overcast sky looks and keeps light dashboard text readable over them. Found deploying 1.26.0 on a 1920 x 1080 kiosk. ([#25](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/25))
+
 ## 1.26.0
 
 ### Added

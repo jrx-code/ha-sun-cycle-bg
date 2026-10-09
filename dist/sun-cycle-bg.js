@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.26.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.26.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -2017,7 +2017,16 @@
 
   function weatherClouds(layer, cfg, ws, ctx) {
     const res = WEATHER_QUALITY[cfg.quality].res;
-    const W = ctx.W, H = ctx.H, L = ctx.light;
+    const W = ctx.W, H = ctx.H;
+    // An overcast sky is flat and grey, not white puffs on grey: past 50 %
+    // cover the clouds take on the veil's tone and lose some opacity. It is
+    // also what keeps light dashboard text readable over them (1.26.1).
+    const szary = ws ? smoothstep(clamp((ws.cover - 0.5) / 0.5, 0, 1)) * 0.6 : 0;
+    const L = {
+      top: lerpA(ctx.light.top, lerpA(ctx.light.veil, ctx.light.top, 0.35), szary),
+      bot: lerpA(ctx.light.bot, ctx.light.veil, szary * 0.6),
+      e: ctx.light.e,
+    };
     const wx = ws ? weatherWindX(ws, ctx) : 0;
     for (const t of CLOUD_TIERS) {
       const cover = ws && cfg.clouds ? ws[t.k] : 0;
@@ -2049,7 +2058,7 @@
         const sc = 0.75 + rnd() * 0.5, seed = 1 + i * 104729 + t.max;
         const sw = W * t.s * sc * res, sh = sw * ratio;
         const sp = cloudSprite(t.typ, sw, sh, seed, L);
-        g.globalAlpha = t.a * (0.75 + rnd() * 0.25) * clamp(cover * 1.6, 0.25, 1);
+        g.globalAlpha = t.a * (0.75 + rnd() * 0.25) * clamp(cover * 1.6, 0.25, 1) * (1 - 0.3 * szary);
         // three copies make the strip repeat every frame width
         for (const dx of [-fw, 0, fw]) g.drawImage(sp, x + dx, y, sw, sh);
       }
