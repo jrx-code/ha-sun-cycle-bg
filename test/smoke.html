@@ -581,6 +581,79 @@ out.push(['LISCIE leafBase', [window.sunCycleBg.readWeatherConfig({ entity: 'wea
   out.push(['LISCIE season_entity', { winter: pora('winter'), spring: pora('spring'), Autumn: pora('Autumn'),
     unavailable: pora('unavailable'), brak_encji: pora(undefined) }]);
 }
+// 1.29.0: wspolny profil z integracji sun_cycle_bg (atrapa polaczenia)
+{
+  const B = window.sunCycleBg;
+  out.push(['PROFIL scalanie', B.profileMerge(
+    { stars: { count: 160, meteors: { rate: 28 } }, weather: { entity: 'weather.a', quality: 'low' }, moon: true },
+    { stars: { meteors: { rate: 5 } }, weather: false })]);
+  out.push(['PROFIL profileOwn', B.profileOwn({ type: 'custom:sun-cycle-bg-card', profile: 'salon', moon: false })]);
+  const wiadomosci = [];
+  let nadawca = null;
+  const conn = { subscribeMessage: (cb, msg) => { wiadomosci.push(msg); nadawca = cb; return Promise.resolve(() => wiadomosci.push('unsub')); } };
+  try { localStorage.removeItem('sun-cycle-bg:profile:test'); } catch (e) {}
+  const z = pogoda(20, undefined, 'windy', { wind_speed: 10, wind_bearing: 90 }, null,
+    { profile: 'test', stars: { count: 40 }, moon: false });
+  z.card.hass = { states: z.states, config: { latitude: 52.2297, longitude: 21.0122 }, connection: conn };
+  const przed = { weather: !!z.card._weatherCfg, moon: z.card._showMoon };
+  nadawca({ profile: 'test', config: { weather: { entity: 'weather.t', leaves: 'always' }, moon: true, stars: { count: 999 } } });
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem('sun-cycle-bg:profile:test')); } catch (e) {}
+  out.push(['PROFIL karta: subskrypcja i scalanie', { wiadomosci: wiadomosci.slice(), przed,
+    po: { weather: z.card._weatherCfg && z.card._weatherCfg.leaves, moon: z.card._showMoon,
+          gwiazdy: z.card._starCfg && z.card._starCfg.count },
+    cache_ok: !!(cache && cache.weather && cache.weather.leaves === 'always') }]);
+  nadawca({ profile: 'test', config: null });
+  out.push(['PROFIL karta: profil usuniety', { weather: !!z.card._weatherCfg, moon: z.card._showMoon }]);
+  z.card.remove();
+  // unsub idzie po rozwiazaniu obietnicy subskrypcji, czyli w mikrozadaniu
+  setTimeout(() => out.push(['PROFIL karta: odlaczona', wiadomosci.slice(-1)]), 0);
+}
+{
+  // edytor na profilu: czyta przez get, zapisuje przez set, YAML karty bez zmian
+  const B = window.sunCycleBg, wywolania = [];
+  const ed = document.createElement('sun-cycle-bg-card-editor');
+  document.body.appendChild(ed);
+  let zmianyKarty = 0;
+  ed.addEventListener('config-changed', () => zmianyKarty++);
+  ed.hass = { callWS: (m) => { wywolania.push(m); return Promise.resolve(m.type.endsWith('/get')
+    ? { profile: 'salon', config: { weather: { entity: 'weather.t' } }, updated: '2026-10-09T12:00:00+00:00', updated_by: 'administrator' }
+    : { profile: 'salon' }); } };
+  ed.setConfig({ type: 'custom:sun-cycle-bg-card', profile: 'salon', moon: false });
+  // asynchronicznie: get w tle, zapis po 500 ms; wynik wpada przed koncem smoke
+  window.__profilEdytor = new Promise((gotowe) => setTimeout(() => {
+    const r = ed.shadowRoot;
+    const baner = r.querySelector('.scb-profil');
+    const grupy = r.querySelectorAll('.scb-grupa').length;
+    ed._cfg.weather.leaves = 'seasons';
+    ed._emit();
+    setTimeout(() => {
+      gotowe(['PROFIL edytor', { get: wywolania[0], set: wywolania[1], zmianyKarty,
+        baner: baner ? baner.textContent.slice(0, 160) : null, grupy }]);
+      ed.remove();
+    }, 650);
+  }, 50));
+}
+{
+  // pola encji bez ha-entity-picker (smoke nie ma HA): datalist z encjami danej domeny
+  const ed = document.createElement('sun-cycle-bg-card-editor');
+  document.body.appendChild(ed);
+  ed.hass = { states: { 'weather.dom': { attributes: { friendly_name: 'Dom' } }, 'weather.astro': { attributes: {} },
+    'sensor.pora_roku': { attributes: { friendly_name: 'Pora roku' } }, 'light.x': { attributes: {} }, 'sun.sun': { attributes: {} } } };
+  ed.setConfig({ type: 'custom:sun-cycle-bg-card', weather: { entity: 'weather.dom' } });
+  const r = ed.shadowRoot;
+  const pole = (k) => r.querySelector('[data-k="' + k + '"]');
+  const lista = (k) => { const e = pole(k); const l = e && r.getElementById(e.getAttribute('list'));
+    return l ? [...l.options].map((o) => o.value + '|' + o.label) : null; };
+  let wyslane = null;
+  ed.addEventListener('config-changed', (e) => { wyslane = e.detail.config; });
+  const s = pole('weather.season_entity');
+  s.value = 'sensor.pora_roku'; s.dispatchEvent(new Event('change'));
+  out.push(['EDYTOR pola encji (datalist)', { typ: pole('weather.entity').tagName, wartosc: pole('weather.entity').value,
+    weather: lista('weather.entity'), season: lista('weather.season_entity'), sun: lista('sun_entity'),
+    zapis: wyslane && wyslane.weather }]);
+  ed.remove();
+}
 out.push(['WIATR 15 km/h: nic', czytajWiatr(pogoda(20, { entity: 'weather.t' }, 'partlycloudy',
   { cloud_coverage: 30, wind_speed: 15, wind_bearing: 270 }).cont)]);
 out.push(['WIATR 45 km/h z zachodu, leaves autumn w sierpniu', czytajWiatr(pogoda(20,
@@ -733,8 +806,11 @@ setTimeout(() => {
         return n;
       })(),
     }]);
-    document.title = JSON.stringify(out);
-    window.__smokeDone = true;
+    window.__profilEdytor.then((wynik) => {
+      out.push(wynik);
+      document.title = JSON.stringify(out);
+      window.__smokeDone = true;
+    });
   }, 300);
 }, 400);
 </script>

@@ -121,16 +121,27 @@ sensors per body (`_rise`, `_set`, `_transit`, `_antitransit`) are ignored.
 
 ## Install
 
+Since 2.0.0 this repository is one Home Assistant **integration**,
+`sun_cycle_bg`: the card with its pictures, the shared profiles and a settings
+page, installed and updated together. (1.x was a HACS *Dashboard* plugin; see
+[Upgrading from 1.x](#upgrading-from-1x-dashboard-plugin-to-20-integration).)
+
 ### HACS (custom repository)
 
 1. HACS → menu → *Custom repositories* → add this repo URL, category
-   **Dashboard** (Lovelace).
-2. Install **Sun Cycle Background**, reload resources when prompted.
+   **Integration**.
+2. Install **Sun Cycle Background** and restart Home Assistant.
+3. *Settings → Devices & services → Add integration → Sun Cycle Background*.
+   One entry, no fields.
 
-HACS installs the contents of `dist/` into
-`/config/www/community/hassio-sun-cycle-bg/`: the card, the sun, the moon, nine
-planets and two photographs of the Milky Way. Every default path in the card
-points there, so on a fresh system this already draws something:
+The integration serves the card from `custom_components/sun_cycle_bg/www/` at
+`/sun_cycle_bg/` and adds the dashboard resource for it by itself
+(`/sun_cycle_bg/loader.js?v=<version>`, moved to the new version after every
+update, removed with the integration; with resources kept in YAML it logs the
+line to add). The card, the sun, the moon, nine planets, two
+photographs of the Milky Way and the leaves sit there together, and every
+default path in the card points there, so on a fresh system this already draws
+something:
 
 ```yaml
 type: custom:sun-cycle-bg-card
@@ -202,13 +213,48 @@ layer.
 
 ### Manual
 
-1. Copy the whole of `dist/` to `/config/www/sun-cycle/`.
-2. Add a dashboard resource: URL `/local/sun-cycle/sun-cycle-bg.js`, type
-   **JavaScript module**.
-3. Set `assets: /local/sun-cycle/` so the default paths follow the files. Copy
-   `dist/sun-cycle-bg.js` alone if you do not want the artwork; the card then
-   draws its own sun and moon, and `planets:` / `milky_way:` need paths of
-   your own.
+Copy `custom_components/sun_cycle_bg/` to `/config/custom_components/`, restart,
+and add the integration as above.
+
+The card alone, without the integration, still works as a dashboard resource:
+copy `custom_components/sun_cycle_bg/www/` to `/config/www/sun-cycle/`, add the
+resource `/local/sun-cycle/sun-cycle-bg.js` (JavaScript module) and set
+`assets: /local/sun-cycle/`. Profiles and the settings page need the
+integration.
+
+### One config for many cards: profiles and the settings page
+
+A background card sits on every view, so a dashboard with many views carries
+the same config many times, and a dashboard generated and deployed by a script
+overwrites whatever was changed in the editor. With a profile each card
+carries one line:
+
+```yaml
+type: custom:sun-cycle-bg-card
+profile: salon
+```
+
+The config lives in Home Assistant (`.storage/sun_cycle_bg`, in every backup)
+and is edited on the integration's settings page: *Settings → Devices &
+services → Sun Cycle Background*, the cog (*Configure*). The page lists the
+profiles (new, duplicate, rename, delete), shows which dashboards use which,
+and edits one with the card's own form next to a preview; *Save* writes it.
+Entity fields there are Home Assistant's entity pickers, searchable and limited
+to the domains that fit. The card's editor on a dashboard edits the same
+profile too, saving each change at once; *Undo changes since opening* puts it
+back. Only an
+administrator can change a profile; every user, a non-admin wall kiosk included,
+follows it live, without a reload, and after a lost connection catches up by
+itself. Keys the card sets in its own YAML are laid over the profile object by
+object (`moon: false` on one view, everything else from the profile). The last
+profile seen is kept in the browser, so a reload paints the right sky before
+Home Assistant answers. A card loaded without the integration warns once in
+the console and runs on its own YAML.
+
+The websocket commands, for scripts: `sun_cycle_bg/profile/list`, `get` and
+`subscribe` (any user; subscribe sends the current profile now and after every
+change), `set` and `delete` (administrators). `tools/ws_check.py` exercises all
+of them against a live instance.
 
 ### Optional: the real ISS
 
@@ -233,6 +279,23 @@ sensor.sol_jupiter_rise / _set / _transit / _antitransit   (timestamps)
 The card reads the first two and nothing else. Without the integration the
 option is harmless: nothing is drawn. You also need one picture per planet
 under `/local/` — see [Planets](#planets).
+
+### Upgrading from 1.x (Dashboard plugin) to 2.0 (integration)
+
+Every release still carries the card and its pictures as release assets, so a
+1.x install that HACS keeps as a Dashboard plugin goes on updating and drawing
+as a standalone card; profiles and the settings page need the move below.
+HACS keeps a repository under the category it was added with, so the plugin
+entry has to make way for the integration:
+
+1. HACS → *Sun Cycle Background* (Dashboard) → menu → *Remove*. This removes
+   the dashboard resource `/hacsfiles/hassio-sun-cycle-bg/sun-cycle-bg.js` as
+   well; check *Settings → Dashboards → Resources* that it is gone and only
+   `/sun_cycle_bg/loader.js` is left, because a card loaded twice keeps the
+   first copy and warns in the console.
+2. Add the repository again with category **Integration**, install, restart,
+   add the integration. Cards keep their YAML and draw as before; the default
+   pictures now come from `/sun_cycle_bg/`.
 
 ### Upgrading from 1.15.1 or earlier (repository renamed)
 
@@ -274,8 +337,9 @@ All options, with defaults:
 
 ```yaml
 type: custom:sun-cycle-bg-card
-assets: /hacsfiles/hassio-sun-cycle-bg/   # where the shipped pictures live; every
-                            # default path below hangs off this
+assets: /sun_cycle_bg/      # where the shipped pictures live (the integration's
+                            # www/); every default path below hangs off this
+profile: salon              # take the rest from a shared profile (see above)
 sun_entity: sun.sun     # any entity with `elevation` (and ideally `azimuth`)
 twilight_palette: false # true = warmer amber dusk anchors instead of mauve
 azimuth: [50, 310]      # sky window mapped across the frame, degrees
@@ -362,7 +426,7 @@ moon is drawn as a circle with the real terminator. Point `sun_image` and
 while every glow stays rendered — the twilight band, the disc aureole, the ray
 fan and the moon halo. The two options are independent.
 
-**Artwork ships beside the card, not inside it.** `dist/` carries the sun, the
+**Artwork ships beside the card, not inside it.** The integration's `www/` carries the sun, the
 moon, the nine planets and the Milky Way next to `sun-cycle-bg.js`, HACS
 installs the directory, and the defaults point into it; these options replace
 them with files of yours. The PNGs are the repository owner's own artwork and
@@ -507,7 +571,7 @@ overrides individual paths. They want transparent backgrounds.
 Nine such cutouts sit in [`demo/assets/planets`](demo/assets/planets) — the
 repository owner's own artwork, under this repository's MIT licence like
 `demo/assets/sun.png` and `moon.png`. `tools/make_dist.py` copies them into
-`dist/`, beside the card, which is what HACS installs, so `planets: true` needs no
+the integration's `www/`, beside the card, which is what HACS installs, so `planets: true` needs no
 paths. The card's default `discs` numbers are the measurements of exactly
 these files, so they need no `discs:` block either.
 

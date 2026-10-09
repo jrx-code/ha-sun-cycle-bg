@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.28.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.0.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -137,6 +137,12 @@
  * its opacity is driven too (fades at dawn, returns at dusk).
  */
 (() => {
+  // Loaded twice (the integration's copy and a leftover dashboard resource of
+  // 1.x): the first one wins, the second must not register anything again.
+  if (customElements.get('sun-cycle-bg-card')) {
+    console.warn('sun-cycle-bg: the card is loaded twice; remove the old dashboard resource');
+    return;
+  }
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 
   /* Where the artwork lives. HACS unpacks the release archive into
@@ -146,7 +152,10 @@
      A manual install puts the same files wherever it likes and says so:
      every path is a plain option (`planets.images`, `milky_way.image`,
      `sun_image`, `moon_image`), and `assets:` moves them all at once. */
-  const HACS_BASE = '/hacsfiles/hassio-sun-cycle-bg/';
+  // Where the pictures are: next to the card in the sun_cycle_bg integration
+  // (its loader imports base.js, which sets SUN_CYCLE_BG_BASE, before the card), or, for a
+  // card installed on its own as a dashboard resource, the HACS folder of 1.x.
+  const HACS_BASE = (typeof window !== 'undefined' && window.SUN_CYCLE_BG_BASE) || '/hacsfiles/hassio-sun-cycle-bg/';
 
   /* A layer is built once and then only driven. That is right while the config
      stands still, and wrong the moment it does not: Lovelace calls setConfig
@@ -2844,6 +2853,49 @@
     }
   }
 
+  /* --- shared profiles (1.29.0) ---------------------------------------------
+     `profile: salon` takes the card config from the sun_cycle_bg integration
+     (repository hassio-sun-cycle-bg-profiles), which keeps named configs in
+     .storage and serves them over the websocket API. Whatever else the card's
+     own YAML holds is laid over the profile, object by object. A dashboard
+     with a background card on every view then carries one line per card, and
+     a dashboard generated and deployed whole no longer undoes what was set in
+     the editor.
+
+     The card subscribes: every change of the profile reaches every card at
+     once, a non-admin kiosk included, and home-assistant-js-websocket renews
+     the subscription after a reconnect (the server sends the current profile
+     on every subscribe). The last profile seen is kept in localStorage, so a
+     reload paints the right sky before the websocket answers. Without the
+     integration the card warns once and runs on its own YAML. */
+  const PROFILE_WS = 'sun_cycle_bg/profile/';
+  const PROFILE_CACHE = 'sun-cycle-bg:profile:';
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  function profileMerge(base, over) {
+    const out = Object.assign({}, base);
+    for (const [k, v] of Object.entries(over || {})) {
+      out[k] = isObj(v) && isObj(base[k]) ? profileMerge(base[k], v) : v;
+    }
+    return out;
+  }
+  // the card's own keys, never part of a profile
+  function profileOwn(yaml) {
+    const o = Object.assign({}, yaml);
+    delete o.type; delete o.profile;
+    return o;
+  }
+  const profileName = (yaml) => (yaml && typeof yaml.profile === 'string' && yaml.profile.trim()) || null;
+  function profileCacheRead(name) {
+    try { const v = localStorage.getItem(PROFILE_CACHE + name); return v ? JSON.parse(v) : null; }
+    catch (e) { return null; }
+  }
+  function profileCacheWrite(name, cfg) {
+    try {
+      if (cfg) localStorage.setItem(PROFILE_CACHE + name, JSON.stringify(cfg));
+      else localStorage.removeItem(PROFILE_CACHE + name);
+    } catch (e) { /* private window, blocked storage: the websocket still works */ }
+  }
+
   class SunCycleBgCard extends HTMLElement {
     // The visual editor. Lovelace asks the class, not the element.
     static getConfigElement() {
@@ -2865,6 +2917,57 @@
     }
 
     setConfig(config) {
+      this._yaml = config || {};
+      const name = profileName(this._yaml);
+      if (name !== this._profil) {
+        this._profileStop();
+        this._profil = name;
+        this._profilFail = null;
+        this._profilCfg = name ? profileCacheRead(name) : null;
+      }
+      this._configure();
+      if (this._profil && this._hass && this.isConnected) this._profileStart();
+    }
+
+    // the profile (when there is one) under the card's own YAML
+    _configure() {
+      this._konfiguruj(this._profil && this._profilCfg
+        ? profileMerge(this._profilCfg, profileOwn(this._yaml)) : this._yaml);
+    }
+
+    _profileStart() {
+      const name = this._profil, conn = this._hass && this._hass.connection;
+      if (!name || this._profilSub || this._profilFail === name) return;
+      if (!conn || typeof conn.subscribeMessage !== 'function') return;
+      const sub = conn.subscribeMessage((m) => this._profileGot(name, m),
+        { type: PROFILE_WS + 'subscribe', profile: name });
+      this._profilSub = sub;
+      sub.catch((err) => {
+        if (this._profilSub === sub) this._profilSub = null;
+        this._profilFail = name;
+        console.warn('sun-cycle-bg: profile "' + name + '" is not available (' +
+          ((err && (err.code || err.message)) || err) + '): is the sun_cycle_bg integration set up? ' +
+          'Painting from the card config' + (this._profilCfg ? ' and the last profile seen.' : '.'));
+      });
+    }
+
+    _profileStop() {
+      const sub = this._profilSub;
+      this._profilSub = null;
+      if (sub) sub.then((unsub) => unsub()).catch(() => {});
+    }
+
+    _profileGot(name, m) {
+      if (name !== this._profil) return;
+      const cfg = m && isObj(m.config) ? m.config : null;
+      if (JSON.stringify(cfg) === JSON.stringify(this._profilCfg)) return;
+      this._profilCfg = cfg;
+      profileCacheWrite(name, cfg);
+      this._configure();
+      this._apply(true);
+    }
+
+    _konfiguruj(config) {
       this._cfg = config || {};
       const s = this._cfg.stars;
       this._starCfg = s === false ? null : readStarConfig(s === true ? {} : s);
@@ -2923,6 +3026,7 @@
     set hass(h) {
       if (this._demo) h = this._demoStany(h);
       this._hass = h;
+      if (this._profil && !this._profilSub && this.isConnected) this._profileStart();
       const sun = h.states && h.states[this._sunEntity];
       if (!sun) return;
       const e = Number(sun.attributes.elevation);
@@ -3078,6 +3182,11 @@
       // other background cards may build their layers after us
       setTimeout(() => this._apply(true), 600);
       setTimeout(() => this._apply(true), 2000);
+      if (this._profil && this._hass) this._profileStart();
+    }
+
+    disconnectedCallback() {
+      this._profileStop();
     }
 
     /* A stand-in for the view: a 16:9 box holding the same backdrop element
@@ -3610,9 +3719,9 @@
     { tytul: 'Weather', wlacznik: 'weather', domWl: false, skrotWl: {}, pola: [
       { k: 'weather', et: 'weather', typ: 'bool', dom: false, glowna: true,
         o: 'The sky follows the weather entity: cover dims it, and the effects below draw what it reports.' },
-      { k: 'weather.entity', et: 'weather entity', typ: 'tekst', dom: '', hint: 'weather.home',
+      { k: 'weather.entity', et: 'weather entity', typ: 'encja', domeny: ['weather'], dom: '', hint: 'weather.home',
         o: 'Condition, cloud cover, wind and visibility come from here. Without it nothing is drawn.' },
-      { k: 'weather.clouds_entity', et: 'cloud layers', typ: 'tekst', dom: '', hint: 'weather.astroweather',
+      { k: 'weather.clouds_entity', et: 'cloud layers', typ: 'encja', domeny: ['weather'], dom: '', hint: 'weather.astroweather',
         o: 'Optional: cover per height and fog (AstroWeather attributes). Without it the total cover is spread over the heights.' },
       { k: 'weather.quality', et: 'quality', typ: 'wybor', opcje: ['high', 'medium', 'low'], dom: 'medium', w: 'quality',
         o: 'Particle count and the resolution strips are painted at. low suits a weak kiosk.' },
@@ -3638,17 +3747,17 @@
         o: 'What the wind carries: autumn leaves in Sept-Nov only; seasons adds cherry petals in spring and summer leaves and flowers; always also blows dry leaves in winter; or nothing.' },
       { k: 'weather.glass', et: 'drops on the glass', typ: 'bool', dom: false, w: 'glass',
         o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
-      { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'tekst', dom: '', hint: 'sensor.planetary_k_index',
+      { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'encja', domeny: ['sensor', 'input_number'], dom: '', hint: 'sensor.planetary_k_index',
         o: 'Northern lights only when this Kp index reaches the threshold below, on a dark and mostly clear night.' },
       { k: 'weather.aurora.min_kp', et: 'aurora: from Kp', typ: 'zakres', min: 1, max: 9, krok: 1, dom: 5,
         o: 'The Kp at which the aurora shows. Around 53 deg N it takes about 5 or more.' },
       { k: 'weather.aurora.placement', et: 'aurora: where', typ: 'wybor', opcje: ['edges', 'sky'], dom: 'edges',
         o: 'edges: where the north is in the sky window (both edges by default). sky: across the top.' },
-      { k: 'weather.gust_entity', et: 'gust sensor', typ: 'tekst', dom: '', hint: 'sensor.wind_gust',
+      { k: 'weather.gust_entity', et: 'gust sensor', typ: 'encja', domeny: ['sensor'], dom: '', hint: 'sensor.wind_gust',
         o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
-      { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
+      { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'encja', domeny: ['sensor'], dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
-      { k: 'weather.season_entity', et: 'season sensor', typ: 'tekst', dom: '', hint: 'sensor.season',
+      { k: 'weather.season_entity', et: 'season sensor', typ: 'encja', domeny: ['sensor', 'input_select', 'select'], dom: '', hint: 'sensor.season',
         o: 'Optional: the season for the leaves (spring, summer, autumn, winter), e.g. from the Season integration. Without it the month decides: Mar-May spring, Jun-Aug summer, Sep-Nov autumn.' },
     ] },
     { tytul: 'Discs and files', pola: [
@@ -3664,7 +3773,7 @@
         o: 'Your own file. Empty keeps the one the card installs.' },
       { k: 'assets', et: 'assets folder', typ: 'tekst', dom: '', hint: '/local/sun-cycle/',
         o: 'Moves every default path at once. Empty uses the HACS folder.' },
-      { k: 'sun_entity', et: 'sun entity', typ: 'tekst', dom: '', hint: 'sun.sun',
+      { k: 'sun_entity', et: 'sun entity', typ: 'encja', domeny: ['sun', 'sensor'], dom: '', hint: 'sun.sun',
         o: 'Where the elevation and azimuth come from. Empty means sun.sun.' },
     ] },
   ];
@@ -3695,6 +3804,7 @@
     '.scb-w .scb-num input::-webkit-outer-spin-button,' +
     '.scb-w .scb-num input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}' +
     '.scb-w input[type=range]{width:100%;accent-color:var(--primary-color,#03a9f4);}' +
+    '.scb-w ha-entity-picker{display:block;width:100%;min-width:0;}' +
     '.scb-w input[type=text],.scb-w select{width:100%;box-sizing:border-box;font:inherit;' +
       'font-size:13px;padding:5px 8px;border-radius:6px;color:var(--primary-text-color);' +
       'background:var(--card-background-color,#111);' +
@@ -3729,7 +3839,14 @@
       'border-color:var(--primary-color,#03a9f4);background:rgba(3,169,244,.10);}' +
     '.scb-stan{font-size:12px;color:var(--secondary-text-color);}' +
     '.scb-blad{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;' +
-      'background:rgba(224,87,74,.15);border:1px solid var(--error-color,#e0574a);}';
+      'background:rgba(224,87,74,.15);border:1px solid var(--error-color,#e0574a);}' +
+    '.scb-profil{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:13px;display:grid;gap:4px;' +
+      'background:rgba(3,169,244,.1);border:1px solid var(--primary-color,#03a9f4);}' +
+    '.scb-profil[data-blad]{background:rgba(224,87,74,.15);border-color:var(--error-color,#e0574a);}' +
+    '.scb-profil-info{color:var(--secondary-text-color);}' +
+    '.scb-profil button{justify-self:start;margin-top:2px;font:inherit;padding:3px 10px;border-radius:6px;' +
+      'cursor:pointer;border:1px solid var(--divider-color,rgba(127,127,127,.4));background:none;' +
+      'color:var(--primary-text-color);}';
 
   /* config -> value, value -> config. The rule everywhere: a value equal to the
      card's default is not written, and a key the editor does not model is never
@@ -3803,6 +3920,25 @@
 
   class SunCycleBgCardEditor extends HTMLElement {
     setConfig(config) {
+      const yaml = JSON.parse(JSON.stringify(config || {}));
+      const name = profileName(yaml);
+      if (name) {
+        // A card on a shared profile: the form edits the profile itself and
+        // writes it back as it goes; the card's YAML stays `profile: <name>`.
+        this._yamlProfil = yaml;
+        if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
+        this._pamiec = this._pamiec || {};
+        if (name !== this._profil) {
+          this._profil = name;
+          this._profilStan = 'czeka';
+          this._profilStart = null;
+          this._cfg = { type: yaml.type };
+          this._buduj();
+          this._profilWczytaj();
+        }
+        return;
+      }
+      this._profil = null;
       this._cfg = JSON.parse(JSON.stringify(config || {}));
       this._pamiec = this._pamiec || {};
       if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
@@ -3814,7 +3950,129 @@
       this._buduj();
     }
 
-    set hass(h) { this._hass = h; }
+    set hass(h) {
+      this._hass = h;
+      if (this._profil && this._profilStan === 'czeka') this._profilWczytaj();
+      if (this.shadowRoot) {
+        for (const e of this.shadowRoot.querySelectorAll('ha-entity-picker')) e.hass = h;
+      }
+    }
+
+    /* An entity field: Home Assistant's own picker (search by name or id,
+       filtered to the domains that make sense), registered on dashboards and
+       on the integration's settings page alike. Where it is not, a text field
+       with a list of the matching entities to pick from, which filters as you
+       type too. Either way an id typed by hand is kept. */
+    _poleEncji(p, v) {
+      if (customElements.get('ha-entity-picker')) {
+        const el = document.createElement('ha-entity-picker');
+        el.hass = this._hass;
+        el.value = v || '';
+        el.includeDomains = p.domeny;
+        el.allowCustomEntity = true;
+        // no placeholder: the picker draws it like a chosen entity, and an
+        // empty field then looked set
+        return el;
+      }
+      const el = document.createElement('input');
+      el.type = 'text'; el.value = v || ''; el.placeholder = p.hint || '';
+      const lista = document.createElement('datalist');
+      lista.id = 'scb-encje-' + p.k.replace(/\W/g, '-');
+      const st = (this._hass && this._hass.states) || {};
+      for (const id of Object.keys(st).sort()) {
+        if (!p.domeny.includes(id.split('.')[0])) continue;
+        const o = document.createElement('option');
+        o.value = id;
+        o.label = (st[id].attributes && st[id].attributes.friendly_name) || id;
+        lista.appendChild(o);
+      }
+      el.setAttribute('list', lista.id);
+      el._lista = lista;
+      return el;
+    }
+
+    _profilWczytaj() {
+      const h = this._hass, name = this._profil;
+      if (!h || typeof h.callWS !== 'function' || this._profilLaduje) return;
+      this._profilLaduje = true;
+      h.callWS({ type: PROFILE_WS + 'get', profile: name }).then((r) => {
+        if (name !== this._profil) return;
+        // a profile not there yet starts from what this card holds itself
+        const cfg = r && isObj(r.config) ? r.config : profileOwn(this._yamlProfil);
+        this._profilNowy = !(r && isObj(r.config));
+        this._profilStart = JSON.parse(JSON.stringify(cfg));
+        this._cfg = Object.assign({ type: this._yamlProfil.type }, JSON.parse(JSON.stringify(cfg)));
+        this._profilStan = 'ok';
+        this._profilInfo = this._profilNowy ? 'The profile does not exist yet: the first change creates it.'
+          : 'Last saved ' + (r.updated ? new Date(r.updated).toLocaleString() : '?') +
+            (r.updated_by ? ' by ' + r.updated_by : '') + '.';
+        this._buduj();
+      }).catch((err) => {
+        if (name !== this._profil) return;
+        this._profilStan = 'blad';
+        this._profilInfo = 'Cannot read the profile (' + ((err && (err.code || err.message)) || err) +
+          '). Is the Sun Cycle Background profiles integration set up?';
+        this._buduj();
+      }).finally(() => { this._profilLaduje = false; });
+    }
+
+    _profilZapisz() {
+      clearTimeout(this._profilT);
+      this._profilT = setTimeout(() => {
+        const name = this._profil;
+        if (!name || !this._hass) return;
+        this._hass.callWS({ type: PROFILE_WS + 'set', profile: name, config: profileOwn(this._cfg) })
+          .then(() => { this._profilInfo = 'Saved ' + new Date().toLocaleTimeString() + ' for every card on this profile.'; })
+          .catch((err) => {
+            this._profilInfo = 'Not saved: ' + ((err && (err.message || err.code)) || err) +
+              (err && err.code === 'unauthorized' ? ' (only an administrator can change a profile)' : '');
+          })
+          .finally(() => this._profilBaner());
+      }, 500);
+    }
+
+    // the strip above the form: which profile, what happened last, undo
+    _profilBaner() {
+      const r = this.shadowRoot;
+      let b = r && r.querySelector('.scb-profil');
+      if (!this._profil) { if (b) b.remove(); return; }
+      if (!b) {
+        b = document.createElement('div');
+        b.className = 'scb-profil';
+        r.insertBefore(b, r.querySelector('style') ? r.querySelector('style').nextSibling : r.firstChild);
+      }
+      b.textContent = '';
+      const t = document.createElement('div');
+      t.innerHTML = '<b></b>';
+      t.firstChild.textContent = 'Shared profile \u201c' + this._profil + '\u201d';
+      t.appendChild(document.createTextNode(this._profilStan === 'czeka' ? ': loading\u2026'
+        : ': changes here are saved at once for every card that uses it.'));
+      b.appendChild(t);
+      const own = Object.keys(profileOwn(this._yamlProfil || {}));
+      if (own.length) {
+        const o = document.createElement('div');
+        o.textContent = 'This card also sets in its own YAML, over the profile: ' + own.join(', ') + '.';
+        b.appendChild(o);
+      }
+      if (this._profilInfo) {
+        const i = document.createElement('div');
+        i.className = 'scb-profil-info';
+        i.textContent = this._profilInfo;
+        b.appendChild(i);
+      }
+      if (this._profilStan === 'ok' && this._profilStart) {
+        const u = document.createElement('button');
+        u.type = 'button';
+        u.textContent = 'Undo changes since opening';
+        u.addEventListener('click', () => {
+          this._cfg = Object.assign({ type: this._cfg.type }, JSON.parse(JSON.stringify(this._profilStart)));
+          this._buduj();
+          this._profilZapisz();
+        });
+        b.appendChild(u);
+      }
+      if (this._profilStan === 'blad') b.setAttribute('data-blad', ''); else b.removeAttribute('data-blad');
+    }
 
     _wlaczona(g) {
       if (!g.wlacznik) return true;
@@ -3827,6 +4085,11 @@
     _emit() {
       edytorSprzataj(this._cfg, EDYTOR_GRUPY);
       this._odswiezYaml();
+      if (this._profil) {
+        // the dashboard keeps `profile: <name>`; the profile takes the change
+        if (this._profilStan === 'ok') this._profilZapisz();
+        return;
+      }
       this._wyslany = edytorOdcisk(this._cfg);
       this.dispatchEvent(new CustomEvent('config-changed', {
         detail: { config: this._cfg }, bubbles: true, composed: true,
@@ -3843,6 +4106,8 @@
       st.textContent = EDYTOR_CSS;
       r.appendChild(st);
 
+      this._profilBaner();
+      if (this._profil && this._profilStan !== 'ok') return;
       const bledy = edytorSprawdzDomyslne();
       if (bledy.length) {
         const b = document.createElement('div');
@@ -3873,7 +4138,7 @@
           sw.addEventListener('change', () => this._przelacz(g, sw.checked));
           sum.appendChild(sw);
         }
-        const zmian = g.pola.filter((p) => !p.glowna && p.typ !== 'tekst' &&
+        const zmian = g.pola.filter((p) => !p.glowna && p.typ !== 'tekst' && p.typ !== 'encja' &&
           !edytorRowne(edytorCzytaj(this._cfg, p.k, p.dom), p.dom)).length;
         sum.querySelector('.scb-odznaka').textContent =
           !wl ? 'off' : zmian ? zmian + (zmian === 1 ? ' change' : ' changes') : '';
@@ -3904,7 +4169,9 @@
             w.appendChild(document.createElement('span'));
             w.appendChild(pole);
           } else {
-            if (p.typ === 'tekst') {
+            if (p.typ === 'encja') {
+              pole = this._poleEncji(p, v);
+            } else if (p.typ === 'tekst') {
               pole = document.createElement('input');
               pole.type = 'text'; pole.value = v || ''; pole.placeholder = p.hint || '';
             } else if (p.typ === 'wybor') {
@@ -3936,13 +4203,14 @@
               pole._dokladne = dokladne;
             }
             w.appendChild(pole);
+            if (pole._lista) w.appendChild(pole._lista);
             w.appendChild(licz);
           }
           pole.dataset.k = p.k;
           const zapisz = (zrodlo) => {
             let nowa;
             if (p.typ === 'bool') nowa = pole.checked;
-            else if (p.typ === 'tekst') nowa = pole.value.trim();
+            else if (p.typ === 'tekst' || p.typ === 'encja') nowa = String(pole.value || '').trim();
             else if (p.typ === 'wybor') nowa = pole.value;
             else {
               const d = pole._dokladne;
@@ -3971,11 +4239,18 @@
             }
             this._emit();
             const od = det.querySelector('.scb-odznaka');
-            const ile = g.pola.filter((q) => !q.glowna && q.typ !== 'tekst' &&
+            const ile = g.pola.filter((q) => !q.glowna && q.typ !== 'tekst' && q.typ !== 'encja' &&
               !edytorRowne(edytorCzytaj(this._cfg, q.k, q.dom), q.dom)).length;
             od.textContent = ile ? ile + (ile === 1 ? ' change' : ' changes') : '';
           };
-          pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', () => zapisz('suwak'));
+          // the HA picker reports through value-changed and leaves its value to its owner
+          if (pole.tagName === 'HA-ENTITY-PICKER') {
+            pole.addEventListener('value-changed', (e) => {
+              e.stopPropagation();
+              pole.value = e.detail.value || '';
+              zapisz('encja');
+            });
+          } else pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', () => zapisz('suwak'));
           if (pole._dokladne) {
             pole._dokladne.addEventListener('change', () => zapisz('liczba'));
             // Enter should commit without waiting for focus to leave
@@ -4189,14 +4464,15 @@
     return bledy;
   }
 
-  customElements.define('sun-cycle-bg-card-editor', SunCycleBgCardEditor);
+  if (!customElements.get('sun-cycle-bg-card-editor')) customElements.define('sun-cycle-bg-card-editor', SunCycleBgCardEditor);
 
-  customElements.define('sun-cycle-bg-card', SunCycleBgCard);
+  if (!customElements.get('sun-cycle-bg-card')) customElements.define('sun-cycle-bg-card', SunCycleBgCard);
 
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
-                       windGust, windLeaf, glassDrop, leafSeason, LEAF_SETS, seasonOfMonth, showerSources, showerMeteor, SHOWERS,
+                       windGust, windLeaf, glassDrop, leafSeason, LEAF_SETS, seasonOfMonth,
+                       profileMerge, profileOwn, showerSources, showerMeteor, SHOWERS,
                        SHOWER_TAB, showerZhr,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
