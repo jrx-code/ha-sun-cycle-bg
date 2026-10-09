@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.3.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.3.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3577,6 +3577,7 @@ void main(){
 }` },
   };
   const FX_ORDER = ['aurora', 'clouds', 'fog', 'snow'];
+  const SLIDE_MS = 2000, SLIDE_M = 0.25;
   let FX_BROKEN = false;
   function fxBroken(why) {
     if (!FX_BROKEN) console.warn('sun-cycle-bg: WebGL weather effects unavailable (' + why + '), falling back to effects_style: classic');
@@ -3684,6 +3685,11 @@ void main(){
     if (F.layer._scwFX !== F || document.hidden) return;
     if (!F.layer.isConnected) { fxDestroy(F.layer); F.layer._print = null; return; }
     F.raf = requestAnimationFrame((ts) => fxFrame(F, ts));
+    if (F.slide) {
+      if (!F.tR || now - F.tR >= SLIDE_MS) { fxDraw(F, now); F.tR = now; }
+      F.cv.style.transform = 'translateX(' + (F.vx * (now - F.tR) / 10).toFixed(4) + '%)';
+      return;
+    }
     if (now - F.last < 1000 / F.fps - 3) return;
     F.last = now;
     fxDraw(F, now);
@@ -3767,9 +3773,30 @@ void main(){
     F.calm = weatherCalm();
     F.factor = GL_RES[cfg.quality];
     F.fps = Math.min(GL_FPS[cfg.quality], Math.max(...keys.map((k) => FX_PROGRAMS[k].cap)));
-    const s = Math.min(F.factor, GL_MAX_W / Math.max(1, ctx.W));
-    const w = Math.max(2, Math.round(ctx.W * s)), h = Math.max(2, Math.round(ctx.H * s));
+    // Clouds alone (2.3.1): the shader renders them every SLIDE_MS on a canvas
+    // SLIDE_M wider than the frame, and between renders the compositor slides
+    // that canvas at the clouds' own speed. On the Pi 5 kiosk the shader at
+    // 15 fps managed about 10 uneven frames a second (the WebView runs near
+    // 28 fps, GPU-bound), so the clouds jumped; now they glide at the page's
+    // frame rate and the GPU renders them 20 times less often.
+    F.slide = keys.length === 1 && keys[0] === 'clouds' && !F.calm;
+    const M = F.slide ? SLIDE_M : 0;
+    const s = Math.min(F.factor, GL_MAX_W / Math.max(1, ctx.W * (1 + M)));
+    const w = Math.max(2, Math.round(ctx.W * (1 + M) * s)), h = Math.max(2, Math.round(ctx.H * s));
     if (F.cv.width !== w || F.cv.height !== h) { F.cv.width = w; F.cv.height = h; }
+    if (F.slide) {
+      const c = on.clouds, asp = ctx.W * (1 + M) / Math.max(1, ctx.H);
+      // the low tier's screen speed at mid height, from the shader's sky plane
+      // (p = plaszcz(uv) + uT * uWind * 2.4, k 2.8, z = 2 / (1.82 - 0.45)): canvas widths per second
+      F.vx = -c.uWind * 2.4 / (asp * (2 / (1.82 - 0.45)) * 2.8);
+      const lewy = F.vx > 0 ? M : 0;                     // spare canvas on the side the clouds come from
+      c.uSun = [(c.uSun[0] + lewy) / (1 + M), c.uSun[1]];
+      F.cv.style.cssText = 'position:absolute;top:0;height:100%;width:' + (100 * (1 + M)) + '%;left:' +
+        (-100 * lewy) + '%;will-change:transform;';
+      F.tR = 0;                                          // new weather: render at once
+    } else if (F.cv.style.left) {
+      F.cv.style.cssText = 'width:100%;height:100%;';
+    }
     if (F.calm) {
       if (F.raf) cancelAnimationFrame(F.raf);
       F.raf = 0;
@@ -4228,7 +4255,7 @@ void main(){
     const F = layer && layer._scwFX, D = layer && layer._scwFX2;
     return {
       broken: FX_BROKEN,
-      gl: F ? { effects: FX_ORDER.filter((k) => F.on[k]), looping: !!F.raf, fps: F.fps, factor: F.factor,
+      gl: F ? { effects: FX_ORDER.filter((k) => F.on[k]), looping: !!F.raf, fps: F.fps, factor: F.factor, slide: !!F.slide,
                 width: F.cv.width, height: F.cv.height, calm: F.calm, frames: F.frames } : null,
       canvas2d: D ? { hail: !!D.hail, wind: !!D.wind, lightning: !!D.storm, strike: !!D.strike, looping: !!D.raf,
                       leaves: D.liscie.length, leafSet: D.wind ? D.wind.liscie : null, pellets: D.kul.length,
