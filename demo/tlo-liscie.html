@@ -1,3 +1,101 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tło: liście na wietrze</title>
+<style>
+  :root { --bg:#0e1420; --surface:#161e2e; --surface2:#1d2738; --ink:#e6ebf3; --muted:#9aa6b8;
+          --accent:#7cb3f9; --line:#2a3548; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width:1280px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  h2 { font-size:17px; margin:28px 0 10px; }
+  p { margin:6px 0; color:var(--muted); max-width:78ch; }
+  code { color:#cfd6e2; }
+  hui-view-container#scena { position:relative; display:block; width:100%; aspect-ratio:16/9;
+           border-radius:12px; overflow:hidden; background:#000; border:1px solid var(--line); margin-top:14px; }
+  hui-view-background { position:absolute; inset:0; display:block; z-index:0; }
+  .panel { display:flex; flex-wrap:wrap; gap:14px 22px; align-items:center; margin:14px 0 4px;
+           background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .grupa { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .grupa > span { color:var(--muted); font-size:13px; margin-right:4px; }
+  button { background:var(--surface2); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+           padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  button.on { background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600; }
+  input[type=range] { width:180px; }
+  .odczyt { font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .galeria { display:grid; gap:10px; }
+  .pasek { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px; }
+  .pasek b { display:block; font-size:14px; margin-bottom:6px; }
+  .pasek .komorki { display:flex; flex-wrap:wrap; gap:4px; }
+  .pasek .komorki div { width:64px; height:64px; border-radius:8px;
+                        background-color:#1e2c44; background-repeat:no-repeat; }
+  .pasek.jasne .komorki div { background-color:#a9bccf; }
+  table { border-collapse:collapse; font-size:13.5px; margin-top:6px; }
+  td, th { border-bottom:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+</style>
+</head>
+<body>
+<script>
+/* Symulowany zegar: karta bierze miesiąc (pora roku liści), księżyc i planety
+   z `new Date()`, więc Date jest podmienione, zanim karta się załaduje. */
+const RD = Date;
+let SIM_OFF = 0;
+class SimDate extends RD {
+  constructor(...a) { if (a.length) super(...a); else super(RD.now() + SIM_OFF); }
+  static now() { return RD.now() + SIM_OFF; }
+}
+window.Date = SimDate;
+</script>
+<main>
+  <h1>Tło: liście na wietrze według pory roku</h1>
+  <p>Na scenie rysuje prawdziwa karta <code>sun-cycle-bg sun-cycle-bg 1.28.0</code> z gałęzi
+  <code>feat/leaf-sprites</code> i z konfiguracją z panelu salonu. Do tej pory wiatr niósł kolorowe
+  elipsy. Teraz niesie sprite'y: jesienią liście klonu i dębu, wiosną płatki i kwiaty wiśni oraz młode
+  liście buka i lipy, latem liście lipy i klonu, płatki maku, stokrotki i jaskier. Obrazy wygenerował
+  <code>google/gemini-nano-banana-2.1</code> przez OpenRouter na jednolitym niebieskim tle;
+  tło wycięte i spakowane w paski skryptem <code>tools/leaves.py</code>.</p>
+  <p>Porę roku karta bierze z <code>weather.season_entity</code> (na panelu <code>sensor.pora_roku</code>,
+  integracja Season, typ astronomiczny: zmiana w dniu równonocy i przesilenia), a bez niej z miesiąca.
+  Na tej stronie encji nie ma, więc przełącznik pory roku ustawia miesiąc.</p>
+
+  <div class="panel">
+    <div class="grupa" id="pory"><span>Pora roku</span></div>
+    <div class="grupa" id="tryby"><span>leaves:</span></div>
+    <div class="grupa"><span>Wiatr</span><input type="range" id="wiatr" min="0" max="80" step="1" value="45">
+      <span class="odczyt" id="wiatrV"></span></div>
+    <div class="grupa" id="jakosc"><span>quality:</span></div>
+    <div class="grupa" id="dzien"><span>Pora dnia</span></div>
+  </div>
+  <div class="odczyt" id="stan"></div>
+  <hui-view-container id="scena">
+    <hui-view-background></hui-view-background>
+    <sun-cycle-bg-card id="karta"></sun-cycle-bg-card>
+  </hui-view-container>
+
+  <h2>Wszystkie sprite'y</h2>
+  <p>Każda pora roku to jeden pasek kwadratowych komórek 128 px w WebP z kanałem alfa
+  (autumn 61 kB, spring 56 kB, summer 79 kB). Pokazane na ciemnym i jasnym tle, żeby było
+  widać krawędzie po wycięciu.</p>
+  <div class="galeria" id="galeria"></div>
+
+  <h2>Tryby <code>weather.leaves</code></h2>
+  <table>
+    <tr><th>Tryb</th><th>III–V</th><th>VI–VIII</th><th>IX–XI</th><th>XII–II</th><th>Uwagi</th></tr>
+    <tr><td><code>autumn</code></td><td>—</td><td>—</td><td>jesień</td><td>—</td><td>domyślny, jak dotąd</td></tr>
+    <tr><td><code>seasons</code></td><td>wiosna</td><td>lato</td><td>jesień</td><td>—</td><td>nowy</td></tr>
+    <tr><td><code>always</code></td><td>wiosna</td><td>lato</td><td>jesień</td><td>suche liście jesienne</td><td>dotąd: zielone elipsy poza jesienią</td></tr>
+    <tr><td><code>off</code></td><td>—</td><td>—</td><td>—</td><td>—</td><td></td></tr>
+  </table>
+  <p>Zbudowano 2026-10-09. Liście lecą tylko przy wietrze od ok. 22 km/h albo przy stanie
+  <code>windy</code>; przy <code>quality: low</code> (tak jest na panelu) jest ich najmniej.</p>
+</main>
+
+<script>
+/* ---- sun-cycle-bg.js, wklejone przy budowaniu strony ---- */
 /* sun-cycle-bg 1.28.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
@@ -4213,3 +4311,89 @@
     description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, the planets where the Sol integration puts them, a star field with flares, meteor showers from the IMO calendar and the real ISS, and the weather: cloud, rain, snow, hail, fog, lightning, wind and aurora.',
   });
 })();
+
+</script>
+
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KONFIG = {"type": "custom:sun-cycle-bg-card", "stars": {"count": 160, "drift": 0, "sizes": "mixed", "size": 0.5, "glow": 0.05, "twinkle": 0.45, "flares": {"count": 5, "every": 18, "strength": 1, "spikes": false}, "meteors": {"rate": 28, "length": 110, "speed": 1.1, "radiant": [78, 12], "pair": 0.35, "showers": "imo", "boost": 3, "limiting_magnitude": 5.8}, "iss": {"entities": "sensor.iss_visual_pass_", "count": 5, "trail": 60, "label": true}}, "weather": {"entity": "weather.openweathermap", "clouds_entity": "weather.astroweather_dom", "gust_entity": "sensor.dom_anemometr_gust_strength", "precipitation_entity": "sensor.openweathermap_rain", "quality": "low", "glass": true, "aurora": {"kp_entity": "sensor.planetary_k_index", "min_kp": 5}}, "sun_image": "/local/sun-cycle/sun.png", "sun_image_width": 10.5, "sun_image_blur": 11.5, "sun_image_disc": [0.78878, 0.50816, 0.48469], "moon_image": "/local/sun-cycle/moon.png", "moon_image_width": 13, "moon_image_disc": [0.4287, 0.5, 0.5], "planets": {"size": 1.2, "scale": "diameters", "glow": 0.35}, "milky_way": {"image": "/local/sun-cycle/milky-way.jpg?v=2", "projection": "equirect", "strength": 0.62, "horizon": 18}};
+const ZASOBY = new URLSearchParams(location.search).get("assets") || "/local/sun-cycle/";
+const LAT = 53.5, LON = 14.5;
+const PORY = [["Wiosna", 4], ["Lato", 7], ["Jesień", 10], ["Zima", 1]];
+const DZIEN = [["Dzień", 14, 32], ["Zmierzch", 19, -4], ["Noc", 23, -25]];
+const S = { mies: 10, tryb: "seasons", wiatr: 45, jakosc: KONFIG.weather && KONFIG.weather.quality || "low", dzien: 0 };
+
+const karta = $("karta");
+
+function konfig() {
+  const k = JSON.parse(JSON.stringify(KONFIG));
+  k.assets = ZASOBY;
+  if (k.stars) delete k.stars.iss;
+  k.weather = { entity: "weather.sim", quality: S.jakosc, leaves: S.tryb, glass: false };
+  return k;
+}
+function ustaw() {
+  const [, godz, elev] = DZIEN[S.dzien];
+  const d = new RD(RD.UTC(new RD().getUTCFullYear(), S.mies - 1, 15, godz - 2, 0));
+  SIM_OFF = d.getTime() - RD.now();
+  karta.setConfig(konfig());
+  karta.hass = { config: { latitude: LAT, longitude: LON }, states: {
+    "sun.sun": { state: elev > 0 ? "above_horizon" : "below_horizon", attributes: { elevation: elev, azimuth: 225 } },
+    "weather.sim": { state: S.wiatr >= 40 ? "windy" : "partlycloudy",
+      attributes: { wind_speed: S.wiatr, wind_speed_unit: "km/h", wind_bearing: 270, cloud_coverage: 25, temperature: 14 } },
+  } };
+  if (typeof karta._apply === "function") karta._apply();
+  $("wiatrV").textContent = S.wiatr + " km/h";
+  const pora = window.sunCycleBg.leafSeason(S.tryb, S.mies);
+  $("stan").textContent = "Symulowany dzień: 15." + String(S.mies).padStart(2, "0") +
+    ", zestaw liści: " + (pora || "brak (w tym miesiącu ten tryb nic nie niesie)") +
+    (S.wiatr < 22 ? "; wiatr poniżej progu, liści nie będzie" : "");
+}
+function przyciski(id, lista, klucz, wartosc) {
+  const g = $(id);
+  lista.forEach((el, i) => {
+    const b = document.createElement("button");
+    b.textContent = Array.isArray(el) ? el[0] : el;
+    b.onclick = () => { S[klucz] = wartosc(el, i); odswiez(); ustaw(); };
+    b.dataset.v = String(wartosc(el, i));
+    g.appendChild(b);
+  });
+}
+function odswiez() {
+  for (const [id, k] of [["pory", "mies"], ["tryby", "tryb"], ["jakosc", "jakosc"], ["dzien", "dzien"]])
+    for (const b of $(id).querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === String(S[k]));
+}
+przyciski("pory", PORY, "mies", (el) => el[1]);
+przyciski("tryby", ["autumn", "seasons", "always", "off"], "tryb", (el) => el);
+przyciski("jakosc", ["low", "medium", "high"], "jakosc", (el) => el);
+przyciski("dzien", DZIEN, "dzien", (el, i) => i);
+$("wiatr").oninput = (e) => { $("wiatrV").textContent = e.target.value + " km/h"; };
+$("wiatr").onchange = (e) => { S.wiatr = +e.target.value; ustaw(); };
+odswiez();
+ustaw();
+
+const NAZWY = { autumn: "Jesień: klon zwyczajny i dąb szypułkowy",
+                spring: "Wiosna: płatki i kwiaty wiśni, młode liście buka i lipy",
+                summer: "Lato: liście lipy i klonu, płatki maku, stokrotki, jaskier" };
+for (const [pora, [plik, n]] of Object.entries(window.sunCycleBg.LEAF_SETS)) {
+  for (const jasne of [false, true]) {
+    const p = document.createElement("div");
+    p.className = "pasek" + (jasne ? " jasne" : "");
+    p.innerHTML = "<b>" + NAZWY[pora] + " (" + n + ", " + plik + (jasne ? ", jasne tło" : "") + ")</b><div class=komorki></div>";
+    const k = p.querySelector(".komorki");
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement("div");
+      c.style.backgroundImage = 'url("' + ZASOBY + plik + '")';
+      c.style.backgroundSize = n * 100 + "% 100%";
+      c.style.backgroundPosition = (i / (n - 1) * 100).toFixed(3) + "% 0";
+      k.appendChild(c);
+    }
+    $("galeria").appendChild(p);
+  }
+}
+})();
+</script>
+</body>
+</html>

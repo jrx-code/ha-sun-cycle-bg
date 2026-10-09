@@ -558,7 +558,28 @@ function czytajWiatr(cont) {
     ms: Math.round(e.getAnimations()[0].effect.getTiming().duration) } : null;
   return { wiatr: true, timer: !!w._scwT.wind, sila: +st.sila.toFixed(2), kier: st.kier,
            liscie: st.liscie, predkosc: Math.round(st.v), smuga: anim(g), lisc: anim(l),
-           lisc_kolor: l ? l.style.background : null };
+           lisc_sprite: l ? [l.dataset.lisc, l.style.backgroundImage, l.style.backgroundPosition, l.style.backgroundSize] : null };
+}
+// 1.28.0: sprite'y lisci wedlug pory roku, tryby x miesiace
+out.push(['LISCIE pora roku', Object.fromEntries(['autumn', 'seasons', 'always', false].map((m) =>
+  [String(m), [1, 4, 7, 10, 12].map((mc) => window.sunCycleBg.leafSeason(m, mc))]))]);
+out.push(['LISCIE tryby x pory', Object.fromEntries(['autumn', 'seasons', 'always'].map((m) =>
+  [m, ['spring', 'summer', 'autumn', 'winter'].map((p) => window.sunCycleBg.leafSeason(m, p))]))]);
+out.push(['LISCIE zestawy', Object.fromEntries(Object.entries(window.sunCycleBg.LEAF_SETS))]);
+out.push(['LISCIE leafBase', [window.sunCycleBg.readWeatherConfig({ entity: 'weather.t' }).leafBase,
+  window.sunCycleBg.readWeatherConfig({ entity: 'weather.t' }, '/local/x/').leafBase]]);
+// season_entity: pora z encji wygrywa z miesiacem (zegar testu stoi w sierpniu)
+{
+  const pora = (v) => {
+    const z = pogoda(20, { entity: 'weather.t', leaves: 'seasons', season_entity: 'sensor.pora' }, 'windy',
+      { wind_speed: 10, wind_bearing: 90 });
+    if (v !== undefined) z.states['sensor.pora'] = { state: v };
+    z.card.hass = { states: z.states, config: { latitude: 52.2297, longitude: 21.0122 } };
+    const w = z.cont.querySelector('.sun-cycle-weather');
+    return w && w._scwWiatr ? w._scwWiatr.liscie : 'brak warstwy';
+  };
+  out.push(['LISCIE season_entity', { winter: pora('winter'), spring: pora('spring'), Autumn: pora('Autumn'),
+    unavailable: pora('unavailable'), brak_encji: pora(undefined) }]);
 }
 out.push(['WIATR 15 km/h: nic', czytajWiatr(pogoda(20, { entity: 'weather.t' }, 'partlycloudy',
   { cloud_coverage: 30, wind_speed: 15, wind_bearing: 270 }).cont)]);
