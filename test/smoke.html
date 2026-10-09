@@ -545,6 +545,36 @@ out.push(['MGLA fog: false', czytajMgle(pogoda(20, { entity: 'weather.t', fog: f
   out.push(['BLYSK lightning: false', { timer: !!w2._scwT.bolt, flash: !!w2.querySelector('.scw-flash') }]);
 }
 
+// --- 1.23.0: wiatr (data testu: 28 sierpnia, czyli nie jesien) -----------
+function czytajWiatr(cont) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  const st = w && w._scwWiatr;
+  if (!st) return { wiatr: false, timer: !!(w && w._scwT.wind) };
+  const host = w.querySelector('.scw-wind');
+  window.sunCycleBg.windGust(host, st);
+  if (st.liscie) window.sunCycleBg.windLeaf(host, st);
+  const g = host.querySelector('.scw-gust'), l = host.querySelector('.scw-leaf');
+  const anim = (e) => e ? { klatek: e.getAnimations()[0].effect.getKeyframes().length,
+    ms: Math.round(e.getAnimations()[0].effect.getTiming().duration) } : null;
+  return { wiatr: true, timer: !!w._scwT.wind, sila: +st.sila.toFixed(2), kier: st.kier,
+           liscie: st.liscie, predkosc: Math.round(st.v), smuga: anim(g), lisc: anim(l),
+           lisc_kolor: l ? l.style.background : null };
+}
+out.push(['WIATR 15 km/h: nic', czytajWiatr(pogoda(20, { entity: 'weather.t' }, 'partlycloudy',
+  { cloud_coverage: 30, wind_speed: 15, wind_bearing: 270 }).cont)]);
+out.push(['WIATR 45 km/h z zachodu, leaves autumn w sierpniu', czytajWiatr(pogoda(20,
+  { entity: 'weather.t' }, 'partlycloudy', { cloud_coverage: 30, wind_speed: 45, wind_bearing: 270 }).cont)]);
+out.push(['WIATR windy ze wschodu, leaves always (zielone)', czytajWiatr(pogoda(20,
+  { entity: 'weather.t', leaves: 'always' }, 'windy', { wind_speed: 10, wind_bearing: 90 }).cont)]);
+out.push(['WIATR poryw z czujnika 50 km/h przy 10 km/h', czytajWiatr((() => {
+  const z = pogoda(20, { entity: 'weather.t', gust_entity: 'sensor.g' }, 'partlycloudy',
+    { cloud_coverage: 30, wind_speed: 10, wind_bearing: 270 });
+  const st = Object.assign({}, z.states, { 'sensor.g': { state: '50', attributes: { unit_of_measurement: 'km/h' } } });
+  z.card.hass = { states: st, config: { latitude: 52.2297, longitude: 21.0122 } };
+  return z.cont; })())]);
+out.push(['WIATR wind: false', czytajWiatr(pogoda(20, { entity: 'weather.t', wind: false }, 'windy',
+  { wind_speed: 60 }).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');

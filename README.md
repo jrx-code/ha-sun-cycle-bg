@@ -668,6 +668,8 @@ weather:
   hail: true
   fog: true
   lightning: true
+  wind: true
+  leaves: autumn
 ```
 
 | Key | Default | What it does |
@@ -684,6 +686,9 @@ weather:
 | `hail` | `true` | For `hail`: pellets in two depths in front of rain, bouncing where they land (1.20.0). |
 | `fog` | `true` | Haze towards the horizon and drifting banks, from `fog`, from `fog_area_fraction` of `clouds_entity`, or from visibility under 1 km (1.21.0). |
 | `lightning` | `true` | Strikes every 3-12 s for `lightning` and `lightning-rainy` (half as often for `exceptional`): a sky flash with return strokes, and a forked bolt or a glow in the cloud (1.22.0). |
+| `wind` | `true` | Gust streaks crossing the sky from about 22 km/h, or for `windy` / `windy-variant` (1.23.0). |
+| `leaves` | `autumn` | Tumbling leaves with the wind: `autumn` (September to November only), `always` (green outside autumn) or `off` (1.23.0). |
+| `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -745,6 +750,10 @@ Three sources, the strongest wins: the condition `fog` (0.85), `fog_area_fractio
 A timer decides when, nothing else: every 3 to 12 s in a thunderstorm. A strike is two short opacity animations on the compositor. The whole sky flashes (one element in `screen` blend) with the first stroke and two weaker return strokes inside 0.7 s. Six strikes in ten come down to the ground as a jagged SVG bolt with forks, a wide pale stroke under a thin white one standing in for the glow, no filter. The rest light a patch of cloud from inside. Each element is removed when its animation ends. By day the flash is less than half as bright. With *reduce motion* on, nothing strikes.
 
 The bolt sits behind the rain and the flash over everything, so the rain is lit by it.
+
+### Wind
+
+The wind already tilts the rain and snow and pushes the clouds. Past about 22 km/h (or 80 % of a gust, or for the windy conditions) it also shows on its own: faint gust streaks cross the sky in the wind's direction with a slight wave, and in autumn leaves tumble across, turning over as they go (a rotation plus a vertical squash through nearly zero). Each streak or leaf is one element on one Web Animation that carries it across the frame and removes it at the far side. A timer only decides when the next one leaves, about twice a second at full strength, with at most 14 streaks and 16 leaves in flight at `high`.
 
 ## Tuning the palette
 

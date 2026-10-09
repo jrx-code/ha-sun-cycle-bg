@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.22.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.23.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -89,6 +89,9 @@
  *     hail: true                    # pellets in two depths, bouncing at the horizon
  *     fog: true                     # haze and drifting banks
  *     lightning: true               # strikes in a thunderstorm
+ *     wind: true                    # gust streaks from ~22 km/h
+ *     leaves: autumn                # autumn | always | off
+ *     gust_entity: sensor.gust      # optional
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
@@ -1482,7 +1485,7 @@
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
                          'scw-clouds-low', 'scw-bolt', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
-                         'scw-hail-1', 'scw-flash'];
+                         'scw-hail-1', 'scw-wind', 'scw-flash'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1493,6 +1496,7 @@
     return {
       entity: str(w.entity),
       clouds_entity: str(w.clouds_entity),
+      gust_entity: str(w.gust_entity),
       precipitation_entity: str(w.precipitation_entity),
       quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
       veil: w.veil !== false,
@@ -1503,6 +1507,8 @@
       hail: w.hail !== false,
       fog: w.fog !== false,
       lightning: w.lightning !== false,
+      wind: w.wind !== false,
+      leaves: w.leaves === false || w.leaves === 'off' ? false : (w.leaves === 'always' ? 'always' : 'autumn'),
     };
   }
 
@@ -1567,8 +1573,15 @@
       const mm = Number(pr.state);
       if (isFinite(mm) && mm > 0) rate = clamp(mm / 4, 0.15, 1);
     }
+    let gust = null;
+    const gs = cfg.gust_entity && states[cfg.gust_entity];
+    if (gs) {
+      if (isFinite(Number(gs.state))) gust = windKmh(gs.state, (gs.attributes || {}).unit_of_measurement);
+    } else if (isFinite(a.wind_gust_speed)) {
+      gust = windKmh(a.wind_gust_speed, a.wind_speed_unit);
+    }
     return {
-      cond, rate,
+      cond, rate, gust,
       cover: clamp(1 - (1 - low) * (1 - mid * 0.8) * (1 - high * 0.35), 0, 1),
       low, mid, high, fog,
       storm: c[1],
@@ -1629,6 +1642,7 @@
       Object.values(layer._scwT).forEach(clearTimeout);
       layer._scwT = {};
       layer._scwBurza = null;
+      layer._scwWiatr = null;
       for (const a of layer.getAnimations ? layer.getAnimations({ subtree: true }) : []) a.cancel();
     };
     return layer;
@@ -2241,6 +2255,106 @@
     a.onfinish = () => el.remove();
   }
 
+  const LEAVES_AUTUMN = ['#c8641e', '#e0a030', '#8a4b1a', '#b8902a', '#9c3b16'];
+  const LEAVES_GREEN = ['#6e9f3a', '#86b34a', '#5c8a2e'];
+
+  /* Wind you can see: faint gust streaks crossing the sky and, in autumn,
+     tumbling leaves. Each streak or leaf is one element on one Web Animation
+     that carries it across the frame and removes it at the far side; a timer
+     only decides when the next one leaves. From ~22 km/h, or for the windy
+     conditions; gusts from `gust_entity` when there is one. */
+  function weatherWind(layer, cfg, ws, ctx) {
+    let sila = 0;
+    if (cfg.wind && ws) {
+      const v = Math.max(ws.wind, ws.gust !== null && ws.gust !== undefined ? ws.gust * 0.8 : 0);
+      sila = clamp((v - 18) / 40, 0, 1);
+      if (ws.cond === 'windy' || ws.cond === 'windy-variant') sila = Math.max(sila, 0.5);
+    }
+    if (sila <= 0) {
+      layer._scwWiatr = null;
+      clearTimeout(layer._scwT.wind); layer._scwT.wind = 0;
+      weatherDrop(layer, 'scw-wind');
+      return;
+    }
+    const m = ctx.month;
+    const jesien = m >= 9 && m <= 11;
+    const liscie = cfg.leaves === 'always' ? (jesien ? LEAVES_AUTUMN : LEAVES_GREEN)
+      : (cfg.leaves === 'autumn' && jesien ? LEAVES_AUTUMN : null);
+    const wx = weatherWindX(ws, ctx);
+    layer._scwWiatr = {
+      sila, kier: wx < 0 ? -1 : 1, liscie,
+      v: (300 + Math.max(ws.wind, 20) * 10) * (ctx.H / 400),
+      W: ctx.W, H: ctx.H, n: WEATHER_QUALITY[cfg.quality].n,
+    };
+    weatherChild(layer, 'scw-wind').style.overflow = 'hidden';
+    if (!layer._scwT.wind) windPlan(layer, 0.5);
+  }
+
+  function windPlan(layer, s) {
+    layer._scwT.wind = setTimeout(() => {
+      layer._scwT.wind = 0;
+      const w = layer._scwWiatr;
+      if (!w || !layer.isConnected) return;
+      const host = layer.querySelector(':scope > .scw-wind');
+      if (host && !weatherCalm()) {
+        const smugi = host.querySelectorAll('.scw-gust').length;
+        const liscie = host.querySelectorAll('.scw-leaf').length;
+        if (smugi < 14 * w.n && (!w.liscie || Math.random() < 0.65)) windGust(host, w);
+        else if (w.liscie && liscie < 16 * w.n) windLeaf(host, w);
+      }
+      // more wind, more often: about two a second at full strength
+      windPlan(layer, (0.35 + Math.random() * 0.9) / (0.4 + w.sila * 1.4));
+    }, s * 1000);
+  }
+
+  function windGust(host, w) {
+    const k = w.H / 400, len = (60 + Math.random() * 140) * k;
+    const el = document.createElement('div');
+    el.className = 'scw-gust';
+    const y = Math.random() * w.H * 0.85;
+    el.style.cssText = 'position:absolute;left:0;top:' + y.toFixed(0) + 'px;width:' + len.toFixed(0) +
+      'px;height:' + Math.max(1.5, 2 * k).toFixed(1) + 'px;border-radius:2px;opacity:0;' +
+      'background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.55),rgba(255,255,255,0));';
+    host.appendChild(el);
+    const x0 = w.kier > 0 ? -len : w.W, x1 = w.kier > 0 ? w.W : -len;
+    const fala = (6 + Math.random() * 10) * k;
+    // faint, but not lost on a bright noon sky
+    const op = (0.22 + 0.18 * w.sila).toFixed(3);
+    const a = el.animate([
+      { transform: 'translate(' + x0.toFixed(0) + 'px,0)', opacity: 0 },
+      { transform: 'translate(' + lerp(x0, x1, 0.3).toFixed(0) + 'px,' + (-fala).toFixed(1) + 'px)', opacity: op, offset: 0.3 },
+      { transform: 'translate(' + lerp(x0, x1, 0.7).toFixed(0) + 'px,' + fala.toFixed(1) + 'px)', opacity: op, offset: 0.7 },
+      { transform: 'translate(' + x1.toFixed(0) + 'px,0)', opacity: 0 }],
+    { duration: (w.W + len) / w.v * 1000 * (0.8 + Math.random() * 0.5), easing: 'ease-in-out' });
+    a.onfinish = () => el.remove();
+  }
+
+  function windLeaf(host, w) {
+    const k = w.H / 400, r = (6 + Math.random() * 6) * k;
+    const el = document.createElement('div');
+    el.className = 'scw-leaf';
+    const kol = w.liscie[(Math.random() * w.liscie.length) | 0];
+    el.style.cssText = 'position:absolute;left:0;top:0;width:' + (2 * r).toFixed(1) + 'px;height:' +
+      (1.1 * r).toFixed(1) + 'px;border-radius:50%;opacity:.9;background:' + kol + ';' +
+      'box-shadow:inset 0 -1px 0 rgba(60,30,10,.45);';
+    host.appendChild(el);
+    const y0 = Math.random() * w.H * 0.6;
+    const x0 = w.kier > 0 ? -20 : w.W + 20, x1 = w.kier > 0 ? w.W + 20 : -20;
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 540);
+    const ramki = [];
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const x = lerp(x0, x1, t), y = y0 + t * w.H * 0.3 + Math.sin(t * Math.PI * 3) * 22 * k;
+      // the leaf turns over: its height swings through nearly zero
+      const flip = Math.abs(Math.cos(t * Math.PI * 4)) * 0.8 + 0.2;
+      ramki.push({ transform: 'translate(' + x.toFixed(0) + 'px,' + y.toFixed(0) + 'px) rotate(' +
+        (spin * t).toFixed(0) + 'deg) scaleY(' + flip.toFixed(2) + ')' });
+    }
+    const a = el.animate(ramki, { duration: (w.W + 40) / (w.v * (0.35 + Math.random() * 0.3)) * 1000,
+      easing: 'linear' });
+    a.onfinish = () => el.remove();
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
@@ -2249,6 +2363,7 @@
     weatherSnow(layer, cfg, ws, ctx);
     weatherHail(layer, cfg, ws, ctx);
     weatherLightning(layer, cfg, ws, ctx);
+    weatherWind(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2377,6 +2492,7 @@
       }
       // a storm whose timer chain stopped while the view was away
       if (layer._scwBurza && !layer._scwT.bolt && layer.isConnected) lightningPlan(layer, 2);
+      if (layer._scwWiatr && !layer._scwT.wind && layer.isConnected) windPlan(layer, 1);
       const ws = readWeather(st, cfg);
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
@@ -3021,6 +3137,12 @@
         o: 'Haze towards the horizon and drifting banks, from the condition, fog fraction or low visibility.' },
       { k: 'weather.lightning', et: 'lightning', typ: 'bool', dom: true, w: 'lightning',
         o: 'Strikes every few seconds in a thunderstorm: a sky flash, a forked bolt or a glow in the cloud.' },
+      { k: 'weather.wind', et: 'wind', typ: 'bool', dom: true, w: 'wind',
+        o: 'Gust streaks from about 22 km/h, or in the windy conditions.' },
+      { k: 'weather.leaves', et: 'leaves', typ: 'wybor', opcje: ['autumn', 'always', 'off'], dom: 'autumn', w: 'leaves',
+        o: 'Tumbling leaves with the wind: autumn only (Sept-Nov), all year (green outside autumn), or none.' },
+      { k: 'weather.gust_entity', et: 'gust sensor', typ: 'tekst', dom: '', hint: 'sensor.wind_gust',
+        o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },
@@ -3569,6 +3691,7 @@
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
+                       windGust, windLeaf,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,
