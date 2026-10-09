@@ -282,6 +282,9 @@ under `/local/` — see [Planets](#planets).
 
 ### Upgrading from 1.x (Dashboard plugin) to 2.0 (integration)
 
+Every release still carries the card and its pictures as release assets, so a
+1.x install that HACS keeps as a Dashboard plugin goes on updating and drawing
+as a standalone card; profiles and the settings page need the move below.
 HACS keeps a repository under the category it was added with, so the plugin
 entry has to make way for the integration:
 
