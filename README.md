@@ -719,7 +719,7 @@ weather:
 |---|---|---|
 | `entity` | none | Condition, `cloud_coverage`, `wind_speed` (+ unit), `wind_bearing` (degrees or a compass point), `visibility`. Without it nothing is drawn. |
 | `clouds_entity` | none | Cover per height and fog, read from the [AstroWeather](https://github.com/mawinkler/astroweather) attributes `cloud_area_fraction_low/medium/high` and `fog_area_fraction`. Without it the total cover is spread over the heights. |
-| `quality` | `medium` | Share of the particle budget and the resolution painted strips are rastered at: `high` 100 %, `medium` 60 % / 0.75, `low` 35 % / 0.5. |
+| `quality` | `medium` | Share of the particle budget, the resolution painted strips are rastered at, and the number of depth layers for rain, snow and hail: `high` 100 % / 1 / 3, `medium` 60 % / 0.75 / 2, `low` 35 % / 0.5 / 1 (and no splashes). On a GPU-bound kiosk the layer count is what matters (1.26.2). |
 | `veil` | `true` | Overcast greys and dims the sky over everything the card draws, so a cloudy night has no stars and a grey noon no sun disc. |
 | `clouds` | `true` | Clouds at three heights (cirrus, alto, cumulus) and a stratus deck once low cover passes 75 %, drifting with the wind (1.17.0). |
 | `rain` | `true` | Rain in three depths for `rainy`, `pouring`, `lightning-rainy`, `exceptional` (and behind sleet and hail), slanted by the wind (1.18.0). |

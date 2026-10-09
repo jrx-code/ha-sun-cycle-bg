@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.26.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.26.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1688,11 +1688,17 @@
      whatever moves does so on CSS keyframes or a Web Animation on transform
      and opacity. A timer may decide *when* something happens (a lightning
      strike, a leaf), never how it moves. */
+  // n: share of the particle budget; res: raster scale of painted strips;
+  // depths: how many depth layers rain, snow and hail use. The last one is
+  // what a GPU-bound kiosk feels: measured on the RPi5 at 1920x1080 (1.26.2),
+  // fewer drops did almost nothing, fewer full-frame layers is what counts.
   const WEATHER_QUALITY = {
-    high: { n: 1, res: 1 },          // n: share of the particle budget
-    medium: { n: 0.6, res: 0.75 },   // res: raster scale of painted strips
-    low: { n: 0.35, res: 0.5 },
+    high: { n: 1, res: 1, depths: 3 },
+    medium: { n: 0.6, res: 0.75, depths: 2 },
+    low: { n: 0.35, res: 0.5, depths: 1 },
   };
+  // the nearest `count` depths of a list ordered far to near
+  const weatherDepths = (list, cfg) => list.slice(Math.max(0, list.length - WEATHER_QUALITY[cfg.quality].depths));
   // condition -> [cover floor %, storminess 0-1, precipitation, intensity 0-1]
   const WEATHER_COND = {
     sunny: [0, 0], 'clear-night': [0, 0], partlycloudy: [30, 0], cloudy: [85, 0.15],
@@ -2167,7 +2173,9 @@
     const dzien = ctx.light.e > 0;
     const kol = dzien ? '214,224,236' : '150,164,186';
     const wx = weatherWindX(ws, ctx);
-    for (const d of RAIN_DEPTHS) {
+    const uzyte = weatherDepths(RAIN_DEPTHS, cfg);
+    for (const d of RAIN_DEPTHS) if (uzyte.indexOf(d) < 0) weatherDrop(layer, 'scw-rain-' + d.z);
+    for (const d of uzyte) {
       const len = d.len * (0.55 + 0.45 * I);
       weatherFall(layer, {
         cls: 'scw-rain-' + d.z, seed: 101 + d.z * 31,
@@ -2188,7 +2196,7 @@
      on its own phase of one short opacity loop, so the ground flickers the way
      rain hitting it does. Opacity only. */
   function weatherSplash(layer, cfg, ws, ctx, I, kol) {
-    if (!cfg.splashes || I <= 0) { weatherDrop(layer, 'scw-splash'); return; }
+    if (!cfg.splashes || I <= 0 || cfg.quality === 'low') { weatherDrop(layer, 'scw-splash'); return; }
     const q = WEATHER_QUALITY[cfg.quality];
     const W = ctx.W, H = ctx.H, k = H / 400;
     const box = weatherChild(layer, 'scw-splash');
@@ -2245,7 +2253,9 @@
     const share = kind === 'sleet' ? 0.45 : 1;
     const kol = ctx.light.e > -4 ? [255, 255, 255] : [196, 204, 222];
     const wx = weatherWindX(ws, ctx);
-    for (const d of SNOW_DEPTHS) {
+    const uzyte = weatherDepths(SNOW_DEPTHS, cfg);
+    for (const d of SNOW_DEPTHS) if (uzyte.indexOf(d) < 0) weatherDrop(layer, 'scw-snow-' + d.z);
+    for (const d of uzyte) {
       weatherFall(layer, {
         cls: 'scw-snow-' + d.z, seed: 303 + d.z * 17,
         n: Math.round(d.n * I * share * q.n * ctx.W / 1280),
@@ -2290,7 +2300,9 @@
     const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity;
     const kol = ctx.light.e > 0 ? [240, 246, 252] : [176, 186, 204];
     const wx = weatherWindX(ws, ctx);
-    for (const d of HAIL_DEPTHS) {
+    const uzyte = weatherDepths(HAIL_DEPTHS, cfg);
+    for (const d of HAIL_DEPTHS) if (uzyte.indexOf(d) < 0) weatherDrop(layer, 'scw-hail-' + d.z);
+    for (const d of uzyte) {
       weatherFall(layer, {
         cls: 'scw-hail-' + d.z, seed: 505 + d.z * 7,
         n: Math.round(d.n * I * q.n * ctx.W / 1280),

@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.26.2
+
+### Changed
+- `weather.quality` now also sets how many depth layers rain, snow and hail use (`high` 3, `medium` 2, `low` 1), and `low` drops the splash band. On a 1920 x 1080 RPi5 kiosk the cost of precipitation is the number of full-frame layers the GPU composites, not the number of drops: pouring at `medium` went from 7.2 % janky frames, and `low` with fewer drops alone only reached 6.4 %. ([#27](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/27))
+
 ## 1.26.1
 
 ### Fixed
