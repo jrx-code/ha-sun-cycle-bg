@@ -456,6 +456,26 @@ out.push(['DESZCZ rain: false, splashes: false', czytajOpad(pogoda(10, { entity:
     window.sunCycleBg.readWeatherConfig({ entity: 'weather.t', precipitation_entity: 'sensor.mm' })).rate }]);
 }
 
+// --- 1.19.0: snieg ------------------------------------------------------
+function czytajSnieg(cont) {
+  const o = czytajOpad(cont, 'scw-snow');
+  const w = cont.querySelector('.sun-cycle-weather');
+  o.kolysanie = w ? [...w.querySelectorAll(':scope > [class*="scw-snow"]')].map((b) => {
+    const sw = b.firstElementChild.firstElementChild, a = sw.getAnimations()[0];
+    return a ? { ms: a.effect.getTiming().duration, kierunek: a.effect.getTiming().direction } : null;
+  }) : null;
+  o.deszcz = w ? w.querySelectorAll(':scope > [class*="scw-rain"]').length : 0;
+  return o;
+}
+out.push(['SNIEG snowy noc, lekki wiatr', czytajSnieg(pogoda(-20, { entity: 'weather.t' }, 'snowy',
+  { cloud_coverage: 90, wind_speed: 8, wind_bearing: 60 }).cont)]);
+out.push(['SNIEG snowy-rainy: snieg i deszcz', czytajSnieg(pogoda(5, { entity: 'weather.t' },
+  'snowy-rainy', { cloud_coverage: 95 }).cont)]);
+out.push(['SNIEG rainy: bez sniegu', czytajSnieg(pogoda(5, { entity: 'weather.t' }, 'rainy',
+  { cloud_coverage: 95 }).cont)]);
+out.push(['SNIEG snow: false', czytajSnieg(pogoda(5, { entity: 'weather.t', snow: false }, 'snowy',
+  { cloud_coverage: 95 }).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');

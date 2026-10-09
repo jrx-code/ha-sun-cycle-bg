@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.18.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.19.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -85,6 +85,7 @@
  *     clouds: true                  # three heights + a deck, drifting with the wind
  *     rain: true                    # three depths, slanted by the wind
  *     splashes: true                # droplets flickering along the horizon
+ *     snow: true                    # three depths, swaying; mixed with rain for sleet
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
@@ -1476,7 +1477,8 @@
   };
   // children of the weather layer, bottom to top
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
-                         'scw-clouds-low', 'scw-rain-0', 'scw-rain-1', 'scw-splash', 'scw-rain-2'];
+                         'scw-clouds-low', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
+                         'scw-splash', 'scw-rain-2', 'scw-snow-2'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1493,6 +1495,7 @@
       clouds: w.clouds !== false,
       rain: w.rain !== false,
       splashes: w.splashes !== false,
+      snow: w.snow !== false,
     };
   }
 
@@ -1955,10 +1958,57 @@
     }
   }
 
+  const SNOW_DEPTHS = [
+    // z, flakes per 1280 px, speed px/s, radius, sway px, sway period s, alpha
+    { z: 0, n: 260, v: 28, r: 0.9, sw: 6, ss: 3.6, a: 0.55 },
+    { z: 1, n: 150, v: 50, r: 1.7, sw: 11, ss: 4.6, a: 0.75 },
+    { z: 2, n: 70, v: 85, r: 2.9, sw: 17, ss: 5.8, a: 0.92 },
+  ];
+
+  /* Snow for `snowy`, and its share of `snowy-rainy`. Same tile-and-loop as
+     the rain, plus a wrapper that sways side to side, so flakes drift instead
+     of dropping. Near flakes are bigger, faster and swing wider. */
+  function weatherSnow(layer, cfg, ws, ctx) {
+    const kind = ws && ws.precip;
+    if (!cfg.snow || (kind !== 'snow' && kind !== 'sleet')) {
+      for (const d of SNOW_DEPTHS) weatherDrop(layer, 'scw-snow-' + d.z);
+      return;
+    }
+    const q = WEATHER_QUALITY[cfg.quality];
+    const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity;
+    const share = kind === 'sleet' ? 0.45 : 1;
+    const kol = ctx.light.e > -4 ? [255, 255, 255] : [196, 204, 222];
+    const wx = weatherWindX(ws, ctx);
+    for (const d of SNOW_DEPTHS) {
+      weatherFall(layer, {
+        cls: 'scw-snow-' + d.z, seed: 303 + d.z * 17,
+        n: Math.round(d.n * I * share * q.n * ctx.W / 1280),
+        speed: d.v * (0.8 + 0.4 * I), period: 0.5, res: q.res * 0.75,
+        // snow is light: the same wind lays it down further than rain
+        slope: clamp(wx / 25, -1.4, 1.4) * (0.4 + 0.3 * d.z),
+        sway: d.sw, swayS: d.ss,
+        draw: (g, x, y, s) => {
+          const r = Math.max(0.6, d.r * s * 1.3);
+          if (r > 1.6) {
+            const gr = g.createRadialGradient(x, y, 0, x, y, r);
+            gr.addColorStop(0, rgba([...kol, 1], d.a));
+            gr.addColorStop(0.6, rgba([...kol, 1], d.a * 0.7));
+            gr.addColorStop(1, rgba([...kol, 1], 0));
+            g.fillStyle = gr;
+          } else {
+            g.fillStyle = rgba([...kol, 1], d.a);
+          }
+          g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+        },
+      }, ctx);
+    }
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
     weatherRain(layer, cfg, ws, ctx);
+    weatherSnow(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2721,6 +2771,8 @@
         o: 'Rain in three depths, slanted by the wind.' },
       { k: 'weather.splashes', et: 'splashes', typ: 'bool', dom: true, w: 'splashes',
         o: 'Droplets flickering along the horizon where the rain lands.' },
+      { k: 'weather.snow', et: 'snow', typ: 'bool', dom: true, w: 'snow',
+        o: 'Snow in three depths, swaying as it falls; mixed with rain for sleet.' },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },

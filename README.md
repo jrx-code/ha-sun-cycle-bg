@@ -664,6 +664,7 @@ weather:
   clouds: true
   rain: true
   splashes: true
+  snow: true
 ```
 
 | Key | Default | What it does |
@@ -676,6 +677,7 @@ weather:
 | `rain` | `true` | Rain in three depths for `rainy`, `pouring`, `lightning-rainy`, `exceptional` (and behind sleet and hail), slanted by the wind (1.18.0). |
 | `splashes` | `true` | Droplets flickering along the horizon where the rain lands (1.18.0). |
 | `precipitation_entity` | none | Optional measured rate in mm/h; 4 mm/h and up is a downpour. Without it the condition sets how hard it rains (1.18.0). |
+| `snow` | `true` | Snow in three depths for `snowy`, swaying as it falls; with rain for `snowy-rainy` (1.19.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -719,6 +721,10 @@ The wind does not push anything sideways frame by frame. The whole depth is shea
 Splashes are three thin bands of droplets along the horizon, each flashing on its own third of one short opacity loop, so the ground flickers the way rain hitting it does.
 
 How hard it rains comes from the condition (`rainy` 0.45, `lightning-rainy` 0.8, `pouring` 1) or, with `precipitation_entity`, from the measured rate.
+
+### Snow
+
+The same tile and loop as the rain, with one more wrapper between the shear and the falling tile: it sways side to side (`translateX`, ease-in-out, alternate), so flakes drift instead of dropping. Near flakes are bigger, softer, faster and swing wider; three depths at 3.6, 4.6 and 5.8 s per swing so they never move in step. The same wind lays snow further over than rain. `snowy-rainy` draws both: 55 % of the rain and 45 % of the snow. At night the flakes take a grey-blue tone instead of white.
 
 ## Tuning the palette
 
