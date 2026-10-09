@@ -649,6 +649,49 @@ wants to drive the layer itself (a tuning page) gets
 `window.sunCycleBg.buildStars(cfg, W, H, proj)` and `readStarConfig(cfg)`;
 the layer carries `scsMeteor()`, `scsIss()` and `scsStop()`.
 
+### Meteor showers
+
+Since 1.26.0 the meteors can follow the sky instead of a fixed rate from one
+point of the frame:
+
+```yaml
+stars:
+  meteors:
+    showers: imo            # off | imo
+    boost: 1                # multiplier on the real rate
+    limiting_magnitude: 5.8 # faintest star you can see from home
+    moon: true              # the moon brightens the sky
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `showers` | `off` | `imo`: the 38 showers of the IMO working list, the antihelion source and a sporadic background, instead of `rate` / `radiant`. |
+| `boost` | `1` | Multiplier on the real rate. 1 is what you would see outside: a few an hour on an ordinary night, about 55 at the Perseid maximum from 52° N. |
+| `limiting_magnitude` | `5.8` | 6.5 is a dark site, 5 a town. Every magnitude less divides a shower by its population index `r`. |
+| `moon` | `true` | The moon takes up to 2 magnitudes off the sky (illumination times √sin of its altitude). |
+
+**Data.** The [IMO Meteor Shower Calendar](https://www.imo.net/) working list of
+visual showers (2027 edition, table 5, with the radiant drift read off table 6):
+activity window, maximum as a solar longitude (J2000, so the table holds for any
+year), radiant RA/Dec, entry velocity, population index r and ZHR. Variable
+showers (π-Puppids, June Bootids, α-Monocerotids, Phoenicids) carry no ZHR and are
+not modelled.
+
+**Rate.** For each active shower, `ZHR(sol. long.) × sin(radiant altitude) ×
+r^(lm − 6.5)`, nothing while the sun is above −12°. Between the window's edges and
+the maximum the activity falls off exponentially to ZHR 1.5 at the edges; IMO
+publishes the window and the maximum, not the profile, so this is a stand-in and
+it makes the Quadrantids days wide where the real peak lasts hours. The
+antihelion source (ZHR 4) has its radiant 11° east of the anti-sun point; the
+sporadic background is an assumption of 6/h in the evening to 12/h before dawn at
+lm 6.5. With `weather:` set, rain or snow takes all meteors and cloud its share.
+
+**Each meteor** starts somewhere in the visible sky and runs straight away from
+its radiant as the frame shows it (the radiant is often above the top or past an
+edge). Fast showers give short, bluish streaks, slow ones long yellow ones
+(α-Capricornids at 23 km/s, Leonids at 71). One Poisson timer for the total rate,
+one element and one Web Animation per streak, exactly like the plain meteors.
+
 ## Weather
 
 Since 1.16.0 the sky can follow a weather entity. Nothing changes until a
@@ -985,7 +1028,9 @@ weather.
   `cloud_coverage` from any HA weather entity. Cover should move slowly (a
   minutes-long transition, not a step), or the panel will flicker every time
   the forecast updates.
-- **Weather effects.** Rain and snow over the whole scene, in the same spirit
+- ~~**Weather effects.**~~ **Shipped in 1.18.0 to 1.25.0** (rain, snow, hail, fog,
+  lightning, wind, drops on the glass, aurora; see [Weather](#weather)), on
+  compositor-only animations as planned. Originally: Rain and snow over the whole scene, in the same spirit
   as the meteors: a handful of elements on compositor-only animations, spawned
   from the weather state and stopped when it clears, with wind bearing tilting
   the fall. This is the one item with a real performance budget question on a
