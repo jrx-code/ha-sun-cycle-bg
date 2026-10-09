@@ -3,6 +3,13 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 2.2.1
+
+### Fixed
+- Clouds (`effects_style: new`): the cloud nearest the top of the frame was a big soft blob smeared outwards from the middle. The sky plane's perspective is milder (a cloud at the top about twice the size of one at the horizon, not four times), the low tier is denser, its edges are crisper near the top and the domain warp is weaker there.
+- Clouds at high cover, at dusk above all, were busy: three tiers on top of each other at full contrast. A low layer near full cover now hides most of the middle and high tiers, its light turns diffuse, and the dusk glow under the bases fades.
+- Aurora rays converge upwards towards the zenith above the middle of the frame, as field lines seen in perspective do, instead of standing parallel.
+
 ## 2.2.0
 
 ### Added

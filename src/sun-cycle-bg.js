@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.2.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.2.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3388,7 +3388,9 @@ uniform vec3 uCov;
 uniform float uDeck, uWind, uSunA, uDusk;
 uniform vec2 uSun;
 uniform vec3 uTop, uBot, uVeil;
-vec2 plaszcz(vec2 uv, float asp, float k){ float z = 1./(1.3 - uv.y); return vec2((uv.x - 0.5)*asp*z, z)*k; }
+// milder than a true plane (2.2.1): with 1/(1.3 - y) the cloud nearest the top was four times the size of
+// one at the horizon, a big soft blob smeared outwards from the middle
+vec2 plaszcz(vec2 uv, float asp, float k){ float z = 2./(1.82 - uv.y); return vec2((uv.x - 0.5)*asp*z, z)*k; }
 float pokr(float n, float cov, float miek){ float thr = mix(0.70, 0.30, cov); return smoothstep(thr, thr + miek, n); }
 void main(){
   vec2 uv = vec2(vUv.x, 1. - vUv.y);
@@ -3396,6 +3398,9 @@ void main(){
   vec2 sd = normalize((uSun - uv)*vec2(asp, 1.) + vec2(0., 1e-4));
   float dSun = length((uv - uSun)*vec2(asp, 1.));
   float horyz = smoothstep(0.62, 1.0, uv.y);
+  // a low layer near full cover hides what is above it and spreads the light:
+  // less of the upper tiers, flatter light, no underlit bases (2.2.1)
+  float zakr = smoothstep(0.55, 0.9, uCov.x);
   vec4 o = vec4(0.);
   if (uCov.z > 0.02 && uv.y < 0.8){
     vec2 p = plaszcz(uv, asp, 1.3) + vec2(uT*uWind*0.6, 0.);
@@ -3403,7 +3408,7 @@ void main(){
     float n = fbm3(vec2(p.x*0.9 + 0.7*w, p.y*7.0 + 2.*w));
     float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz);
     vec3 c = mix(uTop, uBot, 0.25) + 0.25*uSunA*exp(-dSun*2.5)*vec3(1., 0.92, 0.8);
-    o = nad(o, c, d*0.55);
+    o = nad(o, c, d*0.55*(1. - 0.8*zakr));
   }
   if (uCov.y > 0.02 && uv.y < 0.9){
     vec2 p = plaszcz(uv, asp, 2.4) + vec2(uT*uWind*1.4, uT*0.01);
@@ -3411,7 +3416,7 @@ void main(){
     float n2s = fbm3((p + vec2(sd.x, -0.6)*0.05)*2.0 + 1.7);
     float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz);
     float lit = clamp(0.6 + 4.0*(n - n2s - 0.02), 0., 1.);
-    o = nad(o, mix(uBot, uTop, lit), d*0.8);
+    o = nad(o, mix(uBot, uTop, lit), d*0.8*(1. - 0.75*zakr));
   }
   if (uDeck > 0.01){
     vec2 p = plaszcz(uv, asp, 1.6) + vec2(uT*uWind*2.0, 0.);
@@ -3423,24 +3428,26 @@ void main(){
     o = nad(o, c, a);
   }
   if (uCov.x > 0.02){
-    vec2 p = plaszcz(uv, asp, 1.9) + vec2(uT*uWind*2.4, 0.);
+    vec2 p = plaszcz(uv, asp, 2.8) + vec2(uT*uWind*2.4, 0.);
     vec2 w = vec2(fbm2(p*0.9 + vec2(0., uT*0.012)), fbm2(p*0.9 + vec2(5.2, 1.3 - uT*0.01)));
-    vec2 qq = p + 0.45*(w - 0.5);
+    float wa = mix(0.22, 0.45, smoothstep(0.0, 0.6, uv.y));           // less warp at the top: no smear
+    vec2 qq = p + wa*(w - 0.5);
     float n = fbm4(qq*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qq*4.5) - 0.5);
     vec2 ld = normalize(mix(vec2(0., -1.), sd, 0.45 + 0.3*uSunA));
-    vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 1.9) + vec2(uT*uWind*2.4, 0.);
-    vec2 qs = ps + 0.45*(w - 0.5);
+    vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 2.8) + vec2(uT*uWind*2.4, 0.);
+    vec2 qs = ps + wa*(w - 0.5);
     float ns = fbm4(qs*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qs*4.5) - 0.5);
     float cov = uCov.x*(1. - 0.6*uDeck);
     float thr = mix(0.70, 0.30, cov);
-    float d = smoothstep(thr, thr + 0.07, n);
+    float d = smoothstep(thr, thr + mix(0.03, 0.07, uv.y), n);              // crisper at the top
     float podst = smoothstep(thr - 0.04, thr + 0.10, ns + 0.08);
     float grub = clamp((n - thr)/0.3, 0., 1.);
     float lit = clamp(0.45 + 6.0*(n - ns), 0., 1.);
+    lit = mix(lit, 0.55, 0.45*smoothstep(0.6, 0.95, cov));                 // overcast: diffuse light
     vec3 c = mix(mix(uBot, uVeil, 0.45), uTop, lit);
     c *= 1. - 0.22*grub*(1. - lit);
     c += (1. - grub)*smoothstep(0.0, 0.2, d)*exp(-dSun*3.2)*uSunA*vec3(1., 0.93, 0.8)*0.6;
-    c += uDusk*vec3(0.25, 0.12, 0.05)*(1. - lit)*smoothstep(0.3, 0.9, uv.y);
+    c += uDusk*vec3(0.25, 0.12, 0.05)*(1. - lit)*smoothstep(0.3, 0.9, uv.y)*(1. - 0.6*zakr);
     c = mix(c, mix(uVeil, uTop, 0.4), horyz*0.5);
     o = nad(o, c, d*podst*0.97*(1. - 0.4*horyz));
   }
@@ -3523,11 +3530,16 @@ float trin(float x, float t){
   }
   return a/1.6;
 }
-vec3 kurtyna(vec2 p, float ziarno, float podst, float amp, float t){
+vec3 kurtyna(vec2 p, float ziarno, float podst, float amp, float t, float off){
   float x = p.x;
   float yb = podst + amp*(fbm3(vec2(x*0.7 + ziarno, t*0.02)) - 0.5) + 0.025*sin(x*2.3 + t*0.06 + ziarno);
   float h = yb - p.y;
-  float xw = x + 0.12*fbm2(vec2(x*1.5, t*0.03 + ziarno));
+  // rays run along the field lines, nearly vertical, so in perspective they
+  // converge upwards towards the zenith above the middle of the frame: the ray
+  // through this point started from a base further out (2.2.1)
+  float cx = 0.5*uRes.x/uRes.y + off;
+  float xr = cx + (x - cx)/max(0.6, 1. - 0.45*max(h, 0.));
+  float xw = xr + 0.12*fbm2(vec2(xr*1.5, t*0.03 + ziarno));
   float r = trin(xw*14. + ziarno, t);
   float rays = pow(clamp(r*1.6, 0., 1.), 2.5)*1.5 + 0.25;
   float wys = 0.10 + 0.22*n2(vec2(xw*6., ziarno + t*0.05));
@@ -3542,7 +3554,7 @@ void main(){
   vec2 uv = vec2(vUv.x, 1. - vUv.y);
   float asp = uRes.x/uRes.y;
   vec2 p = vec2(uv.x*asp, uv.y);
-  vec3 c = kurtyna(p, 1.7, 0.74, 0.22, uT)*0.9 + kurtyna(p + vec2(3.3, 0.), 8.2, 0.60, 0.18, uT*1.15)*0.55;
+  vec3 c = kurtyna(p, 1.7, 0.74, 0.22, uT, 0.)*0.9 + kurtyna(p + vec2(3.3, 0.), 8.2, 0.60, 0.18, uT*1.15, 3.3)*0.55;
   // a faint diffuse glow behind the curtains; below their edge the sky stays dark
   c += vec3(0.02, 0.08, 0.05)*smoothstep(0.25, 0.6, uv.y)*smoothstep(0.9, 0.62, uv.y);
   float mx = mix(1., smoothstep(0.45, 0.04, uv.x) + smoothstep(0.55, 0.96, uv.x), uEdge);

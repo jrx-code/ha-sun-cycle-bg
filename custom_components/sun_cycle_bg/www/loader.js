@@ -8,10 +8,10 @@
    Should the card still be missing once this module runs (a load that never
    finished was seen on a test instance), it is imported once more. */
 import './base.js';
-import './sun-cycle-bg.js?v=2.2.0';
+import './sun-cycle-bg.js?v=2.2.1';
 
 if (!customElements.get('sun-cycle-bg-card')) {
   console.warn('sun-cycle-bg: the card is not registered after loading; loading it again');
-  import('./sun-cycle-bg.js?v=2.2.0&retry=' + Date.now()).catch((err) =>
+  import('./sun-cycle-bg.js?v=2.2.1&retry=' + Date.now()).catch((err) =>
     console.error('sun-cycle-bg: the card did not load', err));
 }
