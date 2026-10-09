@@ -41,9 +41,12 @@ ZASOBY = "/local/sun-cycle/"
 META = {
     "tytul": "Tło: pogoda i roje meteorów",
     "grupa": "Tło (sun-cycle-bg)",
-    "status": "aktualne",
+    "status": "wdrozone",
     "kolejnosc": 104,
-    "opis": ("Propozycja do decyzji: efekty z dynamic-weather-card v2026.10.0 (chmury w trzech "
+    "opis": ("WDROŻONE 09.10.2026 w sun-cycle-bg 1.16.0-1.26.1 (11 efektów, każdy osobnym "
+             "issue, PR i wydaniem), na panelu salonu z OWM, AstroWeather, anemometrem i rojami "
+             "IMO przy boost 3; zorza czeka na czujnik Kp. Poniżej pierwotna propozycja. "
+             "Propozycja do decyzji: efekty z dynamic-weather-card v2026.10.0 (chmury w trzech "
              "warstwach, deszcz z rozbryzgami, krople na szybie, śnieg, grad, mgła, błyskawice, "
              "wiatr z liśćmi, zorza) narysowane nad prawdziwą kartą sun-cycle-bg z konfiguracją "
              "z panelu, w kadrze 16:5. Do tego meteory według kalendarza IMO: 38 rojów z "
