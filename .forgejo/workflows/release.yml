@@ -69,7 +69,7 @@ jobs:
           rest = [k for k in m if k not in ("domain", "name")]
           if list(m)[:2] != ["domain", "name"] or rest != sorted(rest):
               sys.exit("manifest.json keys: domain, name, then the rest sorted (hassfest)")
-          for f in ("brand/icon.png", "brand/icon@2x.png", "www/loader.js", "www/panel.js"):
+          for f in ("brand/icon.png", "brand/icon@2x.png", "www/base.js", "www/loader.js", "www/panel.js"):
               if not (root / "sun_cycle_bg" / f).is_file():
                   sys.exit(f"missing custom_components/sun_cycle_bg/{f}")
           print(f"manifest {m['domain']} {m['version']}: ok")

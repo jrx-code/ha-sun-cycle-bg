@@ -134,9 +134,11 @@ page, installed and updated together. (1.x was a HACS *Dashboard* plugin; see
 3. *Settings → Devices & services → Add integration → Sun Cycle Background*.
    One entry, no fields.
 
-No dashboard resource is needed: the integration serves the card from
-`custom_components/sun_cycle_bg/www/` at `/sun_cycle_bg/` and loads it on every
-page of the frontend. The card, the sun, the moon, nine planets, two
+The integration serves the card from `custom_components/sun_cycle_bg/www/` at
+`/sun_cycle_bg/` and adds the dashboard resource for it by itself
+(`/sun_cycle_bg/loader.js?v=<version>`, moved to the new version after every
+update, removed with the integration; with resources kept in YAML it logs the
+line to add). The card, the sun, the moon, nine planets, two
 photographs of the Milky Way and the leaves sit there together, and every
 default path in the card points there, so on a fresh system this already draws
 something:
@@ -285,8 +287,9 @@ entry has to make way for the integration:
 
 1. HACS → *Sun Cycle Background* (Dashboard) → menu → *Remove*. This removes
    the dashboard resource `/hacsfiles/hassio-sun-cycle-bg/sun-cycle-bg.js` as
-   well; check *Settings → Dashboards → Resources* that it is gone, because a
-   card loaded twice keeps the first copy and warns in the console.
+   well; check *Settings → Dashboards → Resources* that it is gone and only
+   `/sun_cycle_bg/loader.js` is left, because a card loaded twice keeps the
+   first copy and warns in the console.
 2. Add the repository again with category **Integration**, install, restart,
    add the integration. Cards keep their YAML and draw as before; the default
    pictures now come from `/sun_cycle_bg/`.

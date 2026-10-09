@@ -153,7 +153,7 @@
      every path is a plain option (`planets.images`, `milky_way.image`,
      `sun_image`, `moon_image`), and `assets:` moves them all at once. */
   // Where the pictures are: next to the card in the sun_cycle_bg integration
-  // (its loader sets SUN_CYCLE_BG_BASE before importing the card), or, for a
+  // (its loader imports base.js, which sets SUN_CYCLE_BG_BASE, before the card), or, for a
   // card installed on its own as a dashboard resource, the HACS folder of 1.x.
   const HACS_BASE = (typeof window !== 'undefined' && window.SUN_CYCLE_BG_BASE) || '/hacsfiles/hassio-sun-cycle-bg/';
 

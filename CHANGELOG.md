@@ -6,7 +6,7 @@ All notable changes to this card. Versions before 1.16.0 are described in the
 ## 2.0.0
 
 ### Changed (breaking: the HACS category)
-- The repository is one Home Assistant integration, `sun_cycle_bg`, instead of a Dashboard plugin. It serves the card and its pictures from `custom_components/sun_cycle_bg/www/` at `/sun_cycle_bg/` and loads the card on every frontend page, so no dashboard resource is needed. Upgrading: remove the Dashboard entry in HACS (and its resource), add the repository as Integration, install, restart, add the integration. Card configs are unchanged. ([#33](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/33))
+- The repository is one Home Assistant integration, `sun_cycle_bg`, instead of a Dashboard plugin. It serves the card and its pictures from `custom_components/sun_cycle_bg/www/` at `/sun_cycle_bg/` and keeps the dashboard resource for them itself (`/sun_cycle_bg/loader.js?v=<version>`). Upgrading: remove the Dashboard entry in HACS (and its resource), add the repository as Integration, install, restart, add the integration. Card configs are unchanged. ([#33](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/33))
 - `dist/` is gone; `tools/make_dist.py` fills the integration's `www/`, and CI checks it against `src/` and `demo/assets/`, the manifest, and that card, manifest and tag carry one version.
 
 ### Added
