@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.20.0
+
+### Added
+- Hail: pellets in two depths with rain behind them, and a band of pellets bouncing at the horizon on staggered transform and opacity loops (`weather.hail`). ([#7](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/7))
+
 ## 1.19.0
 
 ### Added

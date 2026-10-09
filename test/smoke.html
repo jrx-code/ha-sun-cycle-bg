@@ -476,6 +476,23 @@ out.push(['SNIEG rainy: bez sniegu', czytajSnieg(pogoda(5, { entity: 'weather.t'
 out.push(['SNIEG snow: false', czytajSnieg(pogoda(5, { entity: 'weather.t', snow: false }, 'snowy',
   { cloud_coverage: 95 }).cont)]);
 
+// --- 1.20.0: grad -------------------------------------------------------
+function czytajGrad(cont) {
+  const o = czytajOpad(cont, 'scw-hail-');
+  const w = cont.querySelector('.sun-cycle-weather');
+  const b = w && w.querySelector('.scw-hail-bounce');
+  o.podskok = b ? [...b.children].map((c) => { const a = c.getAnimations()[0];
+    return { ms: a.effect.getTiming().duration, faza: Math.round(a.currentTime % 520) }; }) : null;
+  o.deszcz = w ? w.querySelectorAll(':scope > [class*="scw-rain"]').length : 0;
+  return o;
+}
+out.push(['GRAD hail', czytajGrad(pogoda(30, { entity: 'weather.t' }, 'hail',
+  { cloud_coverage: 95, wind_speed: 30, wind_bearing: 270 }).cont)]);
+out.push(['GRAD hail: false (deszcz zostaje)', czytajGrad(pogoda(30, { entity: 'weather.t', hail: false },
+  'hail', { cloud_coverage: 95 }).cont)]);
+out.push(['GRAD pouring: bez gradu', czytajGrad(pogoda(30, { entity: 'weather.t' }, 'pouring',
+  { cloud_coverage: 95 }).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');

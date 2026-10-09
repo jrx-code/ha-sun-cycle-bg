@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.19.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.20.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -86,6 +86,7 @@
  *     rain: true                    # three depths, slanted by the wind
  *     splashes: true                # droplets flickering along the horizon
  *     snow: true                    # three depths, swaying; mixed with rain for sleet
+ *     hail: true                    # pellets in two depths, bouncing at the horizon
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
@@ -1478,7 +1479,8 @@
   // children of the weather layer, bottom to top
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
                          'scw-clouds-low', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
-                         'scw-splash', 'scw-rain-2', 'scw-snow-2'];
+                         'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
+                         'scw-hail-1'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1496,6 +1498,7 @@
       rain: w.rain !== false,
       splashes: w.splashes !== false,
       snow: w.snow !== false,
+      hail: w.hail !== false,
     };
   }
 
@@ -2004,11 +2007,80 @@
     }
   }
 
+  const HAIL_DEPTHS = [
+    // z, pellets per 1280 px, speed px/s, radius, alpha
+    { z: 0, n: 120, v: 1300, r: 1.3, a: 0.7 },
+    { z: 1, n: 70, v: 1900, r: 2.4, a: 0.95 },
+  ];
+
+  /* Hail: hard bright pellets, faster than rain and barely bent by the wind,
+     in front of the rain the condition also brings. Where they land, three
+     bands of pellets hop on staggered phases of one short loop: up a few
+     pixels and back, flashing as they go. */
+  function weatherHail(layer, cfg, ws, ctx) {
+    if (!cfg.hail || !ws || ws.precip !== 'hail') {
+      for (const d of HAIL_DEPTHS) weatherDrop(layer, 'scw-hail-' + d.z);
+      weatherDrop(layer, 'scw-hail-bounce');
+      return;
+    }
+    const q = WEATHER_QUALITY[cfg.quality];
+    const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity;
+    const kol = ctx.light.e > 0 ? [240, 246, 252] : [176, 186, 204];
+    const wx = weatherWindX(ws, ctx);
+    for (const d of HAIL_DEPTHS) {
+      weatherFall(layer, {
+        cls: 'scw-hail-' + d.z, seed: 505 + d.z * 7,
+        n: Math.round(d.n * I * q.n * ctx.W / 1280),
+        speed: d.v, period: 0.5, res: q.res * 0.75,
+        slope: clamp(wx / 90, -0.6, 0.6),
+        draw: (g, x, y, s) => {
+          const r = Math.max(0.8, d.r * s * 1.3);
+          g.fillStyle = rgba([...kol, 1], d.a);
+          g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+          g.fillStyle = 'rgba(255,255,255,' + (d.a * 0.9).toFixed(2) + ')';
+          g.beginPath(); g.arc(x - r * 0.35, y - r * 0.35, r * 0.35, 0, Math.PI * 2); g.fill();
+        },
+      }, ctx);
+    }
+    // the bounce band
+    const W = ctx.W, H = ctx.H, k = H / 400;
+    const box = weatherChild(layer, 'scw-hail-bounce');
+    const top = 0.84 * H, bh = 0.16 * H, res = q.res * 0.75;
+    const n = Math.round(60 * I * q.n * W / 1280);
+    for (let f = 0; f < 3; f++) {
+      let cv = box.children[f];
+      if (!cv) {
+        cv = document.createElement('canvas');
+        cv.style.cssText = 'position:absolute;left:0;width:100%;will-change:transform,opacity;opacity:0;';
+        box.appendChild(cv);
+      }
+      cv.style.top = top + 'px'; cv.style.height = bh + 'px';
+      const cw = Math.round(W * res), ch = Math.max(2, Math.round(bh * res));
+      if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+      const g = cv.getContext('2d');
+      g.clearRect(0, 0, cw, ch);
+      g.fillStyle = rgba([...kol, 1], 0.9);
+      const rnd = weatherRng(909 + f * 29);
+      for (let i = 0; i < n; i++) {
+        const yy = rnd(), r = Math.max(0.7, (1 + 1.6 * yy) * k * res);
+        g.beginPath(); g.arc(rnd() * cw, ch * (0.2 + 0.75 * yy), r, 0, Math.PI * 2); g.fill();
+      }
+      const hop = (-7 * k).toFixed(1);
+      const a = weatherLoop(cv, [
+        { transform: 'translateY(0)', opacity: 0 },
+        { transform: 'translateY(' + hop + 'px)', opacity: 1, offset: 0.3 },
+        { transform: 'translateY(0)', opacity: 0.6, offset: 0.6 },
+        { transform: 'translateY(0)', opacity: 0 }], 520, 'hop');
+      if (!cv._scwFaza) { a.currentTime = f * 173; cv._scwFaza = true; }
+    }
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
     weatherRain(layer, cfg, ws, ctx);
     weatherSnow(layer, cfg, ws, ctx);
+    weatherHail(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2773,6 +2845,8 @@
         o: 'Droplets flickering along the horizon where the rain lands.' },
       { k: 'weather.snow', et: 'snow', typ: 'bool', dom: true, w: 'snow',
         o: 'Snow in three depths, swaying as it falls; mixed with rain for sleet.' },
+      { k: 'weather.hail', et: 'hail', typ: 'bool', dom: true, w: 'hail',
+        o: 'Hard bright pellets with rain behind them, bouncing where they land.' },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },
