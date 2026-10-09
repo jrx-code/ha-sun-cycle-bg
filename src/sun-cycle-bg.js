@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.25.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.26.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -65,6 +65,10 @@
  *       angle: 24         # degrees below horizontal (random +-8)
  *       radiant: null     # [x%, y%] = a shower, every streak runs from there
  *       pair: 0           # chance (0-1) of a second streak right after
+ *       showers: off      # imo = the IMO shower calendar instead of `rate`:
+ *       boost: 1          #   multiplier on the real rate
+ *       limiting_magnitude: 5.8
+ *       moon: true        #   the moon brightens the sky and hides the faint ones
  *     iss: false          # true = real passes from sensor.iss_visual_pass_0..4
  *                         # (Satellite Tracker / N2YO), or:
  *     # iss:
@@ -438,6 +442,11 @@
         angle: numOr(m.angle, 24),                  // deg below horizontal
         radiant: Array.isArray(m.radiant) ? m.radiant : null,   // [%x, %y] = a shower
         pair: clamp(numOr(m.pair, 0), 0, 1),        // chance of a second streak
+        // showers: 'imo' = the shower calendar instead of `rate`
+        showers: m.showers === 'imo' ? 'imo' : 'off',
+        boost: clamp(numOr(m.boost, 1), 0, 100),
+        limiting_magnitude: clamp(numOr(m.limiting_magnitude, 5.8), 3, 7.5),
+        moon: m.moon !== false,
       },
       iss: i
         ? {
@@ -1393,6 +1402,188 @@
     }
   }
 
+  // --- meteor showers -------------------------------------------------------
+  /* The IMO working list of visual meteor showers (IMO Meteor Shower Calendar
+     2027, table 5; radiant drift read off table 6). Maxima are solar
+     longitudes (J2000), so the table holds for any year. Columns: code,
+     activity from, to (MM-DD), maximum, radiant RA, Dec, drift RA and Dec in
+     degrees per day, entry velocity km/s, population index r, ZHR (0 =
+     variable, not modelled). */
+  const SHOWERS = [
+    ["QUA", "12-28", "01-12", 283.15, 230, 49, 0.6, -0.2, 41, 2.1, 80],
+    ["GUM", "01-10", "01-22", 298.0, 228, 67, 0.8, -0.4, 31, 3.0, 3],
+    ["ACE", "01-31", "02-20", 319.4, 211, -58, 1.2, -0.3, 58, 2.0, 6],
+    ["LYR", "04-14", "04-30", 32.32, 271, 34, 1.1, 0.0, 49, 2.1, 18],
+    ["PPU", "04-15", "04-28", 33.5, 110, -45, 0.5, -0.1, 18, 2.0, 0],
+    ["ETA", "04-19", "05-28", 45.5, 338, -1, 0.9, 0.4, 66, 2.4, 50],
+    ["ELY", "05-05", "05-14", 50.0, 291, 43, 1.0, 0.1, 43, 3.0, 3],
+    ["ARI", "05-14", "06-24", 76.7, 43, 24, 1.0, 0.0, 38, 2.8, 30],
+    ["JBO", "06-22", "07-02", 90.3, 221, 48, 0.1, -0.1, 18, 2.2, 0],
+    ["JPE", "07-01", "07-20", 108.0, 347, 11, 0.9, 0.2, 63, 3.0, 3],
+    ["GDR", "07-25", "07-31", 125.13, 280, 51, 1.0, 0.0, 27, 3.0, 5],
+    ["CAP", "07-03", "08-15", 128.0, 307, -10, 0.9, 0.3, 23, 2.5, 5],
+    ["SDA", "07-12", "08-23", 128.0, 340, -16, 0.8, 0.2, 41, 2.5, 25],
+    ["ERI", "07-31", "08-19", 135.0, 41, -11, 0.9, 0.3, 64, 3.0, 3],
+    ["PER", "07-17", "08-24", 140.0, 48, 58, 1.35, 0.2, 59, 2.2, 110],
+    ["KCG", "08-03", "08-28", 144.0, 286, 59, 0.5, 0.7, 23, 3.0, 3],
+    ["AUR", "08-28", "09-05", 158.6, 91, 39, 1.1, 0.0, 66, 2.5, 6],
+    ["SPE", "09-05", "09-21", 166.7, 48, 40, 1.1, 0.1, 64, 2.5, 8],
+    ["SLY", "09-10", "10-08", 170.0, 113, 56, 1.3, -0.2, 60, 3.0, 3],
+    ["DSX", "09-20", "10-06", 188.0, 156, -2, 0.8, 0.0, 32, 2.5, 5],
+    ["OCT", "10-05", "10-06", 192.58, 164, 79, 0.0, 0.0, 47, 2.5, 5],
+    ["DRA", "10-06", "10-10", 195.4, 263, 56, 0.0, 0.0, 20, 2.6, 5],
+    ["EGE", "10-14", "10-27", 205.0, 102, 27, 1.0, 0.0, 70, 3.0, 3],
+    ["ORI", "10-02", "11-07", 208.0, 95, 16, 0.65, 0.1, 66, 2.5, 20],
+    ["LMI", "10-19", "10-27", 211.0, 162, 37, 1.0, -0.4, 62, 3.0, 2],
+    ["STA", "09-20", "11-20", 223.0, 52, 15, 0.8, 0.2, 27, 2.3, 7],
+    ["NTA", "10-20", "12-10", 230.0, 58, 22, 0.8, 0.15, 29, 2.3, 5],
+    ["LEO", "11-06", "11-30", 235.27, 152, 22, 0.6, -0.3, 71, 2.5, 15],
+    ["AMO", "11-15", "11-25", 239.32, 117, 1, 0.8, -0.2, 65, 2.4, 0],
+    ["NOO", "11-14", "12-06", 246.0, 91, 16, 0.6, 0.0, 43, 3.0, 3],
+    ["PHO", "11-20", "12-05", 249.5, 8, -27, 0.6, -0.1, 15, 2.8, 0],
+    ["AND", "11-12", "12-10", 254.0, 25, 51, 0.0, 0.0, 18, 3.0, 5],
+    ["PUP", "12-01", "12-15", 255.0, 123, -45, 0.45, 0.0, 44, 2.9, 10],
+    ["MON", "12-01", "12-19", 257.0, 100, 8, 0.85, 0.0, 41, 3.0, 3],
+    ["HYD", "12-03", "12-20", 257.0, 125, 2, 0.8, -0.2, 58, 3.0, 7],
+    ["GEM", "12-04", "12-20", 262.2, 112, 33, 1.0, 0.0, 35, 2.6, 150],
+    ["URS", "12-17", "12-26", 270.7, 217, 76, 0.0, -0.4, 33, 2.8, 10],
+    ["COM", "12-04", "01-30", 271.0, 164, 29, 0.9, -0.3, 65, 3.0, 3]
+  ];
+  const wrap180 = (x) => ((x % 360) + 540) % 360 - 180;
+  // the sun's longitude against the J2000 equinox, as IMO gives the maxima
+  function solLong2000(J) {
+    return ((sunEq(J).lam - 1.397 * (J - 2451545) / 36525) % 360 + 360) % 360;
+  }
+  const julianMs = (ms) => ms / 86400000 + 2440587.5;
+  /* Between the edges of its window and its maximum a shower is modelled as
+     falling off exponentially to ZHR 1.5 at the edges. IMO publishes the
+     window and the maximum, not the profile, so this is a stand-in: it makes
+     the Quadrantids days wide where the real peak lasts hours. */
+  const SHOWER_TAB = SHOWERS.map(([kod, od, doo, lam, ra, dec, dra, ddec, v, r, zhr]) => {
+    const lamOf = (md) => {
+      const [m, d] = md.split('-').map(Number);
+      return solLong2000(julianMs(Date.UTC(2027, m - 1, d)));
+    };
+    const lo = lamOf(od), hi = lamOf(doo);
+    const przed = Math.max(1, wrap180(lam - lo)), po = Math.max(1, wrap180(hi - lam));
+    const B = zhr ? Math.log10(zhr / 1.5) : 0;
+    return { kod, lam, ra, dec, dra, ddec, v, r, zhr, lo, hi, bp: B / przed, bn: B / po };
+  });
+  const ANT_OFF = [solLong2000(julianMs(Date.UTC(2027, 8, 20))), solLong2000(julianMs(Date.UTC(2027, 11, 10)))];
+
+  function showerZhr(s, L) {
+    if (!s.zhr) return 0;
+    const d = wrap180(L - s.lam);
+    if (d < 0 && -d > wrap180(s.lam - s.lo)) return 0;
+    if (d > 0 && d > wrap180(s.hi - s.lam)) return 0;
+    return s.zhr * Math.pow(10, -(d < 0 ? s.bp : s.bn) * Math.abs(d));
+  }
+
+  /* Every source of meteors at this moment, for a clear sky:
+     HR = ZHR(sol. long.) * sin(radiant altitude) * r^(lm - 6.5).
+     The moon takes up to 2 magnitudes off the limit (illumination times the
+     square root of the sine of its altitude: a stand-in, not a sky model).
+     Plus the antihelion source (ZHR 4, radiant 11 deg east of the anti-sun
+     point, December to September) and a sporadic background of 6/h in the
+     evening to 12/h before dawn at lm 6.5 (an assumption, not IMO). */
+  function showerSources(date, lat, lon, lm, moon) {
+    const J = julian(date), se = sunEq(J), sp = altaz(se.ra, se.dec, J, lat, lon);
+    if (sp.alt > -12) return [];
+    let L = lm;
+    if (moon) {
+      const me = moonEq(J), mp = altaz(me.ra, me.dec, J, lat, lon);
+      if (mp.alt > 0) {
+        const el = ((me.lam - se.lam) % 360 + 360) % 360;
+        L -= 2 * (1 - Math.cos(el * D2R)) / 2 * Math.sqrt(Math.sin(mp.alt * D2R));
+      }
+    }
+    const Ls = solLong2000(J);
+    const out = [];
+    for (const s of SHOWER_TAB) {
+      const z = showerZhr(s, Ls);
+      if (!z) continue;
+      const dni = wrap180(Ls - s.lam) / 0.9856;
+      const p = altaz((s.ra + s.dra * dni + 360) % 360, clamp(s.dec + s.ddec * dni, -90, 90), J, lat, lon);
+      if (p.alt <= 0) continue;
+      out.push({ kod: s.kod, hr: z * Math.sin(p.alt * D2R) * Math.pow(s.r, L - 6.5), alt: p.alt, az: p.az, v: s.v });
+    }
+    if (!(wrap180(Ls - ANT_OFF[0]) > 0 && wrap180(ANT_OFF[1] - Ls) > 0)) {
+      const la = ((se.lam + 191) % 360) * D2R, eps = 23.439 * D2R;
+      const ra = ((Math.atan2(Math.cos(eps) * Math.sin(la), Math.cos(la)) * R2D) % 360 + 360) % 360;
+      const dec = Math.asin(Math.sin(eps) * Math.sin(la)) * R2D;
+      const p = altaz(ra, dec, J, lat, lon);
+      if (p.alt > 0) out.push({ kod: 'ANT', hr: 4 * Math.sin(p.alt * D2R) * Math.pow(3, L - 6.5), alt: p.alt, az: p.az, v: 30 });
+    }
+    const godz = date.getHours() + date.getMinutes() / 60;
+    const rano = 0.5 + 0.5 * Math.cos((godz - 5) / 24 * 2 * Math.PI);
+    out.push({ kod: 'SPO', hr: (6 + 6 * rano) * Math.pow(3, L - 6.5), alt: null, az: null, v: 40 });
+    return out;
+  }
+
+  // the sky point `dist` degrees from (alt, az) in direction `kier`
+  function skyStep(alt, az, kier, dist) {
+    const f1 = alt * D2R, l1 = az * D2R, d = dist * D2R, k = kier * D2R;
+    const f2 = Math.asin(Math.sin(f1) * Math.cos(d) + Math.cos(f1) * Math.sin(d) * Math.cos(k));
+    const l2 = l1 + Math.atan2(Math.sin(k) * Math.sin(d) * Math.cos(f1), Math.cos(d) - Math.sin(f1) * Math.sin(f2));
+    return { alt: f2 * R2D, az: ((l2 * R2D) % 360 + 360) % 360 };
+  }
+
+  /* One meteor of a shower: it starts somewhere in the visible sky and runs
+     straight away from its radiant as the frame shows it. On the sky the path
+     is a great circle, and this projection bends great circles, so following
+     the circle locally pointed streaks up to 20 deg off the radiant on screen:
+     correct, and unreadable as a shower. The radiant is projected without the
+     frame's clamp (it is often above the top or past an edge), with its
+     azimuth unwrapped towards the start. Length comes from the sky. Faster
+     meteors are shorter-lived and bluer, slow ones long and yellow
+     (alpha-Capricornids at 23 km/s against Leonids at 71). Same element and
+     the same single Web Animation as the plain meteor. */
+  function showerMeteor(layer, s, W, H, proj, okno) {
+    const az0 = okno ? okno[0] : 50, az1 = okno ? okno[1] : 310;
+    let ralt = s.alt, raz = s.az;
+    if (ralt === null) { ralt = -20 + Math.random() * 100; raz = Math.random() * 360; }
+    for (let i = 0; i < 12; i++) {
+      const kier = Math.random() * 360, od = 10 + Math.random() * 60;
+      const p0 = skyStep(ralt, raz, kier, od);
+      if (p0.alt < 4 || p0.alt > 56) continue;
+      const a = proj(p0.alt, p0.az);
+      if (a.x < 1 || a.x > 99) continue;          // outside the window: proj clamps it to the edge
+      const dl = (8 + Math.random() * 18) * Math.max(0.35, Math.sin(od * D2R));
+      const p1 = skyStep(ralt, raz, kier, od + dl);
+      const b = proj(p1.alt, p1.az);
+      const x0 = a.x / 100 * W, y0 = a.y / 100 * H, x1 = b.x / 100 * W, y1 = b.y / 100 * H;
+      const dist = Math.hypot(x1 - x0, y1 - y0);
+      if (dist < 12) continue;
+      let rz = raz;
+      while (rz - p0.az > 180) rz -= 360;
+      while (p0.az - rz > 180) rz += 360;
+      const rx = (rz - az0) / (az1 - az0) * W, ry = (92 - (ralt + 6) / 60 * 86) / 100 * H;
+      const ang = Math.atan2(y0 - ry, x0 - rx) * R2D;
+      const dur = (0.25 + dl / 14) * Math.pow(40 / s.v, 0.7) * 1000;
+      const kol = s.v > 55 ? '210,235,255' : s.v < 30 ? '255,214,160' : '255,248,236';
+      const len = Math.max(30, dist * 0.55);
+      const el = document.createElement('div');
+      el.className = 'scs-meteor';
+      el.dataset.roj = s.kod;
+      el.style.width = len.toFixed(0) + 'px';
+      el.style.left = x0.toFixed(0) + 'px';
+      el.style.top = y0.toFixed(0) + 'px';
+      el.style.background = 'linear-gradient(90deg,rgba(' + kol + ',0) 0%,rgba(' + kol +
+        ',.55) 55%,rgba(255,255,255,.98) 100%)';
+      el.appendChild(document.createElement('b'));
+      layer.appendChild(el);
+      const base = 'rotate(' + ang.toFixed(1) + 'deg)';
+      const an = el.animate([
+        { transform: base + ' translateX(' + (-len).toFixed(0) + 'px) scaleX(.25)', opacity: 0 },
+        { opacity: 1, offset: 0.18 }, { opacity: 1, offset: 0.62 },
+        { transform: base + ' translateX(' + (dist - len * 0.3).toFixed(0) + 'px) scaleX(1)', opacity: 0 }],
+      { duration: dur, easing: 'cubic-bezier(.3,.65,.45,1)' });
+      an.onfinish = () => el.remove();
+      return el;
+    }
+    return null;
+  }
+
   /* The whole star layer for one frame of W x H px. `proj(alt, az)` maps a
      sky position to {x, y} in % of the frame (the ISS needs it). */
   function buildStars(cfg, W, H, proj) {
@@ -1438,7 +1629,32 @@
     // Both stop re-arming once the layer has left the document.
     const timers = [];
     layer.scsStop = () => { timers.forEach(clearTimeout); clearTimeout(layer._issTimer); };
-    if (cfg.meteors.rate > 0) {
+    if (cfg.meteors.showers === 'imo') {
+      /* One Poisson timer for the total rate, recomputed at every wake: the
+         sources change by the minute, not by the second. A wait longer than
+         five minutes becomes a recheck, which the memoryless clock allows. */
+      const arm = (ms, fire) => {
+        timers.push(setTimeout(() => {
+          if (!layer.isConnected && layer._scsStarted) return;
+          if (layer.isConnected) layer._scsStarted = true;
+          const sky = layer.scsSky;
+          let total = 0, src = [];
+          if (sky && isFinite(sky.lat) && isFinite(sky.lon)) {
+            src = showerSources(new Date(), sky.lat, sky.lon, cfg.meteors.limiting_magnitude, cfg.meteors.moon);
+            total = src.reduce((a, x) => a + x.hr, 0) * cfg.meteors.boost * (1 - clamp(sky.cover || 0, 0, 1));
+          }
+          layer.scsShowers = { src, total };
+          if (fire && total > 0 && layer.isConnected) {
+            let r = Math.random() * src.reduce((a, x) => a + x.hr, 0);
+            const pick = src.find((x) => (r -= x.hr) <= 0) || src[src.length - 1];
+            showerMeteor(layer, pick, W, H, proj, sky.okno);
+          }
+          const wait = total > 0 ? -Math.log(1 - Math.random()) * 3600 / total : Infinity;
+          if (wait > 300) arm(300000, false); else arm(wait * 1000, true);
+        }, ms));
+      };
+      arm(1500, false);
+    } else if (cfg.meteors.rate > 0) {
       const mean = 3600 / cfg.meteors.rate;
       const nextMeteor = () => {
         const wait = -Math.log(1 - Math.random()) * mean * 1000;
@@ -2669,6 +2885,9 @@
       if (layer._scwWiatr && !layer._scwT.wind && layer.isConnected) windPlan(layer, 1);
       if (layer._scwSzyba && !layer._scwT.glass && layer.isConnected) glassPlan(layer, 1);
       const ws = readWeather(st, cfg);
+      // meteors behind cloud: rain or snow takes them all, cover its share
+      const gw = c.querySelector('.sun-cycle-stars');
+      if (gw && gw.scsSky) gw.scsSky.cover = ws ? (ws.precip ? 1 : ws.cover) : 0;
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
       const print = podpis([ws, Math.round(this._elev * 2), ctx.moonPrint,
@@ -3147,10 +3366,12 @@
           const kotwica = (mw && mw.parentNode === c) ? mw
             : ((bg && bg.parentNode === c) ? bg : null);
           stars._scsPodpis = kluczGwiazd;
+          stars.scsSky = { lat: this._lat, lon: this._lon, cover: 0, okno: [this._az0, this._az1] };
           if (kotwica) c.insertBefore(stars, kotwica.nextSibling);
           else this._before(c, stars);
         }
         stars.style.opacity = p.stars.toFixed(2);
+        if (stars.scsSky) { stars.scsSky.lat = this._lat; stars.scsSky.lon = this._lon; }
         this._issSync();
       }
       if (!this._starCfg) zdejmij(c, '.sun-cycle-stars');
@@ -3236,6 +3457,12 @@
         o: 'Seconds for one streak to cross.' },
       { k: 'stars.meteors.angle', et: 'angle (deg)', typ: 'zakres', min: 0, max: 80, krok: 1, dom: 24, s: 'meteors.angle',
         o: 'How steeply they fall, from the horizontal.' },
+      { k: 'stars.meteors.showers', et: 'showers', typ: 'wybor', opcje: ['off', 'imo'], dom: 'off', s: 'meteors.showers',
+        o: 'imo: the shower calendar, each meteor from its own radiant, as many as the sky really gives. Replaces "per hour".' },
+      { k: 'stars.meteors.boost', et: 'showers: boost', typ: 'zakres', min: 0.5, max: 30, krok: 0.5, dom: 1, s: 'meteors.boost',
+        o: 'Multiplier on the real rate. 1 is what you would see outside.' },
+      { k: 'stars.meteors.limiting_magnitude', et: 'showers: sky (mag)', typ: 'zakres', min: 4, max: 7, krok: 0.1, dom: 5.8, s: 'meteors.limiting_magnitude',
+        o: 'Faintest star you can see from home. 6.5 is a dark site, 5 a town.' },
       { k: 'stars.meteors.pair', et: 'chance of a second', typ: 'zakres', min: 0, max: 1, krok: 0.05, dom: 0, s: 'meteors.pair',
         o: 'Odds that a second streak follows the first.' },
     ] },
@@ -3874,7 +4101,7 @@
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
-                       windGust, windLeaf, glassDrop,
+                       windGust, windLeaf, glassDrop, showerSources, showerMeteor, SHOWERS,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,
@@ -3887,6 +4114,6 @@
     // the picker renders the card itself instead of a grey placeholder
     preview: true,
     documentationURL: 'https://github.com/jrx-code/hassio-sun-cycle-bg',
-    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, the planets where the Sol integration puts them, and a star field with flares, meteors and the real ISS.',
+    description: 'Living day-cycle view background: sky palette, the sun on its real diurnal arc with crepuscular rays, a moon with its own ephemeris and phase, the planets where the Sol integration puts them, a star field with flares, meteor showers from the IMO calendar and the real ISS, and the weather: cloud, rain, snow, hail, fog, lightning, wind and aurora.',
   });
 })();

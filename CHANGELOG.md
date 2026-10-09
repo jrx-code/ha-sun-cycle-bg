@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.26.0
+
+### Added
+- Meteor showers from the IMO calendar (`stars.meteors.showers: imo`): 38 showers with radiant drift and activity profile, the antihelion source and a sporadic background; the rate follows the radiant's altitude, the limiting magnitude and the moon, and with `weather:` set, cloud and precipitation. Each streak runs away from its own radiant, coloured and timed by entry velocity. `boost`, `limiting_magnitude`, `moon`. ([#13](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/13))
+
 ## 1.25.0
 
 ### Added
