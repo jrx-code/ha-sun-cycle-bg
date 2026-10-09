@@ -10,7 +10,7 @@ All notable changes to this card. Versions before 1.16.0 are described in the
 - Fallback: without WebGL, or if the shader does not compile or link, or if the context keeps getting lost, the card warns once in the console and draws the classic rain. `rain_style: classic` keeps the 2.0 rain and glass as they were.
 
 ### Added
-- `weather.rain_style` (`shader` | `classic`) in the card editor, and `window.sunCycleBg.rainShaderState()` for tests.
+- `weather.rain_style` (`shader` | `classic`) in the card editor, and `window.sunCycleBg.rainShaderState()` for tests. ([#35](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/35))
 
 ## 2.0.0
 
