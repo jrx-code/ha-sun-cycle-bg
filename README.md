@@ -666,6 +666,7 @@ weather:
   splashes: true
   snow: true
   hail: true
+  fog: true
 ```
 
 | Key | Default | What it does |
@@ -680,6 +681,7 @@ weather:
 | `precipitation_entity` | none | Optional measured rate in mm/h; 4 mm/h and up is a downpour. Without it the condition sets how hard it rains (1.18.0). |
 | `snow` | `true` | Snow in three depths for `snowy`, swaying as it falls; with rain for `snowy-rainy` (1.19.0). |
 | `hail` | `true` | For `hail`: pellets in two depths in front of rain, bouncing where they land (1.20.0). |
+| `fog` | `true` | Haze towards the horizon and drifting banks, from `fog`, from `fog_area_fraction` of `clouds_entity`, or from visibility under 1 km (1.21.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -731,6 +733,10 @@ The same tile and loop as the rain, with one more wrapper between the shear and 
 ### Hail
 
 Two depths of hard, bright pellets with a highlight, faster than rain and bent less by the wind, in front of the rain the condition also brings (60 % of it). Where they land, three bands of pellets hop: one short loop moves each band a few pixels up and back while it flashes, and the three run a third of a loop apart. Transform and opacity only, like everything else here.
+
+### Fog
+
+Three sources, the strongest wins: the condition `fog` (0.85), `fog_area_fraction` of `clouds_entity`, and the weather entity's `visibility` under 1 km (300 m is a thick fog). The haze is one static gradient thickening towards the horizon; on top of it a few thick banks sit on a strip that repeats every frame width and crawls with the wind, at 1.5 px/s in calm air. Both take their colour from the sky, so a dawn fog is warm, a noon fog pale and a night fog dark. A thick fog also raises the veil: past 40 % it hides the sky the way cloud does.
 
 ## Tuning the palette
 

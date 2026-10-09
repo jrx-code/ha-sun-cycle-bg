@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.21.0
+
+### Added
+- Fog: a haze thickening towards the horizon and thick banks crawling with the wind, coloured from the sky; from the condition, AstroWeather's fog fraction, or visibility under 1 km. Thick fog raises the veil (`weather.fog`). ([#8](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/8))
+
 ## 1.20.0
 
 ### Added
