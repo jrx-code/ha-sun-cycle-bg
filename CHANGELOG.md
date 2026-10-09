@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.19.0
+
+### Added
+- Snow in three depths, swaying as it falls, slanted further than rain by the same wind; sleet as rain and snow together (`weather.snow`). ([#6](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/6))
+
 ## 1.18.0
 
 ### Added
