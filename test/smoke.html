@@ -634,6 +634,26 @@ out.push(['LISCIE leafBase', [window.sunCycleBg.readWeatherConfig({ entity: 'wea
     }, 650);
   }, 50));
 }
+{
+  // pola encji bez ha-entity-picker (smoke nie ma HA): datalist z encjami danej domeny
+  const ed = document.createElement('sun-cycle-bg-card-editor');
+  document.body.appendChild(ed);
+  ed.hass = { states: { 'weather.dom': { attributes: { friendly_name: 'Dom' } }, 'weather.astro': { attributes: {} },
+    'sensor.pora_roku': { attributes: { friendly_name: 'Pora roku' } }, 'light.x': { attributes: {} }, 'sun.sun': { attributes: {} } } };
+  ed.setConfig({ type: 'custom:sun-cycle-bg-card', weather: { entity: 'weather.dom' } });
+  const r = ed.shadowRoot;
+  const pole = (k) => r.querySelector('[data-k="' + k + '"]');
+  const lista = (k) => { const e = pole(k); const l = e && r.getElementById(e.getAttribute('list'));
+    return l ? [...l.options].map((o) => o.value + '|' + o.label) : null; };
+  let wyslane = null;
+  ed.addEventListener('config-changed', (e) => { wyslane = e.detail.config; });
+  const s = pole('weather.season_entity');
+  s.value = 'sensor.pora_roku'; s.dispatchEvent(new Event('change'));
+  out.push(['EDYTOR pola encji (datalist)', { typ: pole('weather.entity').tagName, wartosc: pole('weather.entity').value,
+    weather: lista('weather.entity'), season: lista('weather.season_entity'), sun: lista('sun_entity'),
+    zapis: wyslane && wyslane.weather }]);
+  ed.remove();
+}
 out.push(['WIATR 15 km/h: nic', czytajWiatr(pogoda(20, { entity: 'weather.t' }, 'partlycloudy',
   { cloud_coverage: 30, wind_speed: 15, wind_bearing: 270 }).cont)]);
 out.push(['WIATR 45 km/h z zachodu, leaves autumn w sierpniu', czytajWiatr(pogoda(20,

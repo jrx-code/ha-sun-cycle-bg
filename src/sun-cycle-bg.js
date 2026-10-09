@@ -3710,9 +3710,9 @@
     { tytul: 'Weather', wlacznik: 'weather', domWl: false, skrotWl: {}, pola: [
       { k: 'weather', et: 'weather', typ: 'bool', dom: false, glowna: true,
         o: 'The sky follows the weather entity: cover dims it, and the effects below draw what it reports.' },
-      { k: 'weather.entity', et: 'weather entity', typ: 'tekst', dom: '', hint: 'weather.home',
+      { k: 'weather.entity', et: 'weather entity', typ: 'encja', domeny: ['weather'], dom: '', hint: 'weather.home',
         o: 'Condition, cloud cover, wind and visibility come from here. Without it nothing is drawn.' },
-      { k: 'weather.clouds_entity', et: 'cloud layers', typ: 'tekst', dom: '', hint: 'weather.astroweather',
+      { k: 'weather.clouds_entity', et: 'cloud layers', typ: 'encja', domeny: ['weather'], dom: '', hint: 'weather.astroweather',
         o: 'Optional: cover per height and fog (AstroWeather attributes). Without it the total cover is spread over the heights.' },
       { k: 'weather.quality', et: 'quality', typ: 'wybor', opcje: ['high', 'medium', 'low'], dom: 'medium', w: 'quality',
         o: 'Particle count and the resolution strips are painted at. low suits a weak kiosk.' },
@@ -3738,17 +3738,17 @@
         o: 'What the wind carries: autumn leaves in Sept-Nov only; seasons adds cherry petals in spring and summer leaves and flowers; always also blows dry leaves in winter; or nothing.' },
       { k: 'weather.glass', et: 'drops on the glass', typ: 'bool', dom: false, w: 'glass',
         o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
-      { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'tekst', dom: '', hint: 'sensor.planetary_k_index',
+      { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'encja', domeny: ['sensor', 'input_number'], dom: '', hint: 'sensor.planetary_k_index',
         o: 'Northern lights only when this Kp index reaches the threshold below, on a dark and mostly clear night.' },
       { k: 'weather.aurora.min_kp', et: 'aurora: from Kp', typ: 'zakres', min: 1, max: 9, krok: 1, dom: 5,
         o: 'The Kp at which the aurora shows. Around 53 deg N it takes about 5 or more.' },
       { k: 'weather.aurora.placement', et: 'aurora: where', typ: 'wybor', opcje: ['edges', 'sky'], dom: 'edges',
         o: 'edges: where the north is in the sky window (both edges by default). sky: across the top.' },
-      { k: 'weather.gust_entity', et: 'gust sensor', typ: 'tekst', dom: '', hint: 'sensor.wind_gust',
+      { k: 'weather.gust_entity', et: 'gust sensor', typ: 'encja', domeny: ['sensor'], dom: '', hint: 'sensor.wind_gust',
         o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
-      { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
+      { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'encja', domeny: ['sensor'], dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
-      { k: 'weather.season_entity', et: 'season sensor', typ: 'tekst', dom: '', hint: 'sensor.season',
+      { k: 'weather.season_entity', et: 'season sensor', typ: 'encja', domeny: ['sensor', 'input_select', 'select'], dom: '', hint: 'sensor.season',
         o: 'Optional: the season for the leaves (spring, summer, autumn, winter), e.g. from the Season integration. Without it the month decides: Mar-May spring, Jun-Aug summer, Sep-Nov autumn.' },
     ] },
     { tytul: 'Discs and files', pola: [
@@ -3764,7 +3764,7 @@
         o: 'Your own file. Empty keeps the one the card installs.' },
       { k: 'assets', et: 'assets folder', typ: 'tekst', dom: '', hint: '/local/sun-cycle/',
         o: 'Moves every default path at once. Empty uses the HACS folder.' },
-      { k: 'sun_entity', et: 'sun entity', typ: 'tekst', dom: '', hint: 'sun.sun',
+      { k: 'sun_entity', et: 'sun entity', typ: 'encja', domeny: ['sun', 'sensor'], dom: '', hint: 'sun.sun',
         o: 'Where the elevation and azimuth come from. Empty means sun.sun.' },
     ] },
   ];
@@ -3795,6 +3795,7 @@
     '.scb-w .scb-num input::-webkit-outer-spin-button,' +
     '.scb-w .scb-num input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}' +
     '.scb-w input[type=range]{width:100%;accent-color:var(--primary-color,#03a9f4);}' +
+    '.scb-w ha-entity-picker{display:block;width:100%;min-width:0;}' +
     '.scb-w input[type=text],.scb-w select{width:100%;box-sizing:border-box;font:inherit;' +
       'font-size:13px;padding:5px 8px;border-radius:6px;color:var(--primary-text-color);' +
       'background:var(--card-background-color,#111);' +
@@ -3943,6 +3944,42 @@
     set hass(h) {
       this._hass = h;
       if (this._profil && this._profilStan === 'czeka') this._profilWczytaj();
+      if (this.shadowRoot) {
+        for (const e of this.shadowRoot.querySelectorAll('ha-entity-picker')) e.hass = h;
+      }
+    }
+
+    /* An entity field: Home Assistant's own picker (search by name or id,
+       filtered to the domains that make sense), registered on dashboards and
+       on the integration's settings page alike. Where it is not, a text field
+       with a list of the matching entities to pick from, which filters as you
+       type too. Either way an id typed by hand is kept. */
+    _poleEncji(p, v) {
+      if (customElements.get('ha-entity-picker')) {
+        const el = document.createElement('ha-entity-picker');
+        el.hass = this._hass;
+        el.value = v || '';
+        el.includeDomains = p.domeny;
+        el.allowCustomEntity = true;
+        // no placeholder: the picker draws it like a chosen entity, and an
+        // empty field then looked set
+        return el;
+      }
+      const el = document.createElement('input');
+      el.type = 'text'; el.value = v || ''; el.placeholder = p.hint || '';
+      const lista = document.createElement('datalist');
+      lista.id = 'scb-encje-' + p.k.replace(/\W/g, '-');
+      const st = (this._hass && this._hass.states) || {};
+      for (const id of Object.keys(st).sort()) {
+        if (!p.domeny.includes(id.split('.')[0])) continue;
+        const o = document.createElement('option');
+        o.value = id;
+        o.label = (st[id].attributes && st[id].attributes.friendly_name) || id;
+        lista.appendChild(o);
+      }
+      el.setAttribute('list', lista.id);
+      el._lista = lista;
+      return el;
     }
 
     _profilWczytaj() {
@@ -4092,7 +4129,7 @@
           sw.addEventListener('change', () => this._przelacz(g, sw.checked));
           sum.appendChild(sw);
         }
-        const zmian = g.pola.filter((p) => !p.glowna && p.typ !== 'tekst' &&
+        const zmian = g.pola.filter((p) => !p.glowna && p.typ !== 'tekst' && p.typ !== 'encja' &&
           !edytorRowne(edytorCzytaj(this._cfg, p.k, p.dom), p.dom)).length;
         sum.querySelector('.scb-odznaka').textContent =
           !wl ? 'off' : zmian ? zmian + (zmian === 1 ? ' change' : ' changes') : '';
@@ -4123,7 +4160,9 @@
             w.appendChild(document.createElement('span'));
             w.appendChild(pole);
           } else {
-            if (p.typ === 'tekst') {
+            if (p.typ === 'encja') {
+              pole = this._poleEncji(p, v);
+            } else if (p.typ === 'tekst') {
               pole = document.createElement('input');
               pole.type = 'text'; pole.value = v || ''; pole.placeholder = p.hint || '';
             } else if (p.typ === 'wybor') {
@@ -4155,13 +4194,14 @@
               pole._dokladne = dokladne;
             }
             w.appendChild(pole);
+            if (pole._lista) w.appendChild(pole._lista);
             w.appendChild(licz);
           }
           pole.dataset.k = p.k;
           const zapisz = (zrodlo) => {
             let nowa;
             if (p.typ === 'bool') nowa = pole.checked;
-            else if (p.typ === 'tekst') nowa = pole.value.trim();
+            else if (p.typ === 'tekst' || p.typ === 'encja') nowa = String(pole.value || '').trim();
             else if (p.typ === 'wybor') nowa = pole.value;
             else {
               const d = pole._dokladne;
@@ -4190,11 +4230,18 @@
             }
             this._emit();
             const od = det.querySelector('.scb-odznaka');
-            const ile = g.pola.filter((q) => !q.glowna && q.typ !== 'tekst' &&
+            const ile = g.pola.filter((q) => !q.glowna && q.typ !== 'tekst' && q.typ !== 'encja' &&
               !edytorRowne(edytorCzytaj(this._cfg, q.k, q.dom), q.dom)).length;
             od.textContent = ile ? ile + (ile === 1 ? ' change' : ' changes') : '';
           };
-          pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', () => zapisz('suwak'));
+          // the HA picker reports through value-changed and leaves its value to its owner
+          if (pole.tagName === 'HA-ENTITY-PICKER') {
+            pole.addEventListener('value-changed', (e) => {
+              e.stopPropagation();
+              pole.value = e.detail.value || '';
+              zapisz('encja');
+            });
+          } else pole.addEventListener(p.typ === 'zakres' ? 'input' : 'change', () => zapisz('suwak'));
           if (pole._dokladne) {
             pole._dokladne.addEventListener('change', () => zapisz('liczba'));
             // Enter should commit without waiting for focus to leave
