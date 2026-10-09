@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.21.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.22.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -88,6 +88,7 @@
  *     snow: true                    # three depths, swaying; mixed with rain for sleet
  *     hail: true                    # pellets in two depths, bouncing at the horizon
  *     fog: true                     # haze and drifting banks
+ *     lightning: true               # strikes in a thunderstorm
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
@@ -1479,9 +1480,9 @@
   };
   // children of the weather layer, bottom to top
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
-                         'scw-clouds-low', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
+                         'scw-clouds-low', 'scw-bolt', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
-                         'scw-hail-1'];
+                         'scw-hail-1', 'scw-flash'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1501,6 +1502,7 @@
       snow: w.snow !== false,
       hail: w.hail !== false,
       fog: w.fog !== false,
+      lightning: w.lightning !== false,
     };
   }
 
@@ -1622,10 +1624,11 @@
     st.textContent = WEATHER_CSS('.' + inst);
     layer.appendChild(st);
     layer.scwConfig = cfg;
-    layer._scwTimers = [];
+    layer._scwT = {};                 // named timers: one per effect that has one
     layer.scsStop = () => {
-      layer._scwTimers.forEach(clearTimeout);
-      layer._scwTimers = [];
+      Object.values(layer._scwT).forEach(clearTimeout);
+      layer._scwT = {};
+      layer._scwBurza = null;
       for (const a of layer.getAnimations ? layer.getAnimations({ subtree: true }) : []) a.cancel();
     };
     return layer;
@@ -2133,6 +2136,111 @@
     anim.playbackRate = (1.5 + Math.abs(wx) * 0.12) * (W / 1280) / 3;
   }
 
+  const LIGHTNING = { lightning: 1, 'lightning-rainy': 1, exceptional: 0.5 };
+  const SVGNS = 'http://www.w3.org/2000/svg';
+
+  /* Lightning. A timer picks the moment, every 3-12 s (twice that for
+     `exceptional`); the strike itself plays on the compositor: a sky flash
+     with two return strokes after the first, and either a forked
+     cloud-to-ground bolt or an intra-cloud glow. Both are opacity animations
+     on elements removed when they end. Nothing runs between strikes, and
+     nothing strikes for someone who asked for less motion. */
+  function weatherLightning(layer, cfg, ws, ctx) {
+    const czest = cfg.lightning && ws ? LIGHTNING[ws.cond] || 0 : 0;
+    if (!czest) {
+      layer._scwBurza = null;
+      clearTimeout(layer._scwT.bolt); layer._scwT.bolt = 0;
+      weatherDrop(layer, 'scw-bolt'); weatherDrop(layer, 'scw-flash');
+      return;
+    }
+    layer._scwBurza = { czest, dzien: ctx.light.e > 5, W: ctx.W, H: ctx.H };
+    const f = weatherChild(layer, 'scw-flash');
+    f.style.background = 'rgb(226,232,255)';
+    f.style.mixBlendMode = 'screen';
+    f.style.opacity = '0';
+    weatherChild(layer, 'scw-bolt');
+    if (!layer._scwT.bolt) lightningPlan(layer, 1.5);
+  }
+
+  function lightningPlan(layer, s) {
+    layer._scwT.bolt = setTimeout(() => {
+      layer._scwT.bolt = 0;
+      const b = layer._scwBurza;
+      if (!b || !layer.isConnected) return;     // re-armed by the next sync
+      if (!weatherCalm()) lightningStrike(layer, b);
+      lightningPlan(layer, (3 + Math.random() * 9) / b.czest);
+    }, s * 1000);
+  }
+
+  // a jagged line from a to b, displaced sideways, with forks hanging off it
+  function lightningPath(W, H) {
+    const x0 = (0.1 + Math.random() * 0.8) * W, y0 = H * (0.08 + Math.random() * 0.12);
+    const x1 = x0 + (Math.random() - 0.5) * W * 0.18, y1 = H * (0.8 + Math.random() * 0.1);
+    const pts = [[x0, y0]], forks = [];
+    const n = 26;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const x = lerp(x0, x1, t) + (Math.random() - 0.5) * W * 0.035;
+      const y = lerp(y0, y1, t) + (Math.random() - 0.5) * H * 0.02;
+      pts.push([x, y]);
+      if (Math.random() < 0.18 && i < n - 4) {
+        const f = [[x, y]], dir = Math.random() < 0.5 ? -1 : 1;
+        let fx = x, fy = y;
+        for (let j = 0, m = 6 + Math.random() * 6; j < m; j++) {
+          fx += dir * W * (0.006 + Math.random() * 0.014);
+          fy += H * (0.012 + Math.random() * 0.02);
+          f.push([fx, fy]);
+        }
+        forks.push(f);
+      }
+    }
+    const d = (p) => 'M' + p.map((q) => q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join('L');
+    return { main: d(pts), forks: forks.map(d), x: x0 / W };
+  }
+
+  const STROKES = (m) => [{ opacity: 0 }, { opacity: 0.5 * m, offset: 0.09 }, { opacity: 0.07 * m, offset: 0.16 },
+    { opacity: 0.38 * m, offset: 0.24 }, { opacity: 0.05 * m, offset: 0.33 },
+    { opacity: 0.22 * m, offset: 0.41 }, { opacity: 0 }];
+
+  function lightningStrike(layer, b) {
+    const flash = layer.querySelector(':scope > .scw-flash');
+    const host = layer.querySelector(':scope > .scw-bolt');
+    if (!flash || !host) return;
+    const ziemia = Math.random() < 0.6;
+    const moc = (ziemia ? 1 : 0.7) * (b.dzien ? 0.45 : 1);
+    flash.animate(STROKES(moc), { duration: 700, easing: 'linear' });
+    let el;
+    if (ziemia) {
+      const p = lightningPath(b.W, b.H);
+      el = document.createElementNS(SVGNS, 'svg');
+      el.setAttribute('viewBox', '0 0 ' + b.W + ' ' + b.H);
+      el.setAttribute('preserveAspectRatio', 'none');
+      el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;overflow:visible;';
+      const k = b.H / 400;
+      const sciezka = (d, w, kol) => {
+        const e = document.createElementNS(SVGNS, 'path');
+        e.setAttribute('d', d); e.setAttribute('fill', 'none'); e.setAttribute('stroke', kol);
+        e.setAttribute('stroke-width', String(w * k)); e.setAttribute('stroke-linejoin', 'round');
+        e.setAttribute('stroke-linecap', 'round');
+        el.appendChild(e);
+      };
+      // glow first, core on top: a wide pale stroke is the halo, no filter needed
+      sciezka(p.main, 7, 'rgba(170,185,255,.28)');
+      for (const f of p.forks) sciezka(f, 3, 'rgba(170,185,255,.22)');
+      sciezka(p.main, 1.8, 'rgba(255,255,255,.95)');
+      for (const f of p.forks) sciezka(f, 0.9, 'rgba(240,244,255,.8)');
+    } else {
+      el = document.createElement('div');
+      const x = (15 + Math.random() * 70).toFixed(0), y = (10 + Math.random() * 15).toFixed(0);
+      el.style.cssText = 'position:absolute;inset:0;background:radial-gradient(28% 40% at ' + x + '% ' + y +
+        '%,rgba(220,226,255,.9),rgba(220,226,255,0));';
+    }
+    el.style.opacity = '0';
+    host.appendChild(el);
+    const a = el.animate(STROKES(2 * (b.dzien ? 0.6 : 1)), { duration: 700, easing: 'linear' });
+    a.onfinish = () => el.remove();
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
@@ -2140,6 +2248,7 @@
     weatherRain(layer, cfg, ws, ctx);
     weatherSnow(layer, cfg, ws, ctx);
     weatherHail(layer, cfg, ws, ctx);
+    weatherLightning(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2266,6 +2375,8 @@
         while (n && !/(^|\s)sun-cycle-/.test(n.className || '')) n = n.nextElementSibling;
         if (n) this._before(c, layer);
       }
+      // a storm whose timer chain stopped while the view was away
+      if (layer._scwBurza && !layer._scwT.bolt && layer.isConnected) lightningPlan(layer, 2);
       const ws = readWeather(st, cfg);
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
@@ -2908,6 +3019,8 @@
         o: 'Hard bright pellets with rain behind them, bouncing where they land.' },
       { k: 'weather.fog', et: 'fog', typ: 'bool', dom: true, w: 'fog',
         o: 'Haze towards the horizon and drifting banks, from the condition, fog fraction or low visibility.' },
+      { k: 'weather.lightning', et: 'lightning', typ: 'bool', dom: true, w: 'lightning',
+        o: 'Strikes every few seconds in a thunderstorm: a sky flash, a forked bolt or a glow in the cloud.' },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },
@@ -3455,7 +3568,7 @@
 
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
-                       readWeatherConfig, readWeather, weatherLight,
+                       readWeatherConfig, readWeather, weatherLight, lightningStrike,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,

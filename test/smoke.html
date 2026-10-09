@@ -515,6 +515,36 @@ out.push(['MGLA z astroweather fog 50%', czytajMgle(pogoda(20, { entity: 'weathe
 out.push(['MGLA sunny: brak', czytajMgle(pogoda(20, { entity: 'weather.t' }, 'sunny', {}).cont)]);
 out.push(['MGLA fog: false', czytajMgle(pogoda(20, { entity: 'weather.t', fog: false }, 'fog', {}).cont)]);
 
+// --- 1.22.0: blyskawice -------------------------------------------------
+{
+  // uderzenie wywolane wprost (timer czeka 1,5 s), zeby odczytac jego elementy
+  const z = pogoda(-20, { entity: 'weather.t' }, 'lightning-rainy', { cloud_coverage: 100 });
+  const w = z.cont.querySelector('.sun-cycle-weather');
+  const proby = [];
+  const losowo = Math.random;
+  for (const r of [0.1, 0.9]) {        // 0.1 = doziemny, 0.9 = w chmurze
+    Math.random = () => r;
+    window.sunCycleBg.lightningStrike(w, w._scwBurza);
+    Math.random = losowo;
+    const host = w.querySelector('.scw-bolt'), el = host.lastElementChild;
+    proby.push({ element: el.tagName, sciezek: el.querySelectorAll ? el.querySelectorAll('path').length : 0,
+                 animacji: el.getAnimations().length, ms: el.getAnimations()[0].effect.getTiming().duration });
+  }
+  const fl = w.querySelector('.scw-flash');
+  out.push(['BLYSK lightning-rainy noc', { timer: !!w._scwT.bolt, burza: w._scwBurza,
+    blysk: { tlo: fl.style.background, tryb: fl.style.mixBlendMode, animacji: fl.getAnimations().length },
+    uderzenia: proby,
+    kolejnosc: [...w.children].filter((k) => k.tagName !== 'STYLE').map((k) => k.className.replace('scw ', '')) }]);
+}
+{
+  const z = pogoda(30, { entity: 'weather.t' }, 'rainy', { cloud_coverage: 90 });
+  const w = z.cont.querySelector('.sun-cycle-weather');
+  out.push(['BLYSK rainy: brak', { timer: !!w._scwT.bolt, flash: !!w.querySelector('.scw-flash') }]);
+  const z2 = pogoda(30, { entity: 'weather.t', lightning: false }, 'lightning', { cloud_coverage: 90 });
+  const w2 = z2.cont.querySelector('.sun-cycle-weather');
+  out.push(['BLYSK lightning: false', { timer: !!w2._scwT.bolt, flash: !!w2.querySelector('.scw-flash') }]);
+}
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');

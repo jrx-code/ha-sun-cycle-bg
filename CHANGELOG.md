@@ -3,6 +3,14 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.22.0
+
+### Added
+- Lightning for `lightning`, `lightning-rainy` and `exceptional`: a timer picks the moment, the strike is a sky flash with return strokes plus a forked SVG bolt or an intra-cloud glow, opacity-only and removed when done (`weather.lightning`). ([#9](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/9))
+
+### Changed
+- The weather layer keeps named timers, one per effect, and clears them all when it is taken down.
+
 ## 1.21.0
 
 ### Added
