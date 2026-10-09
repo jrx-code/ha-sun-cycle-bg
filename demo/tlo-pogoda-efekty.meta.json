@@ -1,0 +1,7 @@
+{
+ "tytul": "Tło: pozostałe efekty pogody, propozycje",
+ "grupa": "Tło (sun-cycle-bg)",
+ "status": "aktualne",
+ "kolejnosc": 107,
+ "opis": "Propozycja do decyzji: nowe chmury, śnieg, grad, mgła, burza, wiatr z liśćmi i zorza dla sun-cycle-bg, tak jak deszcz. Dla każdego efektu A: to, co karta ma dziś, B: propozycja na jednym płótnie. Chmury, śnieg, mgła i zorza to shadery WebGL (chmury w perspektywie ze światłem od słońca, śnieg w 6 głębokościach z bokeh, mgła wykładnicza z kłębiącymi się ławicami, kurtyny zorzy z promieniami i barwą od wysokości), grad, burza i wiatr to Canvas 2D (odbijające się ziarna, kanał błyskawicy z rozgałęzieniami i kilkoma wyładowaniami, liście z fizyką trzepotania). Natężenie, wiatr, pora dnia, rozdzielczość, licznik FPS. Cel: Raspberry Pi 5, jedno płótno, 0,5 rozdzielczości, 30 kl./s."
+}

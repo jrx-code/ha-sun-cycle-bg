@@ -1,0 +1,1037 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tło: efekty pogody</title>
+<style>
+  :root { --bg:#0e1420; --surface:#161e2e; --surface2:#1d2738; --ink:#e6ebf3; --muted:#9aa6b8;
+          --accent:#7cb3f9; --line:#2a3548; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width:1280px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  h2 { font-size:17px; margin:28px 0 10px; }
+  p { margin:6px 0; color:var(--muted); max-width:80ch; }
+  code { color:#cfd6e2; }
+  a { color:var(--accent); }
+  hui-view-container#scena { position:relative; display:block; width:100%; aspect-ratio:16/9;
+           border-radius:12px; overflow:hidden; background:#000; border:1px solid var(--line); margin-top:14px; }
+  hui-view-background { position:absolute; inset:0; display:block; z-index:0; }
+  canvas.warstwa { position:absolute; inset:0; width:100%; height:100%; display:block;
+                   pointer-events:none; z-index:50; }
+  .panel { display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; margin:14px 0 4px;
+           background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  .grupa { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .grupa > span { color:var(--muted); font-size:13px; margin-right:4px; }
+  button { background:var(--surface2); color:var(--ink); border:1px solid var(--line); border-radius:8px;
+           padding:6px 12px; font:inherit; font-size:14px; cursor:pointer; }
+  button.on { background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600; }
+  input[type=range] { width:150px; }
+  .odczyt { font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  #fps { font-size:14px; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .opis { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin-top:10px; }
+  .opis b { color:var(--ink); }
+  .blad { position:absolute; inset:auto 12px 12px 12px; z-index:60; background:#3a1720; color:#ffd7dd;
+          border-radius:8px; padding:8px 12px; font-size:14px; }
+  table { border-collapse:collapse; font-size:13.5px; margin-top:6px; width:100%; }
+  td, th { border-bottom:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .tabw { overflow-x:auto; }
+</style>
+</head>
+<body>
+<script>
+/* Symulowany zegar: karta liczy słońce, księżyc i gwiazdy z `new Date()`. */
+const RD = Date;
+let SIM_OFF = 0;
+class SimDate extends RD {
+  constructor(...a) { if (a.length) super(...a); else super(RD.now() + SIM_OFF); }
+  static now() { return RD.now() + SIM_OFF; }
+}
+window.Date = SimDate;
+</script>
+<main>
+  <h1>Tło: pozostałe efekty pogody, propozycje</h1>
+  <p>Na scenie rysuje prawdziwa karta <code>__WERSJA__</code> z konfiguracją panelu salonu
+  (jakość <code>low</code>, jak na kiosku). Wariant A to efekt, który karta ma dziś, wywołany stanem pogody.
+  Wariant B wyłącza w karcie tylko ten jeden efekt (resztę nieba, welon i chmury innych efektów zostawia)
+  i rysuje go na <b>jednym</b> płótnie nad kartą. Naraz działa jeden wariant.</p>
+  <p>Kontrakt wydajności B (kiosk Raspberry Pi 5, ograniczony przez GPU, koszt to pełnoekranowe warstwy):
+  jedno płótno na efekt, 0,5 rozdzielczości rozciągane przez CSS, limit 30 kl./s (chmury i mgła 15, bo
+  płyną o ułamek piksela na klatkę), pętla stoi przy wyłączonym efekcie i ukrytej stronie, tekstury budowane
+  tylko przy zmianie. Burza nie ma pętli między wyładowaniami.</p>
+
+  <div class="panel">
+    <div class="grupa" id="efekty"><span>Efekt</span></div>
+  </div>
+  <div class="panel">
+    <div class="grupa" id="warianty"><span>Wariant</span></div>
+    <div class="grupa"><span>Natężenie</span><input type="range" id="nat" min="0.1" max="1" step="0.05" value="0.7">
+      <span class="odczyt" id="natV"></span></div>
+    <div class="grupa"><span>Wiatr</span><input type="range" id="wiatr" min="0" max="80" step="1" value="30">
+      <span class="odczyt" id="wiatrV"></span></div>
+    <div class="grupa" id="dzien"><span>Pora dnia</span></div>
+    <div class="grupa" id="welon"><span>Welon karty</span></div>
+    <div class="grupa" id="skala"><span>Rozdzielczość płótna</span></div>
+    <div class="grupa" id="akcje"></div>
+    <div class="grupa"><span id="fps">FPS: -</span></div>
+  </div>
+  <div class="odczyt" id="stan"></div>
+  <hui-view-container id="scena">
+    <hui-view-background></hui-view-background>
+    <sun-cycle-bg-card id="karta"></sun-cycle-bg-card>
+  </hui-view-container>
+  <div class="opis" id="opisWariantu"></div>
+
+  <h2>Efekty: dziś i propozycja</h2>
+  <div class="tabw"><table>
+    <tr><th>Efekt</th><th>A. Dziś</th><th>B. Propozycja</th><th>Technika B</th><th>Koszt B</th></tr>
+    <tr><td>Chmury</td><td>płaskie sprite'y z kół z gradientem w 3 paskach CSS, jedna barwa góra/dół, pokład jako gradient</td>
+      <td>chmury w perspektywie (duże u góry, małe i płaskie przy horyzoncie), światło od strony słońca, srebrny brzeg, cirrusy smugowe, pokład z wałami</td>
+      <td>WebGL, szum z tekstury 256x256, fbm z zawinięciem dziedziny, 3 warstwy + pokład</td><td>ok. 25 próbek tekstury na piksel, 15 kl./s</td></tr>
+    <tr><td>Śnieg</td><td>kropki z gradientem w 1 warstwie (jakość low), kołysanie całej warstwy</td>
+      <td>6 głębokości: dalekie drobne i gęste, bliskie duże, rozmyte jak bokeh, rozmazane w ruchu; turbulencja polem, każdy płatek waha się sam</td>
+      <td>WebGL, siatka komórek na warstwę, jeden płatek na komórkę</td><td>sama arytmetyka, 6 pętli, 30 kl./s</td></tr>
+    <tr><td>Grad</td><td>kropki spadające paskiem, pas skaczących kropek przy dole</td>
+      <td>krótkie jasne smugi (rozmycie ruchu), ziarna odbijają się 1 do 2 razy po paraboli, odpryski; ciemny obrys na jasnym niebie</td>
+      <td>Canvas 2D, cząstki ze sprite'ów</td><td>CPU kilkaset cząstek, 1 złożenie</td></tr>
+    <tr><td>Mgła</td><td>gradient do horyzontu i 5 elips na pasku</td>
+      <td>gęstość wykładnicza z wysokością, ławice z szumu w 2 głębokościach z paralaksą, zwijanie, rozjaśnienie przy słońcu, łuna miasta w nocy</td>
+      <td>WebGL, fbm + zawinięcie</td><td>ok. 12 próbek na piksel, 15 kl./s</td></tr>
+    <tr><td>Burza</td><td>jeden błysk nieba + SVG zygzak z 26 punktów lub plama</td>
+      <td>kanał z rekurencyjnego przesuwania środka z rozgałęzieniami, lider, 3 do 5 wyładowań co 40 do 120 ms, poświata kanału, podświetlenie struktury chmury, błyskawice w chmurze</td>
+      <td>Canvas 2D, obraz kanału liczony raz na uderzenie</td><td>pętla tylko ok. 1 s na uderzenie, poza tym zero</td></tr>
+    <tr><td>Wiatr i liście</td><td>białe kreski jadące poziomo, liść na 8 klatkach CSS</td>
+      <td>smugi płynące polem przepływu z porywami, pyłki, liście z fizyką trzepotania: opór, siła nośna, obrót wokół własnej osi z odwrotną stroną liścia, głębia</td>
+      <td>Canvas 2D, sprite'y liści karty</td><td>CPU kilkadziesiąt obiektów, 1 złożenie</td></tr>
+    <tr><td>Zorza</td><td>pionowe paski z gradientem, przesuwane i pulsujące, przy krawędziach</td>
+      <td>kurtyny z promieniami, falujący dolny brzeg, zieleń 557,7 nm nisko, czerwień 630 nm wysoko, fioletowy rąbek, dodawanie światła</td>
+      <td>WebGL, szum trójkątny + fbm</td><td>ok. 10 próbek na piksel, 30 kl./s</td></tr>
+  </table></div>
+
+  <h2>Źródła (idee, kod napisany od zera)</h2>
+  <ul class="odczyt">
+    <li>Inigo Quilez, <a href="https://iquilezles.org/articles/warp/">Domain warping</a> i <a href="https://iquilezles.org/articles/fog/">Better fog</a>: zawinięcie dziedziny fbm, mgła wykładnicza z wysokością, rozjaśnienie w stronę słońca.</li>
+    <li>Maxime Heckel, <a href="https://blog.maximeheckel.com/posts/real-time-cloudscapes-with-volumetric-raymarching/">Real-time dreamy cloudscapes</a>: światło chmury jako różnica gęstości w stronę słońca; Schneider i Vos, <a href="https://advances.realtimerendering.com/s2015/The%20Real-time%20Volumetric%20Cloudscapes%20of%20Horizon%20-%20Zero%20Dawn%20-%20ARTR.pdf">Horizon Zero Dawn</a>: srebrny brzeg, ciemniejsze brzegi od cienia, przemapowanie pokrycia.</li>
+    <li>drift, <a href="https://www.shadertoy.com/view/4tdSWr">2D Clouds</a> (Shadertoy, CC BY-NC-SA, tylko oglądane): warstwy fbm w różnym tempie.</li>
+    <li>Andrew Baldwin, Just Snow (CC BY-NC-SA, tylko idea) i Lumine, <a href="https://godotshaders.com/shader/multilayer-snowfall-shader/">Multilayer snowfall</a> (CC0): siatka komórek na warstwę, rozmycie z odległości od płaszczyzny ostrości.</li>
+    <li>Heymsfield 2014, <a href="https://agupubs.onlinelibrary.wiley.com/doi/full/10.1002/2014GL062324">prędkości gradu</a>: 10 do 50 m/s, 2 do 5 razy szybciej niż śnieg.</li>
+    <li>Michael Hoffman, <a href="https://code.tutsplus.com/how-to-generate-shockingly-good-2d-lightning-effects--gamedev-2681t">2D lightning</a> i Ladstatt, <a href="https://ladstatt.blogspot.com/2013/01/how-to-create-2d-lightning-effects-with.html">midpoint displacement</a>; ALDIS, <a href="https://www.aldis.at/en/lightning-statistics/subsequent-strokes/">kolejne wyładowania</a>: 3 do 5 wyładowań co 40 do 80 ms tym samym kanałem.</li>
+    <li>Belmonte, Eisenberg, Moses 1998, <a href="https://carretero.sdsu.edu/teaching/M-638/lectures/falling_paper1.pdf">From flutter to tumble</a>; Andersen, Pesavento, Wang 2005, <a href="https://dragonfly.tam.cornell.edu/publications/2005_JFM_Andersen_Pesavento_Wang_b.pdf">fluttering and tumbling plates</a>: trzepotanie i koziołkowanie, faza szybowania.</li>
+    <li>nimitz, <a href="https://www.shadertoy.com/view/XtGGRt">Auroras</a> (CC BY-NC-SA, tylko idea szumu trójkątnego); WebExhibits, <a href="https://www.webexhibits.org/causesofcolor/4D.html">barwy zorzy</a>: zieleń 557,7 nm 100 do 200 km, czerwień 630 nm wyżej, fiolet N2+ w dolnym rąbku.</li>
+  </ul>
+  <p>Zbudowano __ZBUDOWANO__. Strona jest generowana przez <code>tools/build_weather2_poc.py</code>: karta wkleja się przy budowaniu.</p>
+</main>
+
+<script>
+/* ---- sun-cycle-bg.js, wklejone przy budowaniu strony ---- */
+__KARTA__
+</script>
+
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KONFIG = __KONFIG__;
+const ZASOBY = new URLSearchParams(location.search).get("assets") || "__ZASOBY__";
+const LAT = 53.5, LON = 14.5;
+const DZIEN = [["Dzień", 13, 30], ["Zmierzch", 19, -3], ["Noc", 23, -25]];
+const EFEKTY = [
+  ["chmury", "Chmury"], ["snieg", "Śnieg"], ["grad", "Grad"], ["mgla", "Mgła"],
+  ["burza", "Burza/błyskawice"], ["wiatr", "Wiatr i liście"], ["zorza", "Zorza"],
+];
+const FLAGA = { chmury: "clouds", snieg: "snow", grad: "hail", mgla: "fog", burza: "lightning", wiatr: "wind", zorza: "aurora" };
+const q = new URLSearchParams(location.search);
+const S = { e: q.get("e") || "chmury", w: q.get("w") || "B", I: +(q.get("I") || 0.7), wiatr: +(q.get("wiatr") || 30),
+            dzien: +(q.get("dzien") || 0), welon: q.get("welon") !== "0", skala: +(q.get("skala") || 0.5) };
+const karta = $("karta"), scena = $("scena");
+const SCB = () => window.sunCycleBg;
+
+const OPISY = {
+  chmury: {
+    A: "<b>A. Dziś.</b> Każda chmura to kilkanaście kół z gradientem radialnym, zabarwionych jednym gradientem pionowym; trzy paski płótna przesuwane CSS. Chmury mają tę samą wielkość u góry i przy horyzoncie, brak światła z kierunku słońca, brzegi miękkie jak mgiełka, a przy 75% pojawia się płaski gradient pokładu.",
+    B: "<b>B. Shader chmur.</b> Szum z tekstury 256x256 (jedna próbka dwuliniowa na oktawę, tańsza niż szum liczony), fbm z zawinięciem dziedziny. Niebo jest płaszczyzną w perspektywie: chmury u góry duże, przy horyzoncie małe i spłaszczone, a wiatr przesuwa bliższe szybciej (paralaksa za darmo). Światło: różnica gęstości w punkcie i w punkcie przesuniętym ku słońcu (strona od słońca jasna, rdzeń ciemniejszy), srebrny brzeg cienkich krawędzi blisko słońca, o zmierzchu podświetlone podstawy. Trzy piętra: cumulusy z płaską podstawą, altocumulusy drobne, cirrusy rozciągnięte wzdłuż wiatru; przy pełnym pokryciu pokład z wałami i jaśniejszym pasem nad horyzontem. Barwy z <code>weatherLight</code> karty. Koszt: ok. 25 próbek tekstury na piksel przy 0,5 rozdzielczości, 15 kl./s.",
+  },
+  snieg: {
+    A: "<b>A. Dziś.</b> Kropki z gradientem na pasku płótna, przesuwanym w pętli; przy jakości low tylko najbliższa z trzech głębokości, więc wszystkie płatki są tej samej wielkości i jadą razem; kołysze się cała warstwa naraz.",
+    B: "<b>B. Shader śniegu.</b> Sześć głębokości w jednym przebiegu: siatka komórek, w komórce co najwyżej jeden płatek. Dalekie: drobne, gęste, powolne, bladsze (powietrze między nami a nimi). Bliskie: duże, rzadkie, szybkie, poza głębią ostrości, więc miękkie krążki bokeh z jaśniejszym rąbkiem, lekko rozciągnięte w pionie przez rozmycie ruchu. Każdy płatek ma własną fazę i częstotliwość kołysania, a pole turbulencji zgina całe pasy śniegu w podmuchach. W dzień dalekie płatki są lekko szare (pod jasnym niebem śnieg widać jako cień). Koszt: sama arytmetyka, bez tekstur.",
+  },
+  grad: {
+    A: "<b>A. Dziś.</b> Kulki z odblaskiem na paskach płótna (przy low jedna głębokość), lecące wolniej niż wygląda grad, i trzy pasy kropek u dołu, które razem podskakują i migają.",
+    B: "<b>B. Canvas 2D.</b> Grad spada 2 do 5 razy szybciej niż śnieg, więc ziarno to krótka jasna smuga (rozmycie ruchu przy 1/50 s) z okrągłą głową, w trzech głębokościach. Na jasnym niebie ziarna mają ciemny obrys, w nocy świecą chłodną bielą. Po uderzeniu ziarno odbija się po paraboli 1 lub 2 razy (współczynnik 0,3 do 0,45, losowy kierunek), zostawia 2 odpryski i leży chwilę, zanim zniknie. Deszcz karty wyłączony w obu wariantach, żeby porównywać sam grad.",
+  },
+  mgla: {
+    A: "<b>A. Dziś.</b> Pionowy gradient do horyzontu i pięć szerokich elips na pasku przesuwanym 1,5 px/s. Elipsy są widoczne jako elipsy, nic się nie kłębi.",
+    B: "<b>B. Shader mgły.</b> Gęstość rośnie wykładniczo ku horyzontowi, przezroczystość z prawa Beera (1 − e<sup>−gęstość</sup>), więc mgła gęstnieje płynnie i nigdy nie robi się płaską farbą. Ławice: dwie warstwy fbm rozciągnięte poziomo, bliższa niższa i szybsza (paralaksa), zawijane wolno zmiennym polem, więc się kłębią. Słońce rozprasza się w mgle do przodu: szeroka ciepła poświata wokół tarczy. W nocy mgła jest ciemna, z pomarańczową łuną miasta przy horyzoncie. Koszt: ok. 12 próbek na piksel, 15 kl./s.",
+  },
+  burza: {
+    A: "<b>A. Dziś.</b> Błysk całego nieba w trybie screen, trzy pulsy w 700 ms, i zygzak SVG z 26 punktów z odnogami w bok albo radialna plama w chmurze. Kształt kanału jest regularny, odnogi rosną schodkowo.",
+    B: "<b>B. Canvas 2D.</b> Kanał z rekurencyjnego przesuwania środka odcinka (7 poziomów, przesunięcie maleje o połowę), rozgałęzienia odchodzą pod kątem 20 do 50° i dzielą się dalej, cieńsze i ciemniejsze. Obraz z trzema przebiegami (szeroka poświata z rozmyciem, średnia, biały rdzeń) liczony raz na uderzenie. Przebieg w czasie jak w pomiarach: lider schodzi w ok. 120 ms słabą kreską, potem 3 do 5 wyładowań tym samym kanałem co 40 do 120 ms, każde słabsze, kanał gaśnie z poświatą. Błysk podświetla strukturę chmur nad kanałem (tekstura chmur, nie płaska plama), niebo rozbłyska od góry. 40% to wyładowania w chmurze, część z pełzającym poziomym kanałem. Między uderzeniami pętla nie działa.",
+  },
+  wiatr: {
+    A: "<b>A. Dziś.</b> Białe kreski z gradientem jadą poziomo z łagodną falą; liście to sprite'y na 8 klatkach CSS: równy obrót i spłaszczenie co ćwierć drogi, bez związku z prędkością.",
+    B: "<b>B. Canvas 2D.</b> Wiatr ma porywy (suma wolnych sinusów), które sterują wszystkim naraz. Smugi płyną polem przepływu i wyginają się, żyją 1,5 do 3 s; drobne pyłki dają wrażenie głębi. Liście (te same sprite'y co karta) mają fizykę: opór dąży do prędkości wiatru, opadanie z trzepotaniem (faza szybowania i zawracania), w porywie liść się podrywa. Obrót wokół osi leżącej w płaszczyźnie liścia rzutowany jako spłaszczenie wzdłuż tej osi, a gdy liść pokazuje spód, rysowana jest jaśniejsza, wyblakła strona. Trzy głębokości: dalekie mniejsze i rozmyte. Natężenie zmienia liczbę liści.",
+  },
+  zorza: {
+    A: "<b>A. Dziś.</b> Paski 1 px z gradientem zieleń-fiolet, wysokość z dwóch sinusów, przesuwane w pętli 90 s i pulsujące, przy krawędziach kadru (Kp z symulowanego czujnika). Działa tylko w nocy.",
+    B: "<b>B. Shader zorzy.</b> Dwie kurtyny: dolny brzeg faluje wolno (fbm w czasie), z brzegu wyrastają pionowe promienie z szumu trójkątnego (tani, daje fałdy). Jasność najwyższa tuż nad dolnym brzegiem i spada wykładniczo w górę. Barwy z wysokości jak w naturze: zieleń tlenu 557,7 nm nisko, czerwień 630 nm wysoko, fioletowy rąbek pod brzegiem przy silnej burzy. Rysowana jako dodawanie światła (gwiazdy prześwitują), w tym samym miejscu i przy tym samym Kp co karta. Koszt: ok. 10 próbek na piksel.",
+  },
+};
+
+/* ---------- karta ---------- */
+function konfig() {
+  const k = JSON.parse(JSON.stringify(KONFIG), (key, v) =>
+    typeof v === "string" && v.startsWith("__ZASOBY__") ? ZASOBY + v.slice("__ZASOBY__".length) : v);
+  k.assets = ZASOBY;
+  if (k.stars) delete k.stars.iss;
+  const pw = k.weather || {};
+  const w = { entity: "weather.sim", clouds_entity: "weather.sim_chmury", precipitation_entity: "sensor.sim_opad",
+              quality: pw.quality || "low", glass: false, leaves: "autumn", veil: S.welon,
+              aurora: { kp_entity: "sensor.sim_kp", min_kp: 5 } };
+  // hail brings rain in the card: off in both variants so only the hail is compared
+  if (S.e === "grad") w.rain = false;
+  if (S.w !== "A") {
+    if (S.e === "zorza") delete w.aurora; else w[FLAGA[S.e]] = false;
+  }
+  k.weather = w;
+  return k;
+}
+function stanPogody() {
+  const I = S.I;
+  switch (S.e) {
+    case "chmury": return { stan: I < 0.55 ? "partlycloudy" : "cloudy", cov: I, low: I, mid: I * 0.8, high: Math.min(1, 0.25 + 0.6 * I) };
+    case "snieg": return { stan: "snowy", mm: 4 * I };
+    case "grad": return { stan: "hail", mm: 4 * I };
+    case "mgla": return { stan: "fog", fog: Math.min(0.97, 0.2 + 0.8 * I) };
+    case "burza": return { stan: "lightning" };
+    case "wiatr": return { stan: "windy", cov: 0, low: 0, mid: 0, high: 0 };
+    default: return { stan: "clear-night", cov: 0, low: 0, mid: 0, high: 0, kp: 5 + 4 * I };
+  }
+}
+function stany() {
+  const [, , elev] = DZIEN[S.dzien];
+  const p = stanPogody();
+  const chm = {};
+  if (p.low !== undefined) Object.assign(chm, { cloud_area_fraction_low: p.low * 100, cloud_area_fraction_medium: p.mid * 100,
+                                                cloud_area_fraction_high: p.high * 100 });
+  if (p.fog !== undefined) chm.fog_area_fraction = p.fog * 100;
+  const atr = { wind_speed: S.wiatr, wind_speed_unit: "km/h", wind_bearing: 270, temperature: 2, humidity: 90 };
+  if (p.cov !== undefined) atr.cloud_coverage = p.cov * 100;
+  return {
+    "sun.sun": { state: elev > 0 ? "above_horizon" : "below_horizon", attributes: { elevation: elev, azimuth: 225 } },
+    "weather.sim": { state: p.stan, attributes: atr },
+    "weather.sim_chmury": { state: p.stan, attributes: chm },
+    "sensor.sim_opad": { state: String(p.mm || 0), attributes: { unit_of_measurement: "mm/h" } },
+    "sensor.sim_kp": { state: String(p.kp || 2), attributes: {} },
+  };
+}
+function ustawKarte() {
+  const [, godz] = DZIEN[S.dzien];
+  const d = new RD(RD.UTC(new RD().getUTCFullYear(), 9, 9, godz - 2, 0));
+  SIM_OFF = d.getTime() - RD.now();
+  karta.setConfig(konfig());
+  karta.hass = { config: { latitude: LAT, longitude: LON }, states: stany() };
+  if (typeof karta._apply === "function") karta._apply();
+}
+
+/* ---------- what the card would see: light, cover, sun, wind ---------- */
+const WE = { L: null, ws: null, sun: [0.7, 0.3], sunA: 1, kier: -1, e: 30 };
+function wejscie() {
+  const elev = DZIEN[S.dzien][2];
+  const cfg = SCB().readWeatherConfig(konfig().weather, ZASOBY);
+  cfg.aurora = { kp_entity: "sensor.sim_kp", min_kp: 5, placement: "edges" };
+  const ws = SCB().readWeather(stany(), cfg);
+  WE.ws = ws; WE.e = elev;
+  WE.L = SCB().weatherLight(elev, ws ? ws.storm : 0, null);
+  // the card's wind push across the frame: bearing 270, frame centred on its own azimuths
+  const az0 = isFinite(karta._az0) ? karta._az0 : 50, az1 = isFinite(karta._az1) ? karta._az1 : 310;
+  const x = Math.sin((((270 + 180) % 360) - (az0 + az1) / 2) * Math.PI / 180);
+  WE.kier = x < 0 ? -1 : 1;
+  const sun = document.querySelector(".sun-cycle-sun");
+  const r = scena.getBoundingClientRect();
+  if (sun && elev > -2) {
+    const b = sun.getBoundingClientRect();
+    WE.sun = [(b.left + b.width / 2 - r.left) / r.width, (b.top + b.height / 2 - r.top) / r.height];
+  } else WE.sun = elev > 0 ? [0.68, 0.3] : elev > -8 ? [0.82, 1.05] : [0.8, 1.6];
+  WE.sunA = Math.max(0, Math.min(1, (elev + 4) / 14));
+}
+
+/* ---------- pętla wspólna: limit kl./s, licznik ---------- */
+const PETLA = { id: 0, ost: 0, rysuj: null, cap: 30, klatki: 0, czas: 0, okno: RD.now(), raf: 0 };
+const LICZNIK = { fps: 0, ms: 0 };
+function petla(t) {
+  PETLA.id = 0;
+  if (!PETLA.rysuj || document.hidden) return;          // the loop stops when nothing draws
+  PETLA.id = requestAnimationFrame(petla);
+  PETLA.raf++;
+  if (t - PETLA.ost < 1000 / PETLA.cap - 3) return;
+  const dt = Math.min(0.1, (t - PETLA.ost) / 1000);
+  PETLA.ost = t;
+  const t0 = performance.now();
+  PETLA.rysuj(t / 1000, dt);
+  PETLA.czas += performance.now() - t0;
+  PETLA.klatki++;
+}
+function startPetli(f, cap) {
+  PETLA.rysuj = f; PETLA.cap = cap || 30;
+  if (!PETLA.id && !document.hidden) PETLA.id = requestAnimationFrame(petla);
+}
+function stopPetli() { PETLA.rysuj = null; if (PETLA.id) cancelAnimationFrame(PETLA.id); PETLA.id = 0; }
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { cancelAnimationFrame(PETLA.id); PETLA.id = 0; }
+  else if (PETLA.rysuj && !PETLA.id) PETLA.id = requestAnimationFrame(petla);
+});
+let rafStrony = 0;
+(function licz() { rafStrony++; requestAnimationFrame(licz); })();
+setInterval(() => {
+  const now = RD.now(), s = (now - PETLA.okno) / 1000;
+  if (S.w !== "A") {
+    LICZNIK.fps = PETLA.klatki / s; LICZNIK.ms = PETLA.klatki ? PETLA.czas / PETLA.klatki : 0;
+    $("fps").textContent = PETLA.rysuj
+      ? "FPS: " + LICZNIK.fps.toFixed(1) + " (limit " + PETLA.cap + "), rysowanie " + LICZNIK.ms.toFixed(2) + " ms/kl. (CPU)"
+      : "FPS: pętla stoi (nic do rysowania)";
+  } else {
+    LICZNIK.fps = rafStrony / s; LICZNIK.ms = 0;
+    $("fps").textContent = "FPS strony: " + LICZNIK.fps.toFixed(1) + " (animacje CSS/WAAPI karty)";
+  }
+  PETLA.klatki = 0; PETLA.czas = 0; rafStrony = 0; PETLA.okno = now;
+}, 1000);
+window.efektyLicznik = LICZNIK;
+
+function nowePlotno() {
+  const c = document.createElement("canvas");
+  c.className = "warstwa";
+  scena.appendChild(c);
+  return c;
+}
+function wymiary(c) {
+  const w = Math.max(2, Math.round(scena.clientWidth * S.skala)), h = Math.max(2, Math.round(scena.clientHeight * S.skala));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; return true; }
+  return false;
+}
+const rgb01 = (c) => c.map((v) => v / 255);
+const lerpA = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// gusts: a sum of slow sines, 0..1
+const poryw = (t) => clamp(0.5 + 0.32 * Math.sin(t * 0.31) + 0.22 * Math.sin(t * 0.83 + 1.7) + 0.14 * Math.sin(t * 1.9 + 0.4), 0, 1);
+
+/* ---------- WebGL: one triangle, one fragment shader, a 256x256 noise texture ---------- */
+const VS = "attribute vec2 p; varying vec2 vUv; void main(){ vUv = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }";
+const GLSL_WSP = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform vec2 uRes;
+uniform float uT;
+uniform sampler2D uN;
+// value noise from one bilinear tap: smoothstep the fraction, sample between texel centres
+float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3. - 2.*f); return texture2D(uN, (i + f + 0.5)/256.).r; }
+const mat2 OKT = mat2(1.6, 1.2, -1.2, 1.6);
+float fbm2(vec2 p){ return 0.667*n2(p) + 0.333*n2(OKT*p); }
+float fbm3(vec2 p){ float a = 0.5*n2(p); p = OKT*p; a += 0.3*n2(p); p = OKT*p; a += 0.2*n2(p); return a; }
+float fbm4(vec2 p){ float a = 0.48*n2(p); p = OKT*p; a += 0.27*n2(p); p = OKT*p; a += 0.16*n2(p); p = OKT*p; a += 0.09*n2(p); return a; }
+float hs(vec2 p){ p = fract(p*vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x*p.y); }
+vec4 nad(vec4 d, vec3 c, float a){ return vec4(c*a + d.rgb*(1. - a), a + d.a*(1. - a)); }
+`;
+function efektGL(FS, nazwy, ustaw, cap) {
+  let cv = null, gl = null, u = {};
+  function sh(typ, src) {
+    const s = gl.createShader(typ);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function rysuj(t, dt) {
+    wymiary(cv);
+    gl.viewport(0, 0, cv.width, cv.height);
+    gl.uniform2f(u.uRes, cv.width, cv.height);
+    gl.uniform1f(u.uT, t % 2000);
+    ustaw(gl, u, t, dt);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  return {
+    start() {
+      cv = nowePlotno(); wymiary(cv);
+      // the Pi 5 kiosk WebView gives only webgl2; GLSL ES 1.00 shaders run in it unchanged
+      const opcje = { premultipliedAlpha: true, alpha: true, antialias: false, depth: false };
+      gl = cv.getContext("webgl2", opcje) || cv.getContext("webgl", opcje);
+      if (!gl) { blad("WebGL niedostępny w tej przeglądarce."); return; }
+      try {
+        const prog = gl.createProgram();
+        gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+        gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, GLSL_WSP + FS));
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+        gl.useProgram(prog);
+        for (const n of ["uRes", "uT", "uN"].concat(nazwy)) u[n] = gl.getUniformLocation(prog, n);
+      } catch (e) { blad("Shader się nie skompilował: " + e.message); console.error(e); return; }
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      // the noise: 256x256 random bytes, built once per canvas
+      const d = new Uint8Array(256 * 256 * 4);
+      let s = 1234567;
+      for (let i = 0; i < d.length; i++) { s = (s * 16807) % 2147483647; d[i] = s & 255; }
+      const tx = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                            [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.REPEAT]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      gl.uniform1i(u.uN, 0);
+      startPetli(rysuj, cap);
+    },
+    stop() {
+      stopPetli();
+      if (gl) { const e = gl.getExtension("WEBGL_lose_context"); if (e) e.loseContext(); }
+      if (cv) cv.remove(); cv = gl = null; u = {};
+    },
+  };
+}
+
+/* ================= Chmury B ================= */
+const Chmury = efektGL(`
+uniform vec3 uCov;            // low, mid, high
+uniform float uDeck, uGrey, uWind, uSunA, uDusk;
+uniform vec2 uSun;
+uniform vec3 uTop, uBot, uVeil;
+
+// the sky as a plane seen in perspective: y = 0 top of the frame, 1.08 the horizon
+vec2 plaszcz(vec2 uv, float asp, float k){
+  float z = 1./(1.3 - uv.y);                               // horizon just below the frame: no streaks at the bottom
+  return vec2((uv.x - 0.5)*asp*z, z)*k;
+}
+float pokr(float n, float cov, float miek){ float thr = mix(0.70, 0.30, cov); return smoothstep(thr, thr + miek, n); }
+
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  vec2 sd = normalize((uSun - uv)*vec2(asp, 1.) + vec2(0., 1e-4));       // towards the sun, screen space
+  float dSun = length((uv - uSun)*vec2(asp, 1.));
+  float horyz = smoothstep(0.62, 1.0, uv.y);                               // far away: thinner, hazier
+  vec4 o = vec4(0.);
+
+  // high: cirrus, stretched along the wind, no self-shadowing
+  if (uCov.z > 0.02 && uv.y < 0.8){
+    vec2 p = plaszcz(uv, asp, 1.3) + vec2(uT*uWind*0.6, 0.);
+    float w = fbm2(p*vec2(1.2, 2.5) + 3.1);
+    float n = fbm3(vec2(p.x*0.9 + 0.7*w, p.y*7.0 + 2.*w));
+    float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz);
+    vec3 c = mix(uTop, uBot, 0.25) + 0.25*uSunA*exp(-dSun*2.5)*vec3(1., 0.92, 0.8);
+    o = nad(o, c, d*0.55);
+  }
+  // mid: altocumulus, small cells
+  if (uCov.y > 0.02 && uv.y < 0.9){
+    vec2 p = plaszcz(uv, asp, 2.4) + vec2(uT*uWind*1.4, uT*0.01);
+    float n = fbm4(p*2.0 + 1.7);
+    float n2s = fbm3((p + vec2(sd.x, -0.6)*0.05)*2.0 + 1.7);
+    float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz);
+    float lit = clamp(0.6 + 4.0*(n - n2s - 0.02), 0., 1.);
+    vec3 c = mix(uBot, uTop, lit);
+    o = nad(o, c, d*0.8);
+  }
+  // overcast deck: one sheet with rolls, lighter towards the horizon where light gets under it
+  if (uDeck > 0.01){
+    vec2 p = plaszcz(uv, asp, 1.6) + vec2(uT*uWind*2.0, 0.);
+    float n = fbm4(p*vec2(0.9, 1.6) + 7.);
+    float rolki = fbm3(vec2(p.x*0.5, p.y*2.4) + 1.2*n);
+    vec3 c = mix(uBot*0.86, mix(uBot, uTop, 0.4), smoothstep(0.3, 0.75, rolki));
+    c = mix(c, mix(uVeil, uTop, 0.35), smoothstep(0.55, 1.0, uv.y)*0.6);
+    float a = uDeck*clamp(0.88 + 0.25*(n - 0.5), 0., 1.)*(1. - 0.45*smoothstep(0.7, 1.05, uv.y));
+    o = nad(o, c, a);
+  }
+  // low: cumulus with flat bases, lit from the sun's side, silver lining near the sun
+  if (uCov.x > 0.02){
+    vec2 p = plaszcz(uv, asp, 1.9) + vec2(uT*uWind*2.4, 0.);
+    vec2 w = vec2(fbm2(p*0.9 + vec2(0., uT*0.012)), fbm2(p*0.9 + vec2(5.2, 1.3 - uT*0.01)));
+    vec2 qq = p + 0.45*(w - 0.5);
+    // billows: the shape plus a bumpy edge from a finer octave, so the outline is cauliflower, not fog
+    float n = fbm4(qq*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qq*4.5) - 0.5);
+    // light from the sky above and from the sun: one tap towards both
+    vec2 ld = normalize(mix(vec2(0., -1.), sd, 0.45 + 0.3*uSunA));
+    vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 1.9) + vec2(uT*uWind*2.4, 0.);
+    vec2 qs = ps + 0.45*(w - 0.5);
+    float ns = fbm4(qs*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qs*4.5) - 0.5);
+    float cov = uCov.x*(1. - 0.6*uDeck);
+    float thr = mix(0.70, 0.30, cov);
+    float d = smoothstep(thr, thr + 0.07, n);
+    // flat base: the bottom of each cloud is cut off by a line that wanders a little
+    float podst = smoothstep(thr - 0.04, thr + 0.10, ns + 0.08);          // flat-ish base: thin where the cloud ends below
+    float grub = clamp((n - thr)/0.3, 0., 1.);                              // thickness
+    float lit = clamp(0.45 + 6.0*(n - ns), 0., 1.);                        // lit side bright (Heckel)
+    vec3 c = mix(mix(uBot, uVeil, 0.45), uTop, lit);
+    c *= 1. - 0.22*grub*(1. - lit);                                         // thick cores shadow themselves
+    c += (1. - grub)*smoothstep(0.0, 0.2, d)*exp(-dSun*3.2)*uSunA*vec3(1., 0.93, 0.8)*0.6;   // silver lining
+    c += uDusk*vec3(0.25, 0.12, 0.05)*(1. - lit)*smoothstep(0.3, 0.9, uv.y);                  // lit from below at dusk
+    c = mix(c, mix(uVeil, uTop, 0.4), horyz*0.5);
+    o = nad(o, c, d*podst*0.97*(1. - 0.4*horyz));
+  }
+  gl_FragColor = o;
+}`, ["uCov", "uDeck", "uGrey", "uWind", "uSunA", "uDusk", "uSun", "uTop", "uBot", "uVeil"], (gl, u) => {
+  const ws = WE.ws || { low: 0, mid: 0, high: 0, cover: 0 };
+  const L = WE.L;
+  const szary = ws ? clamp((ws.cover - 0.5) / 0.5, 0, 1) * 0.5 : 0;
+  const top = lerpA(L.top, lerpA(L.veil, L.top, 0.4), szary), bot = lerpA(L.bot, L.veil, szary * 0.5);
+  gl.uniform3f(u.uCov, ws.low, ws.mid, ws.high);
+  gl.uniform1f(u.uDeck, clamp((ws.low - 0.72) / 0.28, 0, 1));
+  gl.uniform1f(u.uWind, WE.kier * (0.004 + S.wiatr * 0.0006));
+  gl.uniform1f(u.uSunA, WE.sunA * (1 - szary));
+  gl.uniform1f(u.uDusk, WE.e < 6 && WE.e > -8 ? 1 : 0);
+  gl.uniform2f(u.uSun, WE.sun[0], WE.sun[1]);
+  gl.uniform3fv(u.uTop, rgb01(top)); gl.uniform3fv(u.uBot, rgb01(bot)); gl.uniform3fv(u.uVeil, rgb01(L.veil));
+}, 15);
+
+/* ================= Śnieg B ================= */
+const Snieg = efektGL(`
+uniform float uI, uWind, uDay;
+uniform vec3 uCol;
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  float px = 1./uRes.y;
+  vec4 o = vec4(0.);
+  for (int i = 0; i < 6; i++){
+    float z = float(i)/5.;                                  // 0 far, 1 near
+    float sc = mix(30., 3.0, pow(z, 0.75));                 // cells per frame height
+    float sp = mix(0.05, 0.30, z);                          // frame heights per second
+    vec2 p = vec2(uv.x*asp, uv.y);
+    // turbulence: a slow field bends whole bands, more for near flakes
+    p.x += 0.035*(0.4 + z)*sin(p.y*2.3 + uT*0.45 + z*4.) + 0.02*(0.4 + z)*sin(p.y*5.1 - uT*0.7 + z*9.);
+    p.x -= uWind*uT*mix(0.35, 1., z);
+    p.y -= sp*uT;
+    p += z*13.1;
+    vec2 g = p*sc, id = floor(g), f = fract(g) - 0.5;
+    float h = hs(id + z*17.3);
+    if (h > uI*mix(0.85, 0.32, z)) continue;
+    vec2 off = (vec2(hs(id + 3.1), hs(id + 7.7)) - 0.5)*0.46;
+    off.x += 0.17*sin(uT*(0.9 + 1.4*hs(id + 2.2)) + h*40.);   // each flake sways on its own
+    vec2 d = (f - off)/sc;                                   // in frame heights
+    float rp = mix(0.9, 14., pow(z, 2.4))*(0.6 + 0.8*hs(id + 1.3))*(uRes.y/540.);   // px
+    float r = rp*px;
+    d.y *= mix(1., 0.75, smoothstep(0.6, 1., z));             // motion blur on the near ones
+    float dist = length(d);
+    float rozm = mix(0.6*px, r*0.75, smoothstep(0.55, 1., z));     // out of focus near the camera
+    float m = smoothstep(r + rozm*0.5, r - rozm*0.5, dist);
+    float rab = smoothstep(r*0.55, r*0.95, dist)*m*smoothstep(0.7, 1., z);  // bokeh rim
+    float a = m*mix(0.55, 0.2, smoothstep(0.55, 1., z))*mix(0.6, 1., z) + rab*0.05;
+    vec3 c = mix(uCol, uCol*vec3(0.7, 0.72, 0.76), uDay*(1. - z)*0.7);   // far flakes grey under a bright sky
+    o = nad(o, c, a);
+  }
+  gl_FragColor = o;
+}`, ["uI", "uWind", "uDay", "uCol"], (gl, u) => {
+  const ws = WE.ws || {};
+  const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : (ws.intensity || 0.6);
+  gl.uniform1f(u.uI, clamp(I, 0.1, 1));
+  gl.uniform1f(u.uWind, WE.kier * S.wiatr / 25 * 0.06);
+  gl.uniform1f(u.uDay, WE.e > 5 ? 1 : 0);
+  gl.uniform3fv(u.uCol, WE.e > -4 ? [1, 1, 1] : [0.8, 0.83, 0.9]);
+}, 30);
+
+/* ================= Mgła B ================= */
+const Mgla = efektGL(`
+uniform float uF, uWind, uSunA, uNight;
+uniform vec2 uSun;
+uniform vec3 uCol, uSunCol;
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  vec2 p = vec2(uv.x*asp, uv.y);
+  float hgt = 1. - uv.y;                                   // 0 at the horizon
+  float base = exp(-hgt*2.6);                              // density falls off with height
+  vec2 w = vec2(fbm2(p*vec2(0.8, 2.) + vec2(uT*0.012, 0.)), fbm2(p*vec2(0.8, 2.) + vec2(3.1, -uT*0.01)));
+  float b1 = fbm4(vec2(p.x*1.0 - uT*uWind*0.6, p.y*3.0) + 0.7*w);
+  float b2 = fbm3(vec2(p.x*2.2 - uT*uWind*1.2, p.y*5.5) + 0.9*w + 4.);
+  float banks = smoothstep(0.40, 0.72, b1)*smoothstep(0.0, 0.5, uv.y)*0.9
+              + smoothstep(0.45, 0.75, b2)*smoothstep(0.35, 0.85, uv.y)*0.8;
+  float dens = uF*(0.75 + 1.9*base) + uF*banks*(0.7 + 0.8*base);
+  float a = min(1. - exp(-dens*1.3), 0.96);
+  float ds = length((uv - uSun)*vec2(asp, 1.));
+  float sc = (exp(-ds*2.2)*0.7 + exp(-ds*7.)*0.6)*uSunA;   // forward scattering around the sun
+  vec3 c = uCol*(0.88 + 0.35*(b1 - 0.5) + 0.18*banks) + uSunCol*sc;
+  c += vec3(0.20, 0.12, 0.05)*uNight*exp(-hgt*5.)*0.8;      // a town's glow in the fog
+  gl_FragColor = vec4(c*a, a);
+}`, ["uF", "uWind", "uSunA", "uNight", "uSun", "uCol", "uSunCol"], (gl, u) => {
+  const ws = WE.ws || { fog: 0.7 }, L = WE.L;
+  const kol = lerpA(L.veil, [230, 234, 240], WE.e > 0 ? 0.35 : 0.08);
+  gl.uniform1f(u.uF, ws.fog || 0);
+  gl.uniform1f(u.uWind, WE.kier * (0.004 + S.wiatr * 0.0008));
+  gl.uniform1f(u.uSunA, WE.sunA);
+  gl.uniform1f(u.uNight, WE.e < -6 ? 1 : 0);
+  gl.uniform2f(u.uSun, WE.sun[0], WE.sun[1]);
+  gl.uniform3fv(u.uCol, rgb01(kol));
+  gl.uniform3fv(u.uSunCol, WE.e > 8 ? [0.55, 0.5, 0.4] : [0.6, 0.38, 0.22]);
+}, 15);
+
+/* ================= Zorza B ================= */
+const Zorza = efektGL(`
+uniform float uS, uEdge;
+float tri(float x){ return abs(fract(x) - 0.5); }
+// folded triangle noise: cheap and ray-like
+float trin(float x, float t){
+  float a = 0., s = 1., f = 1.;
+  for (int i = 0; i < 4; i++){
+    a += tri(x*f + tri(x*f*0.47 + t*0.13*s) + t*0.05*s)*s;
+    f *= 1.9; s *= 0.55; x += 0.31;
+  }
+  return a/1.6;
+}
+vec3 kurtyna(vec2 p, float ziarno, float podst, float amp, float t){
+  float x = p.x;
+  float yb = podst + amp*(fbm3(vec2(x*0.7 + ziarno, t*0.02)) - 0.5) + 0.025*sin(x*2.3 + t*0.06 + ziarno);
+  float h = yb - p.y;                                       // height above the lower edge (y down)
+  float xw = x + 0.12*fbm2(vec2(x*1.5, t*0.03 + ziarno));
+  float r = trin(xw*14. + ziarno, t);
+  float rays = pow(clamp(r*1.6, 0., 1.), 2.5)*1.5 + 0.25;
+  float wys = 0.10 + 0.22*n2(vec2(xw*6., ziarno + t*0.05));
+  float body = smoothstep(-0.008, 0.012, h)*exp(-max(h, 0.)/wys)*rays;
+  float poz = 0.5 + 0.5*fbm2(vec2(x*0.5 - t*0.01, ziarno));   // brighter folds come and go
+  vec3 c = mix(vec3(0.18, 1.0, 0.45), vec3(0.85, 0.18, 0.42), smoothstep(0.06, 0.38, h));
+  c = mix(c, vec3(0.62, 0.25, 1.0), smoothstep(0.012, -0.006, h)*0.7);
+  float fr = smoothstep(-0.02, 0.0, h)*smoothstep(0.012, -0.004, h)*0.6;   // violet lower fringe
+  return c*(body*poz) + vec3(0.5, 0.2, 0.9)*fr*poz;
+}
+void main(){
+  vec2 uv = vec2(vUv.x, 1. - vUv.y);
+  float asp = uRes.x/uRes.y;
+  vec2 p = vec2(uv.x*asp, uv.y);
+  float t = uT;
+  vec3 c = kurtyna(p, 1.7, 0.74, 0.22, t)*0.9 + kurtyna(p + vec2(3.3, 0.), 8.2, 0.60, 0.18, t*1.15)*0.55;
+  c += vec3(0.05, 0.22, 0.12)*smoothstep(0.45, 1., uv.y);   // diffuse glow low in the sky
+  float mx = mix(1., smoothstep(0.45, 0.04, uv.x) + smoothstep(0.55, 0.96, uv.x), uEdge);
+  c *= uS*mx*smoothstep(1.02, 0.85, uv.y);
+  // additive: colour with zero alpha adds to what is under the canvas
+  gl_FragColor = vec4(c, 0.);
+}`, ["uS", "uEdge"], (gl, u) => {
+  const ws = WE.ws || {};
+  let sila = 0;
+  if (ws.kp !== null && ws.kp >= 5 && WE.e < -10)
+    sila = clamp((ws.kp - 5 + 1) / 3, 0.35, 1) * clamp(1 - ws.cover / 0.6, 0, 1) * clamp((-10 - WE.e) / 4, 0, 1);
+  gl.uniform1f(u.uS, sila * 0.95);
+  gl.uniform1f(u.uEdge, 1);
+}, 30);
+
+/* ================= Grad B ================= */
+const Grad = (() => {
+  let cv, ctx, kul = [], odb = [], drob = [], sprity = [];
+  const WG = [  // z, share, speed (frame heights/s), head radius px@1080, alpha
+    { z: 0.4, n: 0.5, v: 1.6, r: 2.6, a: 0.75 },
+    { z: 0.7, n: 0.32, v: 2.2, r: 3.8, a: 0.9 },
+    { z: 1.0, n: 0.18, v: 3.0, r: 5.6, a: 1 },
+  ];
+  let dzien = false;
+  function sprite(L, k) {
+    const H = cv.height, len = L.v * H / 110, r = Math.max(0.9, L.r * k * 1.15);    // ~1/110 s: a pellet and a short trail
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(r * 2 + 6); c.height = Math.ceil(len + r * 2 + 6);
+    const x = c.getContext("2d"), cx = c.width / 2, gy = 3 + len;
+    const smuga = (kol, wid) => {
+      const g = x.createLinearGradient(0, 3, 0, gy);
+      g.addColorStop(0, kol.replace("A", "0")); g.addColorStop(1, kol.replace("A", "0.55"));
+      x.strokeStyle = g; x.lineWidth = wid; x.lineCap = "round";
+      x.beginPath(); x.moveTo(cx, 3); x.lineTo(cx, gy); x.stroke();
+    };
+    if (dzien) smuga("rgba(55,65,80,A)", r * 2 + 1.4);           // dark rim: visible on a bright sky
+    smuga(dzien ? "rgba(250,252,255,A)" : "rgba(222,232,248,A)", r * 1.3);
+    x.fillStyle = dzien ? "#fdfeff" : "rgb(236,242,252)";
+    x.beginPath(); x.arc(cx, gy, r, 0, Math.PI * 2); x.fill();
+    return { c, gy };
+  }
+  function przygotuj() {
+    dzien = WE.e > 5;
+    const k = cv.height / 1080;
+    sprity = WG.map((L) => sprite(L, k));
+  }
+  function nowa(W, H, gora) {
+    const r = Math.random();
+    const L = r < WG[0].n ? 0 : r < WG[0].n + WG[1].n ? 1 : 2;
+    return { L, x: Math.random() * W * 1.2 - W * 0.1, y: gora ? -Math.random() * H * 0.4 : Math.random() * H,
+             v: 0.85 + Math.random() * 0.3, ziemia: H * (0.86 + 0.13 * WG[L].z * Math.random() + 0.01) };
+  }
+  function rysuj(t, dt) {
+    if (wymiary(cv)) przygotuj();
+    const W = cv.width, H = cv.height, k = H / 1080;
+    const I = clamp(WE.ws && WE.ws.rate !== null ? WE.ws.rate : 0.8, 0.15, 1);
+    const ile = Math.round(I * 200 * W / 1920 / Math.max(0.3, k * 2));
+    while (kul.length < ile) kul.push(nowa(W, H, false));
+    if (kul.length > ile) kul.length = ile;
+    ctx.clearRect(0, 0, W, H);
+    const slope = clamp(WE.kier * S.wiatr / 90, -0.5, 0.5) * 0.4;
+    const a = Math.atan(slope);
+    for (const d of kul) {
+      const L = WG[d.L], sp = sprity[d.L];
+      const v = L.v * H * d.v;
+      d.y += v * dt; d.x += slope * v * dt;
+      if (d.y >= d.ziemia) {
+        const kier = Math.random() < 0.5 ? -1 : 1;
+        odb.push({ x: d.x, y: d.ziemia, vx: kier * (0.03 + Math.random() * 0.1) * H * L.z, vy: -(0.25 + Math.random() * 0.3) * H * L.z,
+                   r: Math.max(0.8, L.r * k * 0.95), ziemia: d.ziemia, skoki: Math.random() < 0.5 ? 1 : 2, lezy: 0, a: L.a, z: L.z });
+        for (let i = 0; i < 2; i++) drob.push({ x: d.x, y: d.ziemia, vx: (Math.random() - 0.5) * 0.25 * H * L.z, vy: -(0.1 + Math.random() * 0.25) * H * L.z, zycie: 0.25 });
+        Object.assign(d, nowa(W, H, true));
+        continue;
+      }
+      ctx.globalAlpha = L.a;
+      ctx.setTransform(Math.cos(a), -Math.sin(a) * 0, Math.sin(-a), Math.cos(a), d.x, d.y);
+      ctx.drawImage(sp.c, -sp.c.width / 2, -sp.gy);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const g = 3.2 * H;                                       // gravity, frame heights / s^2
+    ctx.fillStyle = dzien ? "#fbfdff" : "rgb(226,234,248)";
+    ctx.strokeStyle = "rgba(55,65,80,0.6)"; ctx.lineWidth = Math.max(0.6, k);
+    odb = odb.filter((b) => {
+      if (b.lezy > 0) { b.lezy -= dt; ctx.globalAlpha = b.a * 0.7 * clamp(b.lezy / 0.3, 0, 1); }
+      else {
+        b.vy += g * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+        if (b.y >= b.ziemia && b.vy > 0) {
+          b.y = b.ziemia;
+          if (b.skoki-- > 0) { b.vy *= -(0.3 + Math.random() * 0.15); b.vx *= 0.6; }
+          else b.lezy = 0.15 + Math.random() * 0.35;
+        }
+        ctx.globalAlpha = b.a;
+      }
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+      if (dzien) ctx.stroke();
+      return b.lezy >= 0 && b.x > -20 && b.x < W + 20;
+    });
+    drob = drob.filter((p) => {
+      p.zycie -= dt; p.vy += g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      ctx.globalAlpha = clamp(p.zycie / 0.25, 0, 1) * 0.8;
+      ctx.fillRect(p.x, p.y, Math.max(1, 1.2 * k * 2), Math.max(1, 1.2 * k * 2));
+      return p.zycie > 0;
+    });
+    ctx.globalAlpha = 1;
+  }
+  return {
+    start() { cv = nowePlotno(); ctx = cv.getContext("2d"); kul = []; odb = []; drob = []; wymiary(cv); przygotuj(); startPetli(rysuj, 30); },
+    stop() { stopPetli(); if (cv) cv.remove(); cv = ctx = null; kul = []; odb = []; drob = []; },
+  };
+})();
+
+/* ================= Burza B ================= */
+const Burza = (() => {
+  let cv, ctx, timer = 0, ud = null, tekstura = null, aktywny = false;
+  // recursive midpoint displacement; branches split off and recurse, thinner and dimmer
+  function galaz(ax, ay, bx, by, w, a, gl, out) {
+    let pts = [[ax, ay], [bx, by]];
+    let off = Math.hypot(bx - ax, by - ay) * 0.16;
+    for (let g = 0; g < 7; g++) {
+      const nw = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+        const dx = x2 - x1, dy = y2 - y1, l = Math.hypot(dx, dy) || 1;
+        const s = (Math.random() * 2 - 1) * off;
+        nw.push([(x1 + x2) / 2 - dy / l * s, (y1 + y2) / 2 + dx / l * s], pts[i + 1]);
+      }
+      pts = nw; off *= 0.52;
+    }
+    out.push({ pts, w, a });
+    if (gl >= 3) return;
+    const ile = gl === 0 ? 3 + (Math.random() * 4 | 0) : 1 + (Math.random() * 2 | 0);
+    for (let b = 0; b < ile; b++) {
+      const i = 4 + (Math.random() * (pts.length * 0.75) | 0);
+      if (i >= pts.length - 2) continue;
+      const [x, y] = pts[i], [x2, y2] = pts[i + 2];
+      const kat = Math.atan2(y2 - y, x2 - x) + (Math.random() < 0.5 ? -1 : 1) * (0.35 + Math.random() * 0.5);
+      const L = Math.hypot(bx - ax, by - ay) * (0.15 + Math.random() * 0.3) * (1 - i / pts.length);
+      galaz(x, y, x + Math.cos(kat) * L, y + Math.sin(kat) * L, w * 0.55, a * 0.6, gl + 1, out);
+    }
+  }
+  function obraz(W, H, segs, k) {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    x.lineCap = "round"; x.lineJoin = "round";
+    const sciezki = (wmul, kol, amul) => {
+      for (const s of segs) {
+        x.strokeStyle = kol; x.globalAlpha = Math.min(1, s.a * amul); x.lineWidth = Math.max(0.6, s.w * wmul * k);
+        x.beginPath(); x.moveTo(s.pts[0][0], s.pts[0][1]);
+        for (const p of s.pts) x.lineTo(p[0], p[1]);
+        x.stroke();
+      }
+    };
+    x.filter = "blur(" + (9 * k).toFixed(1) + "px)"; sciezki(9, "rgb(150,160,255)", 0.55);
+    x.filter = "blur(" + (2.5 * k).toFixed(1) + "px)"; sciezki(3.2, "rgb(205,215,255)", 0.8);
+    x.filter = "none"; sciezki(1.1, "rgb(255,255,255)", 1);
+    return c;
+  }
+  // a cloud texture the flash lights up: soft blobs, built once
+  function budujTeksture() {
+    const c = document.createElement("canvas"); c.width = 320; c.height = 180;
+    const x = c.getContext("2d");
+    let s = 99;
+    const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 140; i++) {
+      const cx = r() * 320, cy = r() * 130, rr = 8 + r() * 34;
+      const g = x.createRadialGradient(cx, cy, 0, cx, cy, rr);
+      g.addColorStop(0, "rgba(215,222,255," + (0.18 + 0.25 * r()).toFixed(2) + ")"); g.addColorStop(1, "rgba(215,222,255,0)");
+      x.fillStyle = g; x.beginPath(); x.arc(cx, cy, rr, 0, Math.PI * 2); x.fill();
+    }
+    return c;
+  }
+  function uderz() {
+    if (!cv) return;
+    wymiary(cv);
+    const W = cv.width, H = cv.height, k = H / 540;
+    const ziemia = Math.random() < 0.6;
+    const segs = [];
+    let x0, y0;
+    if (ziemia) {
+      x0 = (0.12 + Math.random() * 0.76) * W; y0 = H * (0.08 + Math.random() * 0.1);
+      galaz(x0, y0, x0 + (Math.random() - 0.5) * W * 0.22, H * (0.92 + Math.random() * 0.08), 2.2, 1, 0, segs);
+    } else {
+      x0 = (0.15 + Math.random() * 0.7) * W; y0 = H * (0.1 + Math.random() * 0.12);
+      if (Math.random() < 0.5) {                     // a crawler inside the cloud
+        const kier = Math.random() < 0.5 ? -1 : 1;
+        galaz(x0, y0, x0 + kier * W * (0.25 + Math.random() * 0.2), y0 + H * (Math.random() * 0.12), 1.2, 0.45, 1, segs);
+      }
+    }
+    // stroke times: a leader, then 3-5 return strokes 40-120 ms apart, each a little weaker
+    const t0 = performance.now() / 1000 + (ziemia ? 0.12 : 0);
+    const uderzenia = []; let tt = t0, moc = 1;
+    const n = ziemia ? 3 + (Math.random() * 3 | 0) : 2 + (Math.random() * 3 | 0);
+    for (let i = 0; i < n; i++) { uderzenia.push([tt, moc]); tt += 0.04 + Math.random() * 0.08; moc *= 0.6 + Math.random() * 0.3; }
+    const lampa = document.createElement("canvas"); lampa.width = W; lampa.height = H;
+    const lx = lampa.getContext("2d");
+    lx.drawImage(tekstura, -W * 0.1, 0, W * 1.2, H * 0.75);
+    lx.globalCompositeOperation = "destination-in";
+    const g = lx.createRadialGradient(x0, y0, 0, x0, y0, W * 0.45);
+    g.addColorStop(0, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    lx.fillStyle = g; lx.fillRect(0, 0, W, H);
+    ud = { ziemia, t0, uderzenia, koniec: tt + 0.7, kanal: segs.length ? obraz(W, H, segs, k) : null, lampa, x0, y0,
+           lider: ziemia, dzien: WE.e > 5 };
+    startPetli(rysuj, 30);
+  }
+  function jasnosc(t) {
+    let I = 0, po = 0;
+    for (const [ts, m] of ud.uderzenia) if (t >= ts) { I = Math.max(I, m * Math.exp(-(t - ts) / 0.05)); po = ts; }
+    return [I, po];
+  }
+  function rysuj() {
+    const t = performance.now() / 1000;
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    if (!ud || t > ud.koniec) { ud = null; stopPetli(); return; }
+    const [I, po] = jasnosc(t);
+    const dz = ud.dzien ? 0.45 : 1;
+    if (t < ud.t0 && ud.lider && ud.kanal) {            // the stepped leader creeps down, faint
+      const f = 1 - (ud.t0 - t) / 0.12;
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, ud.y0 + (H - ud.y0) * f); ctx.clip();
+      ctx.globalAlpha = 0.18; ctx.drawImage(ud.kanal, 0, 0); ctx.restore();
+    }
+    // sky flash, strongest at the top where the cloud is
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "rgba(205,212,255," + (0.42 * I * dz).toFixed(3) + ")");
+    g.addColorStop(1, "rgba(205,212,255," + (0.08 * I * dz).toFixed(3) + ")");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = Math.min(1, I * 1.3 * dz); ctx.drawImage(ud.lampa, 0, 0);
+    if (ud.kanal && t >= ud.t0) {
+      const po_ = Math.exp(-(t - po) / 0.22) * 0.35;     // the channel glows on after the strokes
+      ctx.globalAlpha = Math.min(1, I * 1.2 + po_); ctx.drawImage(ud.kanal, 0, 0);
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
+  function plan() {
+    timer = setTimeout(() => { if (!aktywny) return; if (!document.hidden) uderz(); plan(); }, (3 + Math.random() * 9) * 1000);
+  }
+  return {
+    start() { aktywny = true; cv = nowePlotno(); ctx = cv.getContext("2d"); wymiary(cv); tekstura = tekstura || budujTeksture(); plan(); setTimeout(() => aktywny && uderz(), 800); },
+    stop() { aktywny = false; clearTimeout(timer); stopPetli(); if (cv) cv.remove(); cv = ctx = null; ud = null; },
+    teraz() { uderz(); },
+  };
+})();
+
+/* ================= Wiatr B ================= */
+const Wiatr = (() => {
+  let cv, ctx, liscie = [], smugi = [], pylki = [], sprity = null, obraz = null, nextSmuga = 0;
+  const KOMORKI = 12;
+  function zaladuj() {
+    if (obraz) return;
+    obraz = new Image();
+    obraz.onload = () => {
+      const h = obraz.naturalHeight, S_ = 96;
+      sprity = [];
+      for (let i = 0; i < KOMORKI; i++) {
+        const warianty = [];
+        for (const [filtr] of [["none"], ["saturate(0.5) brightness(1.3)"], ["blur(1.5px)"], ["blur(1.5px) saturate(0.5) brightness(1.3)"]]) {
+          const c = document.createElement("canvas"); c.width = c.height = S_;
+          const x = c.getContext("2d"); x.filter = filtr;
+          x.drawImage(obraz, i * h, 0, h, h, 4, 4, S_ - 8, S_ - 8);
+          warianty.push(c);
+        }
+        sprity.push(warianty);   // [front, back, front far, back far]
+      }
+    };
+    obraz.onerror = () => blad("Nie wczytano " + obraz.src);
+    obraz.src = ZASOBY + "leaves-autumn.webp";
+  }
+  function sila() {
+    const ws = WE.ws || { wind: S.wiatr, gust: null, cond: "windy" };
+    let s = clamp((Math.max(ws.wind, ws.gust ? ws.gust * 0.8 : 0) - 18) / 40, 0, 1);
+    if (ws.cond === "windy" || ws.cond === "windy-variant") s = Math.max(s, 0.5);
+    return s;
+  }
+  function nowyLisc(W, H, k) {
+    const z = [0.45, 0.7, 1][Math.random() * 3 | 0];
+    const kier = WE.kier;
+    return { x: kier > 0 ? -60 * k : W + 60 * k, y: Math.random() * H * 0.7, z, kom: Math.random() * KOMORKI | 0,
+             bok: (34 + Math.random() * 22) * k * z, vx: 0, vy: 0, th: Math.random() * 6.3, om: (Math.random() - 0.5) * 2,
+             psi: Math.random() * 6.3, psiV: 2 + Math.random() * 5, os: Math.random() * 3.14, ph: Math.random() * 6.3,
+             phV: 1.8 + Math.random() * 2.2 };
+  }
+  function przeplyw(x, y, t, W, H) {             // flow field: wind plus slow curling
+    const a = 0.35 * Math.sin(x / W * 5.1 + t * 0.4) + 0.25 * Math.sin(y / H * 7.3 - t * 0.6 + x / W * 2);
+    return a;
+  }
+  function rysuj(t, dt) {
+    wymiary(cv);
+    const W = cv.width, H = cv.height, k = H / 1080, kier = WE.kier;
+    const s = sila(), G = Math.pow(poryw(t), 1.3);
+    const V = (0.35 + S.wiatr / 45) * W / 6 * (0.55 + 0.9 * G);   // px/s at the gust's peak
+    const dzien = WE.e > 5;
+    ctx.clearRect(0, 0, W, H);
+    if (s <= 0) return;
+    // dust and pollen: depth without much cost
+    const nP = Math.round(70 * s * W / 960);
+    while (pylki.length < nP) pylki.push({ x: Math.random() * W, y: Math.random() * H, z: 0.3 + Math.random() * 0.7, f: Math.random() * 6 });
+    pylki.length = Math.min(pylki.length, nP);
+    ctx.fillStyle = dzien ? "rgba(255,248,230,1)" : "rgba(210,215,230,1)";
+    for (const p of pylki) {
+      const a = przeplyw(p.x, p.y, t, W, H);
+      p.x += kier * V * p.z * Math.cos(a) * dt; p.y += V * p.z * Math.sin(a) * 0.4 * dt + Math.sin(t * 3 + p.f) * 6 * k * dt;
+      if (p.x < -5) p.x = W + 5; if (p.x > W + 5) p.x = -5; if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      ctx.globalAlpha = 0.22 * p.z * (0.6 + 0.4 * G);
+      const r = Math.max(0.6, 1.6 * k * p.z * 2);
+      ctx.fillRect(p.x, p.y, r, r);
+    }
+    // wisps that follow the flow and live 1.5-3 s
+    if (t > nextSmuga && smugi.length < 18 * s + 4) {
+      nextSmuga = t + (0.25 + Math.random() * 0.6) / (0.4 + s * 1.4 * (0.5 + G));
+      smugi.push({ x: Math.random() * W, y: Math.random() * H * 0.85, zycie: 0, dl: 1.5 + Math.random() * 1.5, sl: [], v: 0.9 + Math.random() * 0.5 });
+    }
+    ctx.lineCap = "round";
+    smugi = smugi.filter((m) => {
+      m.zycie += dt;
+      const a = przeplyw(m.x, m.y, t, W, H);
+      m.x += kier * V * 1.4 * m.v * Math.cos(a) * dt; m.y += V * m.v * Math.sin(a) * 0.5 * dt;
+      m.sl.push([m.x, m.y]); if (m.sl.length > 16) m.sl.shift();
+      const f = m.zycie / m.dl, env = Math.sin(Math.PI * clamp(f, 0, 1));
+      const n = m.sl.length;
+      if (n > 2) {
+        for (let seg = 0; seg < 3; seg++) {       // tapered: three pieces, thicker and brighter at the head
+          const i0 = Math.floor(seg * (n - 1) / 3), i1 = Math.floor((seg + 1) * (n - 1) / 3);
+          ctx.globalAlpha = (dzien ? 0.3 : 0.2) * env * (0.35 + 0.65 * seg / 2) * (0.6 + 0.4 * G);
+          ctx.strokeStyle = dzien ? "rgb(255,255,255)" : "rgb(200,208,228)";
+          ctx.lineWidth = Math.max(0.6, (0.6 + seg * 0.5) * k * 2);
+          ctx.beginPath(); ctx.moveTo(m.sl[i0][0], m.sl[i0][1]);
+          for (let i = i0 + 1; i <= i1; i++) ctx.lineTo(m.sl[i][0], m.sl[i][1]);
+          ctx.stroke();
+        }
+      }
+      return f < 1;
+    });
+    // leaves
+    if (sprity) {
+      const ile = Math.round((4 + 14 * s) * (0.4 + 0.6 * S.I));
+      if (liscie.length < ile && Math.random() < dt * (0.6 + 2 * G)) liscie.push(nowyLisc(W, H, k));
+      liscie = liscie.filter((l) => {
+        const u = kier * V * (0.35 + 0.35 * l.z);
+        l.vx += (u - l.vx) * Math.min(1, 1.1 * dt);                         // drag towards the wind
+        l.ph += l.phV * dt;
+        const vt = H * 0.045 * (0.6 + 0.4 * l.z) * (1.3 - G);               // settling, less in a gust
+        const vyc = vt + H * 0.07 * Math.sin(l.ph) - H * 0.05 * (G - 0.5);  // flutter: glide and turn back
+        l.vy += (vyc - l.vy) * Math.min(1, 1.6 * dt);
+        l.x += (l.vx + Math.cos(l.ph) * H * 0.035) * dt; l.y += l.vy * dt;
+        l.om += ((kier * (1 + 3 * G)) - l.om) * dt * 0.8;
+        l.th += l.om * dt;
+        l.psi += l.psiV * (0.4 + G) * dt;
+        const c = Math.cos(l.psi), sy = Math.sign(c) * Math.max(0.07, Math.abs(c));
+        const sp = sprity[l.kom][(c < 0 ? 1 : 0) + (l.z < 0.5 ? 2 : 0)];
+        ctx.globalAlpha = l.z < 0.5 ? 0.75 : 0.95;
+        ctx.setTransform(1, 0, 0, 1, l.x, l.y);
+        ctx.rotate(l.os); ctx.scale(1, sy); ctx.rotate(l.th - l.os);
+        ctx.drawImage(sp, -l.bok / 2, -l.bok / 2, l.bok, l.bok);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        return l.x > -120 * k && l.x < W + 120 * k && l.y < H + 60 * k;
+      });
+    }
+    ctx.globalAlpha = 1;
+  }
+  return {
+    start() { cv = nowePlotno(); ctx = cv.getContext("2d"); liscie = []; smugi = []; pylki = []; wymiary(cv); zaladuj(); startPetli(rysuj, 30); },
+    stop() { stopPetli(); if (cv) cv.remove(); cv = ctx = null; liscie = []; smugi = []; pylki = []; },
+  };
+})();
+
+const SILNIKI = { chmury: Chmury, snieg: Snieg, grad: Grad, mgla: Mgla, burza: Burza, wiatr: Wiatr, zorza: Zorza };
+const PUSTY = { start() { stopPetli(); }, stop() {} };
+let aktywny = null;
+function blad(t) {
+  const d = document.createElement("div"); d.className = "blad"; d.textContent = t; scena.appendChild(d);
+}
+function zmien() {
+  if (aktywny) aktywny.stop();
+  scena.querySelectorAll(".blad, canvas.warstwa").forEach((e) => e.remove());
+  ustawKarte();
+  wejscie();
+  aktywny = S.w === "A" ? PUSTY : SILNIKI[S.e];
+  aktywny.start();
+  $("opisWariantu").innerHTML = OPISY[S.e][S.w];
+  $("akcje").style.display = S.e === "burza" ? "" : "none";
+  stan();
+}
+function stan() {
+  $("natV").textContent = S.I.toFixed(2);
+  $("wiatrV").textContent = S.wiatr + " km/h";
+  const ws = WE.ws || {};
+  $("stan").textContent = "Karta: " + stanPogody().stan + ", pokrycie " + (ws.cover || 0).toFixed(2) +
+    " (nisko " + (ws.low || 0).toFixed(2) + ", średnio " + (ws.mid || 0).toFixed(2) + ", wysoko " + (ws.high || 0).toFixed(2) + ")" +
+    (S.e === "mgla" ? ", mgła " + (ws.fog || 0).toFixed(2) : "") + (S.e === "zorza" ? ", Kp " + (ws.kp || 0).toFixed(1) : "") +
+    ", wysokość słońca " + WE.e + "°" + (S.e === "zorza" && WE.e > -10 ? " (zorza tylko w nocy)" : "");
+}
+function przyciski(id, lista, klucz, wartosc) {
+  const g = $(id);
+  lista.forEach((el, i) => {
+    const b = document.createElement("button");
+    b.textContent = el[1] && typeof el[1] === "string" ? el[1] : el[0];
+    b.onclick = () => { S[klucz] = wartosc(el, i); odswiez(); zmien(); };
+    b.dataset.v = String(wartosc(el, i));
+    g.appendChild(b);
+  });
+}
+function odswiez() {
+  for (const [id, k] of [["efekty", "e"], ["warianty", "w"], ["dzien", "dzien"], ["welon", "welon"], ["skala", "skala"]])
+    for (const b of $(id).querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === String(S[k]));
+}
+function blyskTeraz() {
+  if (S.w === "A") {
+    const layer = scena.querySelector(".sun-cycle-weather");
+    if (layer && layer._scwBurza) SCB().lightningStrike(layer, layer._scwBurza);
+  } else Burza.teraz();
+}
+przyciski("efekty", EFEKTY, "e", (el) => el[0]);
+przyciski("warianty", [["A", "A. Dziś (__WERSJA__)"], ["B", "B. Propozycja"]], "w", (el) => el[0]);
+przyciski("dzien", DZIEN, "dzien", (el, i) => i);
+przyciski("welon", [["wł.", true], ["wył.", false]], "welon", (el) => el[1]);
+przyciski("skala", [["0,5x", 0.5], ["1x", 1]], "skala", (el) => el[1]);
+const bb = document.createElement("button"); bb.textContent = "Błysk teraz"; bb.onclick = blyskTeraz; $("akcje").appendChild(bb);
+$("nat").value = S.I; $("wiatr").value = S.wiatr;
+let opozn = 0;
+const suwak = (id, k) => {
+  $(id).oninput = (e) => { S[k] = +e.target.value; stan(); };
+  $(id).onchange = () => { clearTimeout(opozn); opozn = setTimeout(() => { ustawKarte(); wejscie(); stan(); }, 30); };
+};
+suwak("nat", "I"); suwak("wiatr", "wiatr");
+// the card may move the sun disc a little: pick its position up now and then
+setInterval(() => { if (S.w !== "A") wejscie(); }, 3000);
+// zamroz: stop the loop on the current frame (for screenshots in a software renderer)
+window.efektyPOC = { S, zmien, blyskTeraz, WE, zamroz: stopPetli, ustaw(o) { Object.assign(S, o); odswiez(); zmien(); } };
+odswiez();
+zmien();
+})();
+</script>
+</body>
+</html>
