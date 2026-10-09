@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.26.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.27.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1455,10 +1455,36 @@
     return ((sunEq(J).lam - 1.397 * (J - 2451545) / 36525) % 360 + 360) % 360;
   }
   const julianMs = (ms) => ms / 86400000 + 2440587.5;
-  /* Between the edges of its window and its maximum a shower is modelled as
-     falling off exponentially to ZHR 1.5 at the edges. IMO publishes the
-     window and the maximum, not the profile, so this is a stand-in: it makes
-     the Quadrantids days wide where the real peak lasts hours. */
+  /* IMO publishes the window and the maximum, not the shape of the peak. The
+     shape comes from Jenniskens (1994, A&A 287, 990, table 3b): fitted to
+     visual ZHR data, ZHR = ZHRmax * 10^(-B * |sol. long. - max|), with B+ on
+     the ascending branch and B- on the descending one, per degree of solar
+     longitude. Each entry is a list of components [share of the IMO ZHR, B+,
+     B-]: the Perseids are a sharp peak on a broad background (his sum of two
+     exponentials, ZHR 70 and 23). The Taurids share one fit (Tau). A shower
+     he did not fit keeps the old stand-in: an exponential fall-off from the
+     maximum to ZHR 1.5 at the edges of its window. */
+  const SHOWER_B = {
+    QUA: [[1, 1.8, 1.8]],                 // Boo, an 8 h wide peak
+    LYR: [[1, 0.22, 0.22]],
+    ETA: [[1, 0.080, 0.080]],
+    ARI: [[1, 0.10, 0.10]],
+    SDA: [[1, 0.091, 0.091]],             // dAZ
+    CAP: [[1, 0.041, 0.041]],
+    PER: [[70 / 93, 0.35, 0.35], [23 / 93, 0.050, 0.092]],
+    KCG: [[1, 0.069, 0.069]],
+    AUR: [[1, 0.19, 0.19]],
+    ORI: [[1, 0.12, 0.12]],
+    LMI: [[1, 0.14, 0.14]],
+    STA: [[1, 0.026, 0.026]],
+    NTA: [[1, 0.026, 0.026]],
+    LEO: [[1, 0.39, 0.39]],
+    MON: [[1, 0.25, 0.25]],
+    HYD: [[1, 0.10, 0.10]],               // sHy
+    GEM: [[1, 0.39, 0.72]],               // a shallower ascending branch
+    URS: [[1, 0.61, 0.61]],
+    ACE: [[1, 0.18, 0.18]]
+  };
   const SHOWER_TAB = SHOWERS.map(([kod, od, doo, lam, ra, dec, dra, ddec, v, r, zhr]) => {
     const lamOf = (md) => {
       const [m, d] = md.split('-').map(Number);
@@ -1467,7 +1493,8 @@
     const lo = lamOf(od), hi = lamOf(doo);
     const przed = Math.max(1, wrap180(lam - lo)), po = Math.max(1, wrap180(hi - lam));
     const B = zhr ? Math.log10(zhr / 1.5) : 0;
-    return { kod, lam, ra, dec, dra, ddec, v, r, zhr, lo, hi, bp: B / przed, bn: B / po };
+    const prof = SHOWER_B[kod] || [[1, B / przed, B / po]];
+    return { kod, lam, ra, dec, dra, ddec, v, r, zhr, lo, hi, prof };
   });
   const ANT_OFF = [solLong2000(julianMs(Date.UTC(2027, 8, 20))), solLong2000(julianMs(Date.UTC(2027, 11, 10)))];
 
@@ -1476,7 +1503,9 @@
     const d = wrap180(L - s.lam);
     if (d < 0 && -d > wrap180(s.lam - s.lo)) return 0;
     if (d > 0 && d > wrap180(s.hi - s.lam)) return 0;
-    return s.zhr * Math.pow(10, -(d < 0 ? s.bp : s.bn) * Math.abs(d));
+    let z = 0;
+    for (const [w, bp, bn] of s.prof) z += w * Math.pow(10, -(d < 0 ? bp : bn) * Math.abs(d));
+    return s.zhr * z;
   }
 
   /* Every source of meteors at this moment, for a clear sky:
@@ -4123,6 +4152,7 @@
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
                        windGust, windLeaf, glassDrop, showerSources, showerMeteor, SHOWERS,
+                       SHOWER_TAB, showerZhr,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,

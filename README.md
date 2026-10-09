@@ -678,10 +678,14 @@ showers (π-Puppids, June Bootids, α-Monocerotids, Phoenicids) carry no ZHR and
 not modelled.
 
 **Rate.** For each active shower, `ZHR(sol. long.) × sin(radiant altitude) ×
-r^(lm − 6.5)`, nothing while the sun is above −12°. Between the window's edges and
-the maximum the activity falls off exponentially to ZHR 1.5 at the edges; IMO
-publishes the window and the maximum, not the profile, so this is a stand-in and
-it makes the Quadrantids days wide where the real peak lasts hours. The
+r^(lm − 6.5)`, nothing while the sun is above −12°. IMO publishes the window and
+the maximum, not the shape of the peak; that comes from the exponential slopes
+Jenniskens fitted to visual ZHR data (1994, A&A 287, 990, table 3b), steeper or
+shallower on either side: the Quadrantids are 8 hours wide at half maximum, the
+Geminids 29 hours with a slower rise, the Leonids 38, the Perseids a sharp peak on
+a broad background that keeps a few meteors an hour weeks before the maximum.
+Showers he did not fit fall off exponentially from the maximum to ZHR 1.5 at the
+edges of their window. Outside the window a shower is off. The
 antihelion source (ZHR 4) has its radiant 11° east of the anti-sun point; the
 sporadic background is an assumption of 6/h in the evening to 12/h before dawn at
 lm 6.5. With `weather:` set, rain or snow takes all meteors and cloud its share.

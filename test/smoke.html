@@ -645,6 +645,30 @@ out.push(['ZORZA bez kp_entity', zorza(-25, 9, {})]);
     kat_smugi: +(/rotate\(([-\d.]+)deg\)/.exec(a.effect.getKeyframes()[0].transform)[1]),
     kat_od_radiantu: +(Math.atan2(parseFloat(el.style.top) - r.y / 100 * 400,
       parseFloat(el.style.left) - r.x / 100 * 1280) * 180 / Math.PI).toFixed(1) } : null]);
+  // 1.27.0: ksztalt maksimum z Jenniskensa (1994): szerokosc w polowie
+  // wysokosci w godzinach, przed i po maksimum, liczona wprost z profilu
+  const polowa = (kod) => {
+    const s = B.SHOWER_TAB.find((x) => x.kod === kod), szczyt = B.showerZhr(s, s.lam);
+    const brzeg = (krok) => {
+      let d = 0;
+      while (B.showerZhr(s, s.lam + d + krok) >= szczyt / 2) d += krok;
+      return Math.abs(d) / 0.9856 * 24;
+    };
+    return { zhr: +szczyt.toFixed(1), przed_h: +brzeg(-0.001).toFixed(1), po_h: +brzeg(0.001).toFixed(1) };
+  };
+  out.push(['ROJE polowa maksimum (h)', Object.fromEntries(
+    ['QUA', 'GEM', 'PER', 'LEO', 'ORI', 'LYR', 'ETA', 'DRA'].map((k) => [k, polowa(k)]))]);
+  // Perseidy: tlo trzyma ogony, pierwszy dzien okna to ZHR ~1,5, nie zero
+  {
+    const s = B.SHOWER_TAB.find((x) => x.kod === 'PER');
+    out.push(['ROJE Perseidy ogony', [-20, -10, -3, 0, 3, 10].map((d) => [d, +B.showerZhr(s, s.lam + d).toFixed(2)])]);
+  }
+  // Kwadrantydy 2027: maksimum IMO 4.01 ok. 3 UTC, co 3 godziny
+  out.push(['ROJE Kwadrantydy 3-4.01.2027 co 3 h', [-12, -6, -3, 0, 3, 6, 12].map((h) => {
+    const t = new RealDate(Date.UTC(2027, 0, 4, 3 + h));
+    const q = B.showerSources(t, lat, lon, 6.5, false).find((x) => x.kod === 'QUA');
+    return [h, q ? +q.hr.toFixed(1) : null];
+  })]);
   out.push(['ROJE readStarConfig domyslne', (({ showers, boost, limiting_magnitude, moon }) =>
     ({ showers, boost, limiting_magnitude, moon }))(B.readStarConfig({}).meteors)]);
 }
