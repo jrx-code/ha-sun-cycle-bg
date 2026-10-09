@@ -575,6 +575,28 @@ out.push(['WIATR poryw z czujnika 50 km/h przy 10 km/h', czytajWiatr((() => {
 out.push(['WIATR wind: false', czytajWiatr(pogoda(20, { entity: 'weather.t', wind: false }, 'windy',
   { wind_speed: 60 }).cont)]);
 
+// --- 1.24.0: krople na szybie -------------------------------------------
+function czytajSzybe(cont, ile) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  const g = w && w._scwSzyba;
+  if (!g) return { szyba: false, timer: !!(w && w._scwT.glass) };
+  const host = w.querySelector('.scw-glass');
+  const losowo = Math.random;
+  let i = 0;
+  // pierwsza mala, druga duza (zjezdza, zostawia slad)
+  for (const r of [0.9, 0.05]) { Math.random = () => r; window.sunCycleBg.glassDrop(host, g); Math.random = losowo; }
+  const krople = [...host.querySelectorAll('.scw-drop')];
+  return { szyba: true, timer: !!w._scwT.glass, natezenie: g.I, elementow: krople.length,
+           animacje: krople.slice(0, 3).map((k) => ({ klatek: k.getAnimations()[0].effect.getKeyframes().length,
+             opoznienie: k.getAnimations()[0].effect.getTiming().delay })) };
+}
+out.push(['SZYBA domyslnie wylaczona', czytajSzybe(pogoda(10, { entity: 'weather.t' }, 'rainy',
+  { cloud_coverage: 90 }).cont)]);
+out.push(['SZYBA glass: true, rainy', czytajSzybe(pogoda(10, { entity: 'weather.t', glass: true }, 'rainy',
+  { cloud_coverage: 90 }).cont)]);
+out.push(['SZYBA glass: true, snowy: brak', czytajSzybe(pogoda(10, { entity: 'weather.t', glass: true },
+  'snowy', { cloud_coverage: 90 }).cont)]);
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');
