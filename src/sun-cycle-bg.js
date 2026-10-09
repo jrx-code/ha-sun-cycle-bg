@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.2.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.3.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3800,7 +3800,7 @@ void main(){
     const D = { layer, cv, g, raf: 0, last: 0, fps: 30, calm: false, frames: 0,
                 hail: null, wind: null, storm: null, strike: null,
                 kul: [], odb: [], drob: [], hailSprites: null, hailKey: '',
-                liscie: [], smugi: [], pylki: [], nextSmuga: 0, leafImg: null, leafSprites: null, leafKey: '' };
+                liscie: [], smugi: [], nextSmuga: 0, leafImg: null, leafSprites: null, leafKey: '' };
     D.onVis = () => { if (!document.hidden) fx2Kick(D); };
     document.addEventListener('visibilitychange', D.onVis);
     return D;
@@ -3943,46 +3943,84 @@ void main(){
     };
     img.src = w.leafBase + plik;
   }
-  const fxFlow = (x, y, t, W, H) => 0.35 * Math.sin(x / W * 5.1 + t * 0.4) + 0.25 * Math.sin(y / H * 7.3 - t * 0.6 + x / W * 2);
+  /* Wind lines: a curve built by a turtle from its curvature along the arc
+     (a wave around the wind's heading, plus a loop as a sin^2 bump turning a
+     full circle), units of frame heights; drawn as a filled ribbon, tapered,
+     between a tail and a head index. Chosen on demo/tlo-wiatr-zawijasy.html
+     (variant 3, "wiązka"). */
+  function fxCurve(o) {
+    const N = o.n, L = o.L, ds = L / N;
+    let x = o.x, y = o.y, th = o.th + o.A * Math.sin(o.f);
+    const pts = [[x, y]];
+    for (let i = 1; i <= N; i++) {
+      const s = i * ds;
+      let k = o.A * o.w * Math.cos(o.w * s + o.f);
+      if (o.loop) {
+        const u = (s - (o.loop.s - o.loop.L / 2)) / o.loop.L;
+        if (u > 0 && u < 1) k += o.loop.sign * (4 * Math.PI / o.loop.L) * Math.sin(Math.PI * u) ** 2;
+      }
+      th += k * ds;
+      x += Math.cos(th) * ds; y += Math.sin(th) * ds;
+      pts.push([x, y]);
+    }
+    return pts;
+  }
+  function fxBundle(kier, y, asp) {
+    const L = 0.9 + Math.random() * 0.4;
+    const x = kier > 0 ? -0.1 + Math.random() * asp * 0.75 : asp * 0.25 + Math.random() * asp * 0.85;
+    const th = (kier > 0 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.2, wv = 4 + Math.random() * 3, f = Math.random() * 6;
+    const nitki = [0, 1, 2].map((j) => fxCurve({ x: x + (j - 1) * 0.004, y: y + (j - 1) * 0.012, th, L, n: 200,
+      A: 0.28 * (0.8 + 0.2 * j), w: wv, f: f + j * 0.35,
+      loop: Math.random() < 0.8 ? { s: L * (0.25 + 0.2 * j + Math.random() * 0.1), L: 0.16 + Math.random() * 0.05, sign: -kier } : null }));
+    return { nitki, P: nitki[1], dlug: L, ogon: 200 * 0.6, glowa: 0, ox: 0 };
+  }
+  function fxRibbon(g, P, a, b, szer, ox, sc) {
+    a = Math.max(0, a); b = Math.min(P.length - 1, b);
+    if (b - a < 1.5) return;
+    const i0 = Math.floor(a), i1 = Math.ceil(b), Lft = [], Rgt = [];
+    for (let i = i0; i <= i1; i++) {
+      const p = P[i], q = P[Math.min(P.length - 1, i + 1)], r = P[Math.max(0, i - 1)];
+      let tx = q[0] - r[0], ty = q[1] - r[1];
+      const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+      const w = szer(clamp((i - a) / (b - a), 0, 1));
+      const X = ox + p[0] * sc, Y = p[1] * sc;
+      Lft.push([X - ty * w, Y + tx * w]); Rgt.push([X + ty * w, Y - tx * w]);
+    }
+    g.beginPath();
+    g.moveTo(Lft[0][0], Lft[0][1]);
+    for (let i = 1; i < Lft.length; i++) g.lineTo(Lft[i][0], Lft[i][1]);
+    for (let i = Rgt.length - 1; i >= 0; i--) g.lineTo(Rgt[i][0], Rgt[i][1]);
+    g.closePath();
+    g.fill();
+  }
   function fxWind(D, t, dt, W, H) {
     const w = D.wind, g = D.g, k = H / 1080, kier = w.kier, s = w.sila;
     const G = Math.pow(fxGust(t), 1.3);
     const V = (0.35 + w.kmh / 45) * W / 6 * (0.55 + 0.9 * G);
-    const nP = Math.round(70 * s * w.n * W / 960);
-    while (D.pylki.length < nP) D.pylki.push({ x: Math.random() * W, y: Math.random() * H, z: 0.3 + Math.random() * 0.7, f: Math.random() * 6 });
-    D.pylki.length = Math.min(D.pylki.length, nP);
-    g.fillStyle = w.dzien ? 'rgb(255,248,230)' : 'rgb(210,215,230)';
-    for (const p of D.pylki) {
-      const a = fxFlow(p.x, p.y, t, W, H);
-      p.x += kier * V * p.z * Math.cos(a) * dt; p.y += V * p.z * Math.sin(a) * 0.4 * dt + Math.sin(t * 3 + p.f) * 6 * k * dt;
-      if (p.x < -5) p.x = W + 5; if (p.x > W + 5) p.x = -5; if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-      g.globalAlpha = 0.22 * p.z * (0.6 + 0.4 * G);
-      const r = Math.max(0.6, 3.2 * k * p.z);
-      g.fillRect(p.x, p.y, r, r);
+    // wind lines (2.3.0): bundles of three thin strands on a wave, each strand
+    // looping once somewhere else, drawn on from the head and erased from the
+    // tail, drifting downwind; more of them in a stronger wind and in a gust
+    const asp = W / H, maxW = Math.max(2, Math.round(3 * w.n));
+    const vFrame = (0.05 + w.kmh / 260) * (1 + 1.4 * G);              // frame widths per second
+    if (t > D.nextSmuga && D.smugi.length < maxW) {
+      D.smugi.push(fxBundle(kier, 0.08 + Math.random() * 0.72, asp));
+      D.nextSmuga = t + (1.4 + Math.random() * 2) / (0.5 + w.kmh / 40) / (0.7 + G);
     }
-    if (t > D.nextSmuga && D.smugi.length < (18 * s + 4) * w.n) {
-      D.nextSmuga = t + (0.25 + Math.random() * 0.6) / (0.4 + s * 1.4 * (0.5 + G));
-      D.smugi.push({ x: Math.random() * W, y: Math.random() * H * 0.85, zycie: 0, dl: 1.5 + Math.random() * 1.5, sl: [], v: 0.9 + Math.random() * 0.5 });
-    }
-    g.lineCap = 'round';
-    g.strokeStyle = w.dzien ? 'rgb(255,255,255)' : 'rgb(200,208,228)';
-    D.smugi = D.smugi.filter((m) => {
-      m.zycie += dt;
-      const a = fxFlow(m.x, m.y, t, W, H);
-      m.x += kier * V * 1.4 * m.v * Math.cos(a) * dt; m.y += V * m.v * Math.sin(a) * 0.5 * dt;
-      m.sl.push([m.x, m.y]); if (m.sl.length > 16) m.sl.shift();
-      const f = m.zycie / m.dl, env = Math.sin(Math.PI * clamp(f, 0, 1)), n = m.sl.length;
-      if (n > 2) {
-        for (let seg = 0; seg < 3; seg++) {         // tapered: thicker and brighter at the head
-          const i0 = Math.floor(seg * (n - 1) / 3), i1 = Math.floor((seg + 1) * (n - 1) / 3);
-          g.globalAlpha = (w.dzien ? 0.3 : 0.2) * env * (0.35 + 0.65 * seg / 2) * (0.6 + 0.4 * G);
-          g.lineWidth = Math.max(0.6, (0.6 + seg * 0.5) * k * 2);
-          g.beginPath(); g.moveTo(m.sl[i0][0], m.sl[i0][1]);
-          for (let i = i0 + 1; i <= i1; i++) g.lineTo(m.sl[i][0], m.sl[i][1]);
-          g.stroke();
-        }
-      }
-      return f < 1;
+    const kol = w.e > 5 ? [228, 255, 246] : w.e > -6 ? [200, 245, 232] : [150, 225, 205];
+    const jas = w.e > 5 ? 0.8 : w.e > -6 ? 0.62 : 0.42;
+    const w0 = Math.max(0.7, 1.3 * H / 540);
+    g.globalAlpha = 1;
+    g.fillStyle = 'rgba(' + kol + ',' + (0.8 * jas).toFixed(3) + ')';
+    D.smugi = D.smugi.filter((l) => {
+      l.glowa += vFrame * asp / l.dlug * (l.P.length - 1) * 1.5 * dt;
+      l.ox += kier * vFrame * asp * 0.25 * dt;
+      if (l.glowa > l.P.length - 1 + l.ogon) return false;
+      l.nitki.forEach((P, j) => {
+        const d = j * 6;                                  // strands lag a little behind each other
+        fxRibbon(g, P, l.glowa - l.ogon - d, l.glowa - d,
+                 (u) => w0 * (1 - 0.3 * j) * Math.pow(Math.sin(Math.PI * u), 0.6), l.ox * H, H);
+      });
+      return true;
     });
     if (D.leafSprites) {
       const skala = LEAF_SETS[w.liscie][2];
@@ -4151,7 +4189,7 @@ void main(){
       sila = clamp((v - 18) / 40, 0, 1);
       if (ws.cond === 'windy' || ws.cond === 'windy-variant') sila = Math.max(sila, 0.5);
     }
-    const wind = sila > 0 ? { sila, kier: wx < 0 ? -1 : 1, kmh: Math.max(ws.wind, 20), n: 0.4 + 0.6 * n, dzien: e > 5,
+    const wind = sila > 0 ? { sila, kier: wx < 0 ? -1 : 1, kmh: Math.max(ws.wind, 20), n: 0.4 + 0.6 * n, dzien: e > 5, e,
                                liscie: leafSeason(cfg.leaves, ctx.season), leafBase: cfg.leafBase } : null;
     const czest = cfg.lightning ? LIGHTNING[ws.cond] || 0 : 0;
     if (!hail && !wind && !czest) { fx2Destroy(layer); return {}; }
@@ -4164,7 +4202,7 @@ void main(){
     D.hail = hail;
     if (!hail) { D.kul = []; D.odb = []; D.drob = []; }
     D.wind = wind;
-    if (!wind) { D.smugi = []; D.pylki = []; D.liscie = []; }
+    if (!wind) { D.smugi = []; D.liscie = []; }
     else fxLeafSprites(D, wind);
     D.storm = czest ? { czest, dzien: e > 5 } : null;
     D.calm = weatherCalm();

@@ -3,7 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 2.2.2
+## 2.3.0
+
+### Changed
+- Wind (`effects_style: new`): the white wisps and the pollen are gone. Wind is drawn as bundles of three thin strands in a light mint tint that run together on a wave, each strand curling into one loop at its own place; a bundle draws on from the head, is erased from the tail and drifts downwind, and more of them come in a stronger wind and in a gust (two at once on `low`, three otherwise). The leaves stay as they were. Chosen from five curly-line proposals on `demo/tlo-wiatr-zawijasy.html` (variant 3). Pi 5 kiosk: 0 % janky frames at 50 km/h, day and night.
+
 
 ### Fixed
 - Clouds at night (`effects_style: new`) looked like pale mould on the dark sky: the shader still lit them from the sun's side, with bright cauliflower edges and the cloud-top colour. From the sun at -4 deg to -12 deg the light turns into night light: from below (a town's warm grey glow, stronger towards the horizon and under a full deck) or from the moon when it is up (lit side and silver lining towards it); the modelling is nearly flat, cloud edges soften and thin out, cirrus and the middle tier fade, the deck's rolls calm down. Day and dusk are unchanged.
