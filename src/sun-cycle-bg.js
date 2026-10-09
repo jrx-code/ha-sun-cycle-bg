@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.23.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.24.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -91,6 +91,7 @@
  *     lightning: true               # strikes in a thunderstorm
  *     wind: true                    # gust streaks from ~22 km/h
  *     leaves: autumn                # autumn | always | off
+ *     glass: false                  # true: raindrops on the glass while it rains
  *     gust_entity: sensor.gust      # optional
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
@@ -1485,7 +1486,7 @@
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
                          'scw-clouds-low', 'scw-bolt', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
-                         'scw-hail-1', 'scw-wind', 'scw-flash'];
+                         'scw-hail-1', 'scw-wind', 'scw-flash', 'scw-glass'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1508,6 +1509,7 @@
       fog: w.fog !== false,
       lightning: w.lightning !== false,
       wind: w.wind !== false,
+      glass: w.glass === true,
       leaves: w.leaves === false || w.leaves === 'off' ? false : (w.leaves === 'always' ? 'always' : 'autumn'),
     };
   }
@@ -1643,6 +1645,7 @@
       layer._scwT = {};
       layer._scwBurza = null;
       layer._scwWiatr = null;
+      layer._scwSzyba = null;
       for (const a of layer.getAnimations ? layer.getAnimations({ subtree: true }) : []) a.cancel();
     };
     return layer;
@@ -2355,6 +2358,95 @@
     a.onfinish = () => el.remove();
   }
 
+  /* Raindrops on the glass, off unless asked for. While it rains a timer
+     lets drops land; each is one element with a lens gradient, a highlight and
+     a soft shadow, on one Web Animation: it lands, sits, and dries. One in
+     five is big enough to slide: it moves down in fits and starts, and leaves
+     a trail of small droplets that appear as it passes. The view background
+     sits under the dashboard cards, so the drops do too. */
+  function weatherGlass(layer, cfg, ws, ctx) {
+    const kind = ws && ws.precip;
+    const on = cfg.glass && (kind === 'rain' || kind === 'sleet');
+    if (!on) {
+      layer._scwSzyba = null;
+      clearTimeout(layer._scwT.glass); layer._scwT.glass = 0;
+      weatherDrop(layer, 'scw-glass');
+      return;
+    }
+    const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity;
+    layer._scwSzyba = { I, W: ctx.W, H: ctx.H, n: WEATHER_QUALITY[cfg.quality].n };
+    weatherChild(layer, 'scw-glass').style.overflow = 'hidden';
+    if (!layer._scwT.glass) glassPlan(layer, 0.3);
+  }
+
+  function glassPlan(layer, s) {
+    layer._scwT.glass = setTimeout(() => {
+      layer._scwT.glass = 0;
+      const g = layer._scwSzyba;
+      if (!g || !layer.isConnected) return;
+      const host = layer.querySelector(':scope > .scw-glass');
+      if (host && !weatherCalm() && host.querySelectorAll('.scw-drop').length < 40 * g.n) glassDrop(host, g);
+      // a drizzle lands a drop every couple of seconds, a downpour several a second
+      glassPlan(layer, (0.25 + Math.random() * 0.5) / (0.2 + g.I * 3));
+    }, s * 1000);
+  }
+
+  function glassBead(host, x, y, r) {
+    const el = document.createElement('div');
+    el.className = 'scw-drop';
+    el.style.cssText = 'position:absolute;left:' + (x - r).toFixed(1) + 'px;top:' + (y - r).toFixed(1) +
+      'px;width:' + (2 * r).toFixed(1) + 'px;height:' + (2.16 * r).toFixed(1) + 'px;border-radius:50%;' +
+      'opacity:0;background:radial-gradient(circle at 38% 34%,rgba(255,255,255,.85) 0,' +
+      'rgba(255,255,255,.85) 11%,rgba(255,255,255,.08) 24%,rgba(255,255,255,.14) 70%,' +
+      'rgba(255,255,255,.55) 100%);box-shadow:inset 0 -' + (r * 0.2).toFixed(1) + 'px ' +
+      (r * 0.3).toFixed(1) + 'px rgba(0,0,0,.16),0 ' + (r * 0.25).toFixed(1) + 'px ' +
+      (r * 0.35).toFixed(1) + 'px rgba(0,0,0,.22);';
+    host.appendChild(el);
+    return el;
+  }
+
+  function glassDrop(host, g) {
+    const k = g.H / 400, duza = Math.random() < 0.2;
+    const r = (duza ? 7 + Math.random() * 5 : 2.5 + Math.random() * 3.5) * k;
+    const x = Math.random() * g.W, y = Math.random() * g.H * 0.85;
+    const zycie = (8 + Math.random() * 14) * 1000;
+    const el = glassBead(host, x, y, r);
+    if (!duza) {
+      const a = el.animate([{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1)', offset: 0.02 },
+        { opacity: 1, transform: 'scale(1)', offset: 0.75 }, { opacity: 0, transform: 'scale(.85)' }],
+      { duration: zycie, easing: 'linear' });
+      a.onfinish = () => el.remove();
+      return;
+    }
+    // a big drop slides: stops and starts, then runs off the bottom
+    const droga = g.H - y + 3 * r;
+    const ramki = [{ opacity: 0, transform: 'translateY(0) scale(.5)' },
+      { opacity: 1, transform: 'translateY(0) scale(1)', offset: 0.03 }];
+    let t = 0.03 + Math.random() * 0.25, pos = 0;
+    while (t < 0.95 && pos < droga) {
+      const krok = droga * (0.08 + Math.random() * 0.2);
+      ramki.push({ opacity: 1, transform: 'translateY(' + pos.toFixed(0) + 'px) scale(1)', offset: t });
+      pos = Math.min(droga, pos + krok);
+      t = Math.min(0.97, t + 0.04 + Math.random() * 0.06);
+      ramki.push({ opacity: 1, transform: 'translateY(' + pos.toFixed(0) + 'px) scale(.97,1.06)', offset: t });
+      t = Math.min(0.97, t + Math.random() * 0.12);
+    }
+    ramki.push({ opacity: 0, transform: 'translateY(' + droga.toFixed(0) + 'px) scale(.9)' });
+    const czas = 5000 + Math.random() * 6000;
+    const a = el.animate(ramki, { duration: czas, easing: 'linear' });
+    a.onfinish = () => el.remove();
+    // the trail: small beads left behind, each appearing as the drop passes
+    const n = Math.min(10, Math.round(pos / (10 * k)));
+    for (let i = 1; i <= n; i++) {
+      const yy = y + pos * i / (n + 1);
+      const kiedy = czas * (0.1 + 0.85 * i / (n + 1));
+      const b = glassBead(host, x + (Math.random() - 0.5) * 2 * k, yy, (1.1 + Math.random() * 1.2) * k);
+      const tr = b.animate([{ opacity: 0 }, { opacity: 0.9, offset: 0.04 }, { opacity: 0.9, offset: 0.6 },
+        { opacity: 0 }], { duration: 3000 + Math.random() * 4000, delay: kiedy, easing: 'linear' });
+      tr.onfinish = () => b.remove();
+    }
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
@@ -2364,6 +2456,7 @@
     weatherHail(layer, cfg, ws, ctx);
     weatherLightning(layer, cfg, ws, ctx);
     weatherWind(layer, cfg, ws, ctx);
+    weatherGlass(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2493,6 +2586,7 @@
       // a storm whose timer chain stopped while the view was away
       if (layer._scwBurza && !layer._scwT.bolt && layer.isConnected) lightningPlan(layer, 2);
       if (layer._scwWiatr && !layer._scwT.wind && layer.isConnected) windPlan(layer, 1);
+      if (layer._scwSzyba && !layer._scwT.glass && layer.isConnected) glassPlan(layer, 1);
       const ws = readWeather(st, cfg);
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
@@ -3141,6 +3235,8 @@
         o: 'Gust streaks from about 22 km/h, or in the windy conditions.' },
       { k: 'weather.leaves', et: 'leaves', typ: 'wybor', opcje: ['autumn', 'always', 'off'], dom: 'autumn', w: 'leaves',
         o: 'Tumbling leaves with the wind: autumn only (Sept-Nov), all year (green outside autumn), or none.' },
+      { k: 'weather.glass', et: 'drops on the glass', typ: 'bool', dom: false, w: 'glass',
+        o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
       { k: 'weather.gust_entity', et: 'gust sensor', typ: 'tekst', dom: '', hint: 'sensor.wind_gust',
         o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
@@ -3691,7 +3787,7 @@
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
-                       windGust, windLeaf,
+                       windGust, windLeaf, glassDrop,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,

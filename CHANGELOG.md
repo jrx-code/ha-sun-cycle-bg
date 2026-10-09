@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.24.0
+
+### Added
+- Raindrops on the glass, off by default (`weather.glass: true`): drops land, sit and dry while it rains; big ones slide down in fits and starts and leave a trail. One element and one Web Animation each. ([#11](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/11))
+
 ## 1.23.0
 
 ### Added
