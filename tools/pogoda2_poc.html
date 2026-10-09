@@ -191,7 +191,10 @@ function konfig() {
               aurora: { kp_entity: "sensor.sim_kp", min_kp: 5 } };
   // hail brings rain in the card: off in both variants so only the hail is compared
   if (S.e === "grad") w.rain = false;
-  if (S.w !== "A") {
+  // A: the classic layers; B: the proposal over the card with that one effect off;
+  // C: the card itself with effects_style: new (what 2.2.0 ships)
+  w.effects_style = S.w === "C" ? "new" : "classic";
+  if (S.w === "B") {
     if (S.e === "zorza") delete w.aurora; else w[FLAGA[S.e]] = false;
   }
   k.weather = w;
@@ -286,7 +289,7 @@ let rafStrony = 0;
 (function licz() { rafStrony++; requestAnimationFrame(licz); })();
 setInterval(() => {
   const now = RD.now(), s = (now - PETLA.okno) / 1000;
-  if (S.w !== "A") {
+  if (S.w === "B") {
     LICZNIK.fps = PETLA.klatki / s; LICZNIK.ms = PETLA.klatki ? PETLA.czas / PETLA.klatki : 0;
     $("fps").textContent = PETLA.rysuj
       ? "FPS: " + LICZNIK.fps.toFixed(1) + " (limit " + PETLA.cap + "), rysowanie " + LICZNIK.ms.toFixed(2) + " ms/kl. (CPU)"
@@ -421,16 +424,16 @@ void main(){
     vec2 p = plaszcz(uv, asp, 1.3) + vec2(uT*uWind*0.6, 0.);
     float w = fbm2(p*vec2(1.2, 2.5) + 3.1);
     float n = fbm3(vec2(p.x*0.9 + 0.7*w, p.y*7.0 + 2.*w));
-    float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz);
+    float d = pokr(n, uCov.z*0.6, 0.14)*(1. - horyz);
     vec3 c = mix(uTop, uBot, 0.25) + 0.25*uSunA*exp(-dSun*2.5)*vec3(1., 0.92, 0.8);
-    o = nad(o, c, d*0.55);
+    o = nad(o, c, d*0.4);
   }
   // mid: altocumulus, small cells
   if (uCov.y > 0.02 && uv.y < 0.9){
     vec2 p = plaszcz(uv, asp, 2.4) + vec2(uT*uWind*1.4, uT*0.01);
     float n = fbm4(p*2.0 + 1.7);
     float n2s = fbm3((p + vec2(sd.x, -0.6)*0.05)*2.0 + 1.7);
-    float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz);
+    float d = pokr(n, uCov.y*0.7, 0.08)*(1. - 0.7*horyz);
     float lit = clamp(0.6 + 4.0*(n - n2s - 0.02), 0., 1.);
     vec3 c = mix(uBot, uTop, lit);
     o = nad(o, c, d*0.8);
@@ -553,11 +556,12 @@ void main(){
   float ds = length((uv - uSun)*vec2(asp, 1.));
   float sc = (exp(-ds*2.2)*0.7 + exp(-ds*7.)*0.6)*uSunA;   // forward scattering around the sun
   vec3 c = uCol*(0.88 + 0.35*(b1 - 0.5) + 0.18*banks) + uSunCol*sc;
-  c += vec3(0.20, 0.12, 0.05)*uNight*exp(-hgt*5.)*0.8;      // a town's glow in the fog
+  c += vec3(0.16, 0.11, 0.06)*uNight*exp(-hgt*5.)*0.5;      // a town's glow in the fog
   gl_FragColor = vec4(c*a, a);
 }`, ["uF", "uWind", "uSunA", "uNight", "uSun", "uCol", "uSunCol"], (gl, u) => {
   const ws = WE.ws || { fog: 0.7 }, L = WE.L;
-  const kol = lerpA(L.veil, [230, 234, 240], WE.e > 0 ? 0.35 : 0.08);
+  // at night the fog is lit from below by the town: grey, not black
+  const kol = lerpA(L.veil, WE.e > 0 ? [230, 234, 240] : [92, 94, 102], WE.e > 0 ? 0.35 : 0.4);
   gl.uniform1f(u.uF, ws.fog || 0);
   gl.uniform1f(u.uWind, WE.kier * (0.004 + S.wiatr * 0.0008));
   gl.uniform1f(u.uSunA, WE.sunA);
@@ -582,17 +586,20 @@ float trin(float x, float t){
 }
 vec3 kurtyna(vec2 p, float ziarno, float podst, float amp, float t){
   float x = p.x;
-  float yb = podst + amp*(fbm3(vec2(x*0.7 + ziarno, t*0.02)) - 0.5) + 0.025*sin(x*2.3 + t*0.06 + ziarno);
+  float yb = podst + amp*(fbm3(vec2(x*1.6 + ziarno, t*0.025)) - 0.5) + 0.05*sin(x*3.1 + t*0.07 + ziarno) + 0.02*sin(x*9.3 - t*0.11);
   float h = yb - p.y;                                       // height above the lower edge (y down)
   float xw = x + 0.12*fbm2(vec2(x*1.5, t*0.03 + ziarno));
   float r = trin(xw*14. + ziarno, t);
-  float rays = pow(clamp(r*1.6, 0., 1.), 2.5)*1.5 + 0.25;
+  float rays = pow(clamp(r*1.6, 0., 1.), 2.5)*1.5 + 0.2;
+  rays *= 0.35 + 0.9*n2(vec2(xw*9. + ziarno, p.y*2.5 - t*0.15));     // rays break and flicker along their length
   float wys = 0.10 + 0.22*n2(vec2(xw*6., ziarno + t*0.05));
-  float body = smoothstep(-0.008, 0.012, h)*exp(-max(h, 0.)/wys)*rays;
+  float body = smoothstep(-0.008, 0.012, h)*exp(-max(h, 0.)/wys)*rays
+             + smoothstep(-0.006, 0.004, h)*exp(-max(h, 0.)/0.02)*0.6*(0.5 + 0.5*rays)   // bright lower edge
+             + smoothstep(-0.07, 0.0, h)*step(h, 0.)*0.06;                               // light scattered below it
   float poz = 0.5 + 0.5*fbm2(vec2(x*0.5 - t*0.01, ziarno));   // brighter folds come and go
   vec3 c = mix(vec3(0.18, 1.0, 0.45), vec3(0.85, 0.18, 0.42), smoothstep(0.06, 0.38, h));
-  c = mix(c, vec3(0.62, 0.25, 1.0), smoothstep(0.012, -0.006, h)*0.7);
-  float fr = smoothstep(-0.02, 0.0, h)*smoothstep(0.012, -0.004, h)*0.6;   // violet lower fringe
+  c = mix(c, vec3(0.62, 0.25, 1.0), smoothstep(0.012, -0.006, h)*0.35);
+  float fr = smoothstep(-0.02, 0.0, h)*smoothstep(0.012, -0.004, h)*0.18*rays;   // violet lower fringe
   return c*(body*poz) + vec3(0.5, 0.2, 0.9)*fr*poz;
 }
 void main(){
@@ -601,7 +608,7 @@ void main(){
   vec2 p = vec2(uv.x*asp, uv.y);
   float t = uT;
   vec3 c = kurtyna(p, 1.7, 0.74, 0.22, t)*0.9 + kurtyna(p + vec2(3.3, 0.), 8.2, 0.60, 0.18, t*1.15)*0.55;
-  c += vec3(0.05, 0.22, 0.12)*smoothstep(0.45, 1., uv.y);   // diffuse glow low in the sky
+  c += vec3(0.02, 0.07, 0.04)*smoothstep(0.45, 1., uv.y);   // diffuse glow low in the sky
   float mx = mix(1., smoothstep(0.45, 0.04, uv.x) + smoothstep(0.55, 0.96, uv.x), uEdge);
   c *= uS*mx*smoothstep(1.02, 0.85, uv.y);
   // additive: colour with zero alpha adds to what is under the canvas
@@ -619,9 +626,9 @@ void main(){
 const Grad = (() => {
   let cv, ctx, kul = [], odb = [], drob = [], sprity = [];
   const WG = [  // z, share, speed (frame heights/s), head radius px@1080, alpha
-    { z: 0.4, n: 0.5, v: 1.6, r: 2.6, a: 0.75 },
-    { z: 0.7, n: 0.32, v: 2.2, r: 3.8, a: 0.9 },
-    { z: 1.0, n: 0.18, v: 3.0, r: 5.6, a: 1 },
+    { z: 0.4, n: 0.5, v: 1.6, r: 3.4, a: 0.85 },
+    { z: 0.7, n: 0.32, v: 2.2, r: 5.0, a: 0.95 },
+    { z: 1.0, n: 0.18, v: 3.0, r: 7.2, a: 1 },
   ];
   let dzien = false;
   function sprite(L, k) {
@@ -656,7 +663,7 @@ const Grad = (() => {
     if (wymiary(cv)) przygotuj();
     const W = cv.width, H = cv.height, k = H / 1080;
     const I = clamp(WE.ws && WE.ws.rate !== null ? WE.ws.rate : 0.8, 0.15, 1);
-    const ile = Math.round(I * 200 * W / 1920 / Math.max(0.3, k * 2));
+    const ile = Math.round(I * 260 * W / 1920 / Math.max(0.3, k * 2));
     while (kul.length < ile) kul.push(nowa(W, H, false));
     if (kul.length > ile) kul.length = ile;
     ctx.clearRect(0, 0, W, H);
@@ -717,7 +724,7 @@ const Burza = (() => {
   // recursive midpoint displacement; branches split off and recurse, thinner and dimmer
   function galaz(ax, ay, bx, by, w, a, gl, out) {
     let pts = [[ax, ay], [bx, by]];
-    let off = Math.hypot(bx - ax, by - ay) * 0.16;
+    let off = Math.hypot(bx - ax, by - ay) * 0.2;
     for (let g = 0; g < 7; g++) {
       const nw = [pts[0]];
       for (let i = 0; i < pts.length - 1; i++) {
@@ -726,11 +733,11 @@ const Burza = (() => {
         const s = (Math.random() * 2 - 1) * off;
         nw.push([(x1 + x2) / 2 - dy / l * s, (y1 + y2) / 2 + dx / l * s], pts[i + 1]);
       }
-      pts = nw; off *= 0.52;
+      pts = nw; off *= 0.58;
     }
     out.push({ pts, w, a });
     if (gl >= 3) return;
-    const ile = gl === 0 ? 3 + (Math.random() * 4 | 0) : 1 + (Math.random() * 2 | 0);
+    const ile = gl === 0 ? 5 + (Math.random() * 5 | 0) : 1 + (Math.random() * 3 | 0);
     for (let b = 0; b < ile; b++) {
       const i = 4 + (Math.random() * (pts.length * 0.75) | 0);
       if (i >= pts.length - 2) continue;
@@ -878,7 +885,7 @@ const Wiatr = (() => {
     const z = [0.45, 0.7, 1][Math.random() * 3 | 0];
     const kier = WE.kier;
     return { x: kier > 0 ? -60 * k : W + 60 * k, y: Math.random() * H * 0.7, z, kom: Math.random() * KOMORKI | 0,
-             bok: (34 + Math.random() * 22) * k * z, vx: 0, vy: 0, th: Math.random() * 6.3, om: (Math.random() - 0.5) * 2,
+             bok: (16 + Math.random() * 14) * (H / 400) * (0.6 + 0.6 * z), vx: 0, vy: 0, th: Math.random() * 6.3, om: (Math.random() - 0.5) * 2,
              psi: Math.random() * 6.3, psiV: 2 + Math.random() * 5, os: Math.random() * 3.14, ph: Math.random() * 6.3,
              phV: 1.8 + Math.random() * 2.2 };
   }
@@ -916,7 +923,7 @@ const Wiatr = (() => {
     smugi = smugi.filter((m) => {
       m.zycie += dt;
       const a = przeplyw(m.x, m.y, t, W, H);
-      m.x += kier * V * 1.4 * m.v * Math.cos(a) * dt; m.y += V * m.v * Math.sin(a) * 0.5 * dt;
+      m.x += kier * V * 1.4 * m.v * Math.cos(a) * dt; m.y += V * m.v * Math.sin(a) * 0.9 * dt;
       m.sl.push([m.x, m.y]); if (m.sl.length > 16) m.sl.shift();
       const f = m.zycie / m.dl, env = Math.sin(Math.PI * clamp(f, 0, 1));
       const n = m.sl.length;
@@ -977,9 +984,11 @@ function zmien() {
   scena.querySelectorAll(".blad, canvas.warstwa").forEach((e) => e.remove());
   ustawKarte();
   wejscie();
-  aktywny = S.w === "A" ? PUSTY : SILNIKI[S.e];
+  aktywny = S.w === "B" ? SILNIKI[S.e] : PUSTY;
   aktywny.start();
-  $("opisWariantu").innerHTML = OPISY[S.e][S.w];
+  $("opisWariantu").innerHTML = S.w === "C"
+    ? "<b>C. Karta " + "__WERSJA__".replace("sun-cycle-bg ", "") + ".</b> Ten sam efekt narysowany przez kartę z <code>effects_style: new</code>: shadery chmur, mgły, śniegu i zorzy na jednym płótnie WebGL, grad, wiatr z liśćmi i burza na jednym płótnie 2D."
+    : OPISY[S.e][S.w];
   $("akcje").style.display = S.e === "burza" ? "" : "none";
   stan();
 }
@@ -1007,13 +1016,14 @@ function odswiez() {
     for (const b of $(id).querySelectorAll("button")) b.classList.toggle("on", b.dataset.v === String(S[k]));
 }
 function blyskTeraz() {
-  if (S.w === "A") {
+  if (S.w !== "B") {
     const layer = scena.querySelector(".sun-cycle-weather");
+    if (layer && layer._scwFX2 && S.w === "C") { SCB().fxStrikeNow(layer); return; }
     if (layer && layer._scwBurza) SCB().lightningStrike(layer, layer._scwBurza);
   } else Burza.teraz();
 }
 przyciski("efekty", EFEKTY, "e", (el) => el[0]);
-przyciski("warianty", [["A", "A. Dziś (__WERSJA__)"], ["B", "B. Propozycja"]], "w", (el) => el[0]);
+przyciski("warianty", [["A", "A. Classic"], ["B", "B. Propozycja"], ["C", "C. Karta (__WERSJA__)"]], "w", (el) => el[0]);
 przyciski("dzien", DZIEN, "dzien", (el, i) => i);
 przyciski("welon", [["wł.", true], ["wył.", false]], "welon", (el) => el[1]);
 przyciski("skala", [["0,5x", 0.5], ["1x", 1]], "skala", (el) => el[1]);
@@ -1026,7 +1036,7 @@ const suwak = (id, k) => {
 };
 suwak("nat", "I"); suwak("wiatr", "wiatr");
 // the card may move the sun disc a little: pick its position up now and then
-setInterval(() => { if (S.w !== "A") wejscie(); }, 3000);
+setInterval(() => { if (S.w === "B") wejscie(); }, 3000);
 // zamroz: stop the loop on the current frame (for screenshots in a software renderer)
 window.efektyPOC = { S, zmien, blyskTeraz, WE, zamroz: stopPetli, ustaw(o) { Object.assign(S, o); odswiez(); zmien(); } };
 odswiez();
