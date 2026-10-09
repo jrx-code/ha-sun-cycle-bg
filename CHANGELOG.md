@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 2.1.2
+
+### Fixed
+- An overcast or rainy night stuttered on the Raspberry Pi 5 kiosk: the star field kept twinkling under the sky veil that hides it, and its animated elements with hundreds of box-shadows were composited every frame (measured there with `quality: low`: 91 % janky frames with the field, 11 % with it hidden). When it rains, snows or hails, or the veil reaches 0.8 opacity, the field fades out over 2 s and leaves the page (`display: none`), and comes back with the same fade when the sky clears. `veil: false` keeps the stars.
+
 ## 2.1.1
 
 ### Fixed

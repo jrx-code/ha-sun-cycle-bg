@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.1.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.1.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -296,6 +296,8 @@
     // travel inside the layer, scoped to a per-instance class — see starCSS()
     '.sun-cycle-stars{position:absolute;inset:0;overflow:hidden;pointer-events:none;' +
     'transition:opacity 2s linear;}' +
+    // under a closed veil: fade out, then display:none (see starsCovered)
+    '.sun-cycle-stars.scs-covered{opacity:0!important;}' +
     '.sun-cycle-milky{position:absolute;inset:0;width:100%;height:100%;' +
     'pointer-events:none;transition:opacity 2s linear;}' +
     // the planet layer carries its own rules inside it — see PLANET_CSS
@@ -1955,14 +1957,41 @@
   /* The sky dims and greys under cloud: one element, one opacity, a minute to
      get there. Above every sky layer, so an overcast night has no stars and a
      grey noon no sun disc. */
+  function veilAlpha(cfg, ws) {
+    if (!cfg.veil || !ws) return 0;
+    let a = smoothstep(clamp((ws.cover - 0.35) / 0.65, 0, 1)) * 0.82 + ws.storm * 0.12;
+    // a thick fog hides the sky as surely as cloud does
+    if (cfg.fog && ws.fog > 0.4) a = Math.max(a, (ws.fog - 0.4) / 0.6 * 0.7);
+    return clamp(a, 0, 0.95);
+  }
+
+  /* A star field under a closed veil is invisible but not free: its twinkle
+     keyframes run on elements carrying hundreds of box-shadows, and the Pi 5
+     kiosk composited them every frame behind an overcast rainy night (2.1.0:
+     91 % janky frames with the field, 11 % with it hidden). Rain or a veil at
+     STAR_COVER takes the field off the page: a 2 s fade on the layer's own
+     opacity transition, then display:none, which stops its CSS animations.
+     Meteors and the ISS are Web Animations and still finish and clean up. */
+  const STAR_COVER = 0.8;
+  function starsCovered(layer, on) {
+    if (!!layer._scsCovered === on) return;
+    layer._scsCovered = on;
+    clearTimeout(layer._scsCoverT);
+    if (on) {
+      layer.classList.add('scs-covered');
+      layer._scsCoverT = setTimeout(() => { if (layer._scsCovered) layer.style.display = 'none'; }, 2200);
+    } else {
+      layer.style.display = '';
+      void layer.offsetWidth;               // start the fade-in from opacity 0
+      layer.classList.remove('scs-covered');
+    }
+  }
+
   function weatherVeil(layer, cfg, ws, ctx) {
     if (!cfg.veil || !ws) { weatherDrop(layer, 'scw-veil'); return; }
     const v = weatherChild(layer, 'scw-veil');
     const L = ctx.light;
-    let a = smoothstep(clamp((ws.cover - 0.35) / 0.65, 0, 1)) * 0.82 + ws.storm * 0.12;
-    // a thick fog hides the sky as surely as cloud does
-    if (cfg.fog && ws.fog > 0.4) a = Math.max(a, (ws.fog - 0.4) / 0.6 * 0.7);
-    a = clamp(a, 0, 0.95);
+    const a = veilAlpha(cfg, ws);
     v.style.background = 'linear-gradient(180deg,' + rgb(L.veil.map((x) => x * 0.85)) + ',' +
       rgb(lerpA(L.veil, L.top, 0.2)) + ')';
     v.style.opacity = a.toFixed(3);
@@ -3503,7 +3532,12 @@ void main(){
     _weatherSync() {
       const cfg = this._weatherCfg, c = this._container;
       if (!c) return;
-      if (!cfg) { zdejmij(c, '.sun-cycle-weather'); return; }
+      if (!cfg) {
+        zdejmij(c, '.sun-cycle-weather');
+        const g = c.querySelector('.sun-cycle-stars');
+        if (g) starsCovered(g, false);
+        return;
+      }
       const st = this._hass && this._hass.states;
       if (!st || this._elev === undefined) return;
       const sig = podpis(cfg);
@@ -3530,6 +3564,8 @@ void main(){
       // meteors behind cloud: rain or snow takes them all, cover its share
       const gw = c.querySelector('.sun-cycle-stars');
       if (gw && gw.scsSky) gw.scsSky.cover = ws ? (ws.precip ? 1 : ws.cover) : 0;
+      // and a sky nobody can see stops being drawn
+      if (gw) starsCovered(gw, !!ws && cfg.veil && (!!ws.precip || veilAlpha(cfg, ws) >= STAR_COVER));
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
       // the season too: it picks the leaf set the wind carries

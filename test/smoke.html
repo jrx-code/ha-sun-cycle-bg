@@ -721,6 +721,29 @@ out.push(['SHADER snowy: brak warstwy', czytajShader(pogoda(10, { entity: 'weath
   out.push(['SHADER deszcz ustaje, glass, szyba jeszcze sucha: warstwa znika', czytajShader(z)]);
 }
 
+// --- 2.1.2: gwiazdy pod zamknietym welonem schodza ze strony --------------
+function czytajGwiazdyPodWelonem(z) {
+  const g = z.cont.querySelector('.sun-cycle-stars');
+  const v = z.cont.querySelector('.scw-veil');
+  return g ? { zakryte: g.classList.contains('scs-covered'), display: g.style.display,
+               welon: v ? +v.style.opacity : null } : { brak: true };
+}
+out.push(['GWIAZDY POD WELONEM', [
+  ['sunny 5%', 'sunny', { cloud_coverage: 5 }, {}],
+  ['cloudy 60%', 'cloudy', { cloud_coverage: 60 }, {}],
+  ['cloudy 100%', 'cloudy', { cloud_coverage: 100 }, {}],
+  ['rainy 15% (opad)', 'rainy', { cloud_coverage: 15 }, {}],
+  ['rainy 100%, veil: false', 'rainy', { cloud_coverage: 100 }, { veil: false }],
+].map(([n, stan, atr, w]) => [n, czytajGwiazdyPodWelonem(
+  pogoda(-20, Object.assign({ entity: 'weather.t' }, w), stan, atr))])]);
+{
+  const z = pogoda(-20, { entity: 'weather.t' }, 'rainy', { cloud_coverage: 100 });
+  const przed = czytajGwiazdyPodWelonem(z);
+  z.card.hass = { states: Object.assign({}, z.states, { 'weather.t': { state: 'clear-night', attributes: { cloud_coverage: 5 } } }),
+                  config: { latitude: 52.2297, longitude: 21.0122 } };
+  out.push(['GWIAZDY deszcz ustaje: wracaja', { przed, po: czytajGwiazdyPodWelonem(z) }]);
+}
+
 // --- 1.25.0: zorza -------------------------------------------------------
 function zorza(elev, kp, aur, atr) {
   const z = pogoda(elev, { entity: 'weather.t', aurora: aur }, 'clear-night', atr || { cloud_coverage: 5 });
