@@ -1,0 +1,7 @@
+{
+ "tytul": "Tło: deszcz i krople, propozycje",
+ "grupa": "Tło (sun-cycle-bg)",
+ "status": "aktualne",
+ "kolejnosc": 106,
+ "opis": "Propozycja do decyzji: nowy deszcz i krople na szybie dla sun-cycle-bg. A: to, co karta ma dziś. B: jedno płótno 2D, cienkie zwężane smugi w 4 głębokościach z alfą od jasności nieba, porywami, welonem i rzadkimi rozbryzgami, szyba z mgłą z rozmytego nieba i soczewkami z odwróconym obrazem. C: jeden shader WebGL, smugi proceduralne, krople zjeżdżające ze śladem w mgle i refrakcją. D: raindrop-fx (MIT) dla porównania. Przełącznik opadu, wiatru, pory dnia, kropel i rozdzielczości, licznik FPS. Cel: Raspberry Pi 5, jedno płótno, 0,5 rozdzielczości, 30 kl./s."
+}
