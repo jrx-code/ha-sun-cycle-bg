@@ -3,6 +3,19 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.28.0
+
+### Added
+- The wind carries pictures instead of coloured ellipses: Norway maple and English oak leaves in autumn colours; cherry petals, blossom and young beech and lime leaves in spring; lime and maple leaves, poppy petals, daisies and a buttercup in summer. One strip of 128 px cells per season (`leaves-*.webp`, shipped in `dist/`), generated with google/gemini-nano-banana-2.1 and keyed out by `tools/leaves.py`. ([#31](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/31))
+- `weather.leaves: seasons`: the spring, summer and autumn sets in their season, nothing in winter. `always` now blows the dry autumn leaves in winter instead of green ellipses.
+- `weather.season_entity`: the season from a sensor such as HA's Season integration; without it the month decides.
+
+### Changed
+- Leaves are bigger (38 to 70 px on a 1080 px frame), drift slower (5 to 9 s across at 45 km/h) and take half of the wind's spawns instead of a third, or the sprites read as specks.
+
+### Fixed
+- The leaf set did not change at a month boundary until the weather changed: the weather fingerprint now includes the season.
+
 ## 1.27.0
 
 ### Changed

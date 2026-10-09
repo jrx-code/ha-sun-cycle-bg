@@ -734,8 +734,9 @@ weather:
 | `fog` | `true` | Haze towards the horizon and drifting banks, from `fog`, from `fog_area_fraction` of `clouds_entity`, or from visibility under 1 km (1.21.0). |
 | `lightning` | `true` | Strikes every 3-12 s for `lightning` and `lightning-rainy` (half as often for `exceptional`): a sky flash with return strokes, and a forked bolt or a glow in the cloud (1.22.0). |
 | `wind` | `true` | Gust streaks crossing the sky from about 22 km/h, or for `windy` / `windy-variant` (1.23.0). |
-| `leaves` | `autumn` | What the wind carries (1.23.0, sprites since 1.28.0): `autumn` maple and oak leaves in September to November only; `seasons` adds cherry petals, blossom and young leaves in March to May and lime and maple leaves, poppy petals, daisies and buttercups in June to August; `always` also blows the dry autumn leaves in winter; `off`. |
+| `leaves` | `autumn` | What the wind carries (1.23.0, sprites since 1.28.0): `autumn` maple and oak leaves in September to November only; `seasons` adds cherry petals, blossom and young leaves in March to May and lime and maple leaves, poppy petals, daisies and buttercups in June to August; `always` also blows the dry autumn leaves in winter; `off`. The season comes from `season_entity`, or from the month. |
 | `gust_entity` | none | Optional gust sensor; gusts make the wind visible sooner. Without it the weather entity's `wind_gust_speed`, if it has one (1.23.0). |
+| `season_entity` | none | Optional season sensor for the leaves: `spring`, `summer`, `autumn` or `winter`, e.g. HA's Season integration (astronomical or meteorological, as you set it up). Without it, or while it is unavailable, the month decides: March to May spring, June to August summer, September to November autumn (1.28.0). |
 | `glass` | `false` | Raindrops on the glass while it rains: they land, sit and dry, and big ones slide down leaving a trail (1.24.0). |
 | `aurora` | none | `{kp_entity, min_kp: 5, placement: edges}`: northern lights when the Kp index reaches `min_kp`, at night, under cover below 60 % (1.25.0). |
 

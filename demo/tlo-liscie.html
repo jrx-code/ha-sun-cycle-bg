@@ -58,6 +58,9 @@ window.Date = SimDate;
   liście buka i lipy, latem liście lipy i klonu, płatki maku, stokrotki i jaskier. Obrazy wygenerował
   <code>google/gemini-nano-banana-2.1</code> przez OpenRouter na jednolitym niebieskim tle;
   tło wycięte i spakowane w paski skryptem <code>tools/leaves.py</code>.</p>
+  <p>Porę roku karta bierze z <code>weather.season_entity</code> (na panelu <code>sensor.pora_roku</code>,
+  integracja Season, typ astronomiczny: zmiana w dniu równonocy i przesilenia), a bez niej z miesiąca.
+  Na tej stronie encji nie ma, więc przełącznik pory roku ustawia miesiąc.</p>
 
   <div class="panel">
     <div class="grupa" id="pory"><span>Pora roku</span></div>
@@ -190,6 +193,7 @@ window.Date = SimDate;
  *     lightning: true               # strikes in a thunderstorm
  *     wind: true                    # gust streaks from ~22 km/h
  *     leaves: autumn                # autumn | seasons | always | off
+ *     season_entity: sensor.season  # spring/summer/autumn/winter; without it the month
  *     glass: false                  # true: raindrops on the glass while it rains
  *     aurora:                       # only with a Kp sensor
  *       kp_entity: sensor.planetary_k_index
@@ -1849,6 +1853,7 @@ window.Date = SimDate;
       clouds_entity: str(w.clouds_entity),
       gust_entity: str(w.gust_entity),
       precipitation_entity: str(w.precipitation_entity),
+      season_entity: str(w.season_entity),
       quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
       veil: w.veil !== false,
       clouds: w.clouds !== false,
@@ -2646,13 +2651,19 @@ window.Date = SimDate;
     spring: ['leaves-spring.webp', 12, 0.7],
     summer: ['leaves-summer.webp', 15, 0.85],
   };
-  /* `autumn`: Sept-Nov only. `seasons`: spring, summer and autumn sets in their
-     months, nothing in winter. `always`: the same, and in winter the dry
-     autumn leaves (oak keeps its leaves into the winter). Months are the
-     northern hemisphere's, as everywhere else in the weather layer. */
-  function leafSeason(mode, month) {
-    const pora = month >= 3 && month <= 5 ? 'spring' : month >= 6 && month <= 8 ? 'summer'
-      : month >= 9 && month <= 11 ? 'autumn' : 'winter';
+  /* The season: from `season_entity` when it says one of the four (HA's
+     season integration does, astronomical or meteorological as it is set up),
+     otherwise from the month, meteorologically and for the northern
+     hemisphere, as everywhere else in the weather layer. */
+  const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
+  const seasonOfMonth = (m) => m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer'
+    : m >= 9 && m <= 11 ? 'autumn' : 'winter';
+  /* `autumn`: autumn only. `seasons`: spring, summer and autumn sets in their
+     season, nothing in winter. `always`: the same, and in winter the dry
+     autumn leaves (oak keeps its leaves into the winter). Takes a season, or a
+     month number for the month rule. */
+  function leafSeason(mode, pora) {
+    if (typeof pora === 'number') pora = seasonOfMonth(pora);
     if (mode === 'autumn') return pora === 'autumn' ? 'autumn' : null;
     if (mode === 'seasons') return pora === 'winter' ? null : pora;
     if (mode === 'always') return pora === 'winter' ? 'autumn' : pora;
@@ -2677,7 +2688,7 @@ window.Date = SimDate;
       weatherDrop(layer, 'scw-wind');
       return;
     }
-    const liscie = leafSeason(cfg.leaves, ctx.month);
+    const liscie = leafSeason(cfg.leaves, ctx.season);
     const wx = weatherWindX(ws, ctx);
     layer._scwWiatr = {
       sila, kier: wx < 0 ? -1 : 1, liscie, leafBase: cfg.leafBase,
@@ -3061,8 +3072,8 @@ window.Date = SimDate;
       if (gw && gw.scsSky) gw.scsSky.cover = ws ? (ws.precip ? 1 : ws.cover) : 0;
       const ctx = this._weatherCtx(ws);
       const box = c.getBoundingClientRect();
-      // the month too: it picks the leaf set the wind carries
-      const print = podpis([ws, Math.round(this._elev * 2), ctx.moonPrint, ctx.month,
+      // the season too: it picks the leaf set the wind carries
+      const print = podpis([ws, Math.round(this._elev * 2), ctx.moonPrint, ctx.season,
                             Math.round(box.width), Math.round(box.height)]);
       if (print === layer._print) return;
       layer._print = print;
@@ -3090,7 +3101,15 @@ window.Date = SimDate;
         proj: (alt, az) => this._project(alt, az),
         lat: this._lat, lon: this._lon,
         month: new Date().getMonth() + 1,
+        season: this._season(),
       };
+    }
+
+    _season() {
+      const cfg = this._weatherCfg, h = this._hass;
+      const s = cfg && cfg.season_entity && h && h.states && h.states[cfg.season_entity];
+      const v = s && String(s.state).toLowerCase();
+      return SEASONS.includes(v) ? v : seasonOfMonth(new Date().getMonth() + 1);
     }
 
     /* `hass` arrives on every state change in the house; the ISS pass sensors
@@ -3727,6 +3746,8 @@ window.Date = SimDate;
         o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
         o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
+      { k: 'weather.season_entity', et: 'season sensor', typ: 'tekst', dom: '', hint: 'sensor.season',
+        o: 'Optional: the season for the leaves (spring, summer, autumn, winter), e.g. from the Season integration. Without it the month decides: Mar-May spring, Jun-Aug summer, Sep-Nov autumn.' },
     ] },
     { tytul: 'Discs and files', pola: [
       { k: 'sun_image_width', et: 'sun: width (%)', typ: 'zakres', min: 3, max: 25, krok: 0.5, dom: 10.5,
@@ -4273,7 +4294,7 @@ window.Date = SimDate;
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
                        readWeatherConfig, readWeather, weatherLight, lightningStrike,
-                       windGust, windLeaf, glassDrop, leafSeason, LEAF_SETS, showerSources, showerMeteor, SHOWERS,
+                       windGust, windLeaf, glassDrop, leafSeason, LEAF_SETS, seasonOfMonth, showerSources, showerMeteor, SHOWERS,
                        SHOWER_TAB, showerZhr,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
