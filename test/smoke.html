@@ -423,6 +423,39 @@ out.push(['CHMURY clouds: false', czytajChmury(pogoda(40, { entity: 'weather.t',
 out.push(['CHMURY quality low', czytajChmury(pogoda(40, { entity: 'weather.t', quality: 'low' },
   'partlycloudy', { cloud_coverage: 40 }).cont)]);
 
+// --- 1.18.0: deszcz -----------------------------------------------------
+function czytajOpad(cont, prefiks) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  if (!w) return { warstwa: false };
+  const warstwy = [...w.querySelectorAll(':scope > [class*="' + prefiks + '"]')].map((box) => {
+    const shear = box.firstElementChild, cv = box.querySelector('canvas');
+    const a = cv && cv.getAnimations()[0];
+    return { k: box.className.replace('scw ', ''), kanwa: cv ? cv.width + 'x' + cv.height : null,
+             mb: cv ? +(cv.width * cv.height * 4 / 1048576).toFixed(2) : null,
+             skos: shear && shear.style ? shear.style.transform : null,
+             petla_ms: a ? Math.round(a.effect.getTiming().duration) : null };
+  });
+  const sp = w.querySelector('.scw-splash');
+  return { warstwy, rozbryzgi: sp ? [...sp.children].map((c) => Math.round(c.getAnimations()[0].currentTime % 600)) : null };
+}
+out.push(['DESZCZ rainy, wiatr z zachodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t' },
+  'rainy', { cloud_coverage: 90, wind_speed: 30, wind_bearing: 270 }).cont, 'scw-rain')]);
+out.push(['DESZCZ pouring, bez wiatru', czytajOpad(pogoda(10, { entity: 'weather.t' },
+  'pouring', { cloud_coverage: 100 }).cont, 'scw-rain')]);
+out.push(['DESZCZ rainy, wiatr ze wschodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t' },
+  'rainy', { cloud_coverage: 90, wind_speed: 30, wind_bearing: 90 }).cont, 'scw-rain')]);
+out.push(['DESZCZ sunny: nic', czytajOpad(pogoda(10, { entity: 'weather.t' }, 'sunny', {}).cont, 'scw-rain')]);
+out.push(['DESZCZ rain: false, splashes: false', czytajOpad(pogoda(10, { entity: 'weather.t',
+  rain: false, splashes: false }, 'pouring', {}).cont, 'scw-rain')]);
+{
+  // czujnik mm/h ustawia natezenie: 0,5 mm/h przy stanie pouring to mzawka
+  const z = pogoda(10, { entity: 'weather.t', precipitation_entity: 'sensor.mm' }, 'pouring', {});
+  const st = Object.assign({}, z.states, { 'sensor.mm': { state: '0.5' } });
+  z.card.hass = { states: st, config: { latitude: 52.2297, longitude: 21.0122 } };
+  out.push(['DESZCZ readWeather z czujnikiem 0.5 mm/h', { rate: window.sunCycleBg.readWeather(st,
+    window.sunCycleBg.readWeatherConfig({ entity: 'weather.t', precipitation_entity: 'sensor.mm' })).rate }]);
+}
+
 {
   // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
   const ed = document.createElement('sun-cycle-bg-card-editor');

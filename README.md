@@ -662,6 +662,8 @@ weather:
   quality: medium                   # high | medium | low
   veil: true
   clouds: true
+  rain: true
+  splashes: true
 ```
 
 | Key | Default | What it does |
@@ -671,6 +673,9 @@ weather:
 | `quality` | `medium` | Share of the particle budget and the resolution painted strips are rastered at: `high` 100 %, `medium` 60 % / 0.75, `low` 35 % / 0.5. |
 | `veil` | `true` | Overcast greys and dims the sky over everything the card draws, so a cloudy night has no stars and a grey noon no sun disc. |
 | `clouds` | `true` | Clouds at three heights (cirrus, alto, cumulus) and a stratus deck once low cover passes 75 %, drifting with the wind (1.17.0). |
+| `rain` | `true` | Rain in three depths for `rainy`, `pouring`, `lightning-rainy`, `exceptional` (and behind sleet and hail), slanted by the wind (1.18.0). |
+| `splashes` | `true` | Droplets flickering along the horizon where the rain lands (1.18.0). |
+| `precipitation_entity` | none | Optional measured rate in mm/h; 4 mm/h and up is a downpour. Without it the condition sets how hard it rains (1.18.0). |
 
 **The condition outranks the number.** Forecast models disagree, and a
 `cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
@@ -704,6 +709,16 @@ reshuffling the sky.
   (with the default window a westerly pushes clouds to the left). Speed is a
   playback rate on the loop, so a change of wind bends the motion without a jump.
   Low clouds move fastest and cirrus slowest; with no wind they still drift slowly.
+
+### Rain
+
+Three depths: far streaks short, faint and slow, near ones long, bright and fast. Each depth is one canvas tile that repeats every half frame height, painted once at a reduced raster scale (the three together hold about 2 MB at `medium` on a 1280 × 400 view) and slid down by one transform loop.
+
+The wind does not push anything sideways frame by frame. The whole depth is sheared with `skewX` from its top edge, which slants the streaks and the fall together, as a steady drift would, and the shear eases to a new angle over 20 s when the wind changes. Near depths lean more than far ones.
+
+Splashes are three thin bands of droplets along the horizon, each flashing on its own third of one short opacity loop, so the ground flickers the way rain hitting it does.
+
+How hard it rains comes from the condition (`rainy` 0.45, `lightning-rainy` 0.8, `pouring` 1) or, with `precipitation_entity`, from the measured rate.
 
 ## Tuning the palette
 
