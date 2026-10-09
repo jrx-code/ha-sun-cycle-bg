@@ -649,6 +649,42 @@ wants to drive the layer itself (a tuning page) gets
 `window.sunCycleBg.buildStars(cfg, W, H, proj)` and `readStarConfig(cfg)`;
 the layer carries `scsMeteor()`, `scsIss()` and `scsStop()`.
 
+## Weather
+
+Since 1.16.0 the sky can follow a weather entity. Nothing changes until a
+`weather:` block is added, so an existing dashboard draws what it drew.
+
+```yaml
+type: custom:sun-cycle-bg-card
+weather:
+  entity: weather.home              # any HA weather entity
+  clouds_entity: weather.astroweather   # optional, see below
+  quality: medium                   # high | medium | low
+  veil: true
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `entity` | none | Condition, `cloud_coverage`, `wind_speed` (+ unit), `wind_bearing` (degrees or a compass point), `visibility`. Without it nothing is drawn. |
+| `clouds_entity` | none | Cover per height and fog, read from the [AstroWeather](https://github.com/mawinkler/astroweather) attributes `cloud_area_fraction_low/medium/high` and `fog_area_fraction`. Without it the total cover is spread over the heights. |
+| `quality` | `medium` | Share of the particle budget and the resolution painted strips are rastered at: `high` 100 %, `medium` 60 % / 0.75, `low` 35 % / 0.5. |
+| `veil` | `true` | Overcast greys and dims the sky over everything the card draws, so a cloudy night has no stars and a grey noon no sun disc. |
+
+**The condition outranks the number.** Forecast models disagree, and a
+`cloud_coverage` of 15 % next to a state of `rainy` is two models talking. The
+card takes a floor under the cover from the condition (`cloudy` 85 %, `rainy`
+82 %, `pouring` 95 %, …), so the sky never looks clearer than the word on the
+weather card beside it.
+
+**Slow on purpose.** The veil takes a minute to reach a new cover, so a forecast
+update does not blink the panel. The first frame after a page load lands at once.
+
+**Same contract as the rest of the card.** The weather layer sits above every
+sky layer and under the dashboard cards. Its state is fingerprinted the way the
+planet sensors are, so `hass` updates from the rest of the house cost a string
+comparison, and nothing in it animates in JS. With the system setting *reduce
+motion* on, everything the weather layer animates holds still.
+
 ## Tuning the palette
 
 The whole look lives in one table at the top of `src/sun-cycle-bg.js` — `STOPS`:
@@ -847,8 +883,9 @@ weather.
   with pictures instead of magnitude-scaled points — see
   [Planets](#planets). Computing the positions in the card, and with them a
   real magnitude, is still open.
-- **Clouds.** The sky is painted from solar elevation alone, so it is always
-  clear. An optional `weather` entity could dim and desaturate the palette,
+- **Clouds.** ~~The sky is painted from solar elevation alone, so it is always
+  clear.~~ **The veil shipped in 1.16.0** (see [Weather](#weather)); drawn clouds
+  are next. Originally: An optional `weather` entity could dim and desaturate the palette,
   soften the aureole and thin out the stars as cover rises — `cloudcover_percentage`
   from [AstroWeather](https://github.com/mawinkler/astroweather), or plain
   `cloud_coverage` from any HA weather entity. Cover should move slowly (a
