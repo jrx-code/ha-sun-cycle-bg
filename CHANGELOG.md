@@ -3,6 +3,16 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.18.0
+
+### Added
+- Rain in three depths, slanted by the wind with `skewX`, falling on a transform loop over a tile painted once. ([#5](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/5))
+- Splashes along the horizon on staggered opacity loops (`weather.splashes`).
+- `weather.precipitation_entity`: a measured rate in mm/h sets the intensity.
+
+### Changed
+- A loop restarted for a new speed keeps its position; only a change of direction mirrors it.
+
 ## 1.17.0
 
 ### Added

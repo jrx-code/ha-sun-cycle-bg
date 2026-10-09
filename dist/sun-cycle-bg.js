@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.17.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.18.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -83,6 +83,9 @@
  *     quality: medium               # high | medium | low
  *     veil: true                    # overcast greys the sky over everything
  *     clouds: true                  # three heights + a deck, drifting with the wind
+ *     rain: true                    # three depths, slanted by the wind
+ *     splashes: true                # droplets flickering along the horizon
+ *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
  *   # Both are independent; whatever is left out keeps the drawn version. The
@@ -1473,7 +1476,7 @@
   };
   // children of the weather layer, bottom to top
   const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
-                         'scw-clouds-low'];
+                         'scw-clouds-low', 'scw-rain-0', 'scw-rain-1', 'scw-splash', 'scw-rain-2'];
 
   /* `weather:` block -> full config. Absent or false = no layer at all. */
   function readWeatherConfig(w) {
@@ -1484,9 +1487,12 @@
     return {
       entity: str(w.entity),
       clouds_entity: str(w.clouds_entity),
+      precipitation_entity: str(w.precipitation_entity),
       quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
       veil: w.veil !== false,
       clouds: w.clouds !== false,
+      rain: w.rain !== false,
+      splashes: w.splashes !== false,
     };
   }
 
@@ -1544,8 +1550,15 @@
     if (fog === null) fog = 0;
     if (cond === 'fog') fog = Math.max(fog, 0.85);
     if (visKm !== null && visKm < 1) fog = Math.max(fog, clamp(1 - visKm, 0.3, 0.95));
+    // measured rain, when there is a sensor for it: 4 mm/h and up is a downpour
+    let rate = null;
+    const pr = cfg.precipitation_entity && states[cfg.precipitation_entity];
+    if (pr && c[2]) {
+      const mm = Number(pr.state);
+      if (isFinite(mm) && mm > 0) rate = clamp(mm / 4, 0.15, 1);
+    }
     return {
-      cond,
+      cond, rate,
       cover: clamp(1 - (1 - low) * (1 - mid * 0.8) * (1 - high * 0.35), 0, 1),
       low, mid, high, fog,
       storm: c[1],
@@ -1658,13 +1671,14 @@
     window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   // A negative playback rate cannot run an infinite animation backwards from
   // its start, so direction is part of the key and a turn of the wind starts
-  // a new loop from where the old one stood.
-  function weatherLoop(el, frames, ms, key) {
+  // a new loop from where the old one stood. `flip`: the new frames run the
+  // other way, so the same spot sits at the mirrored progress.
+  function weatherLoop(el, frames, ms, key, flip) {
     if (el._scwAnim && el._scwKey === key) return el._scwAnim;
     let at = 0;
     if (el._scwAnim) { at = el._scwAnim.effect.getComputedTiming().progress || 0; el._scwAnim.cancel(); }
     const a = el.animate(frames, { duration: ms, iterations: Infinity, easing: 'linear' });
-    a.currentTime = (1 - at) * ms;
+    a.currentTime = (flip ? 1 - at : at) * ms;
     if (weatherCalm()) a.pause();
     el._scwAnim = a;
     el._scwKey = key;
@@ -1786,7 +1800,7 @@
       const anim = weatherLoop(cv, left
         ? [{ transform: 'translateX(0)' }, { transform: 'translateX(-50%)' }]
         : [{ transform: 'translateX(-50%)' }, { transform: 'translateX(0)' }],
-      Math.max(1000, W / 3 * 1000), left ? 'l' : 'r');
+      Math.max(1000, W / 3 * 1000), left ? 'l' : 'r', true);
       // setting the rate keeps the current position (Web Animations, playbackRate)
       anim.playbackRate = v / 3;
     }
@@ -1798,9 +1812,153 @@
       rgba([...lerpA(L.bot, L.top, 0.35), 1], 0.75 * deck) + ' 52%,' + rgba([...L.top, 1], 0) + ' 75%)';
   }
 
+  /* Falling things (rain now, snow and hail later) without a frame loop. A
+     depth layer is one canvas tile that repeats every `period` px down, painted
+     once, slid down by a transform loop. Wind does not move anything sideways:
+     the whole layer is sheared with skewX from the top edge, which slants the
+     streaks and the fall together, exactly as a constant drift would. The
+     layer is widened by the shear on both sides so the corners never show.
+
+     spec: { cls, n, speed (px/s at 400 px height), period (share of H),
+             res, slope (dx/dy), draw(g, x, y, s), sway (px, 0 = none),
+             swayS (s), opacity } */
+  function weatherFall(layer, spec, ctx) {
+    const W = ctx.W, H = ctx.H, k = H / 400;
+    const box = weatherChild(layer, spec.cls);
+    box.style.overflow = 'visible';
+    const tan = clamp(spec.slope, -1.4, 1.4);
+    const over = Math.abs(tan) * H + 4;
+    const T = Math.max(40, Math.round(H * spec.period));
+    // outer: sheared; mid: sways (snow); inner canvas: falls
+    let shear = box.firstElementChild;
+    if (!shear) {
+      shear = document.createElement('div');
+      shear.style.cssText = 'position:absolute;top:0;transform-origin:0 0;transition:transform 20s linear;';
+      const sway = document.createElement('div');
+      sway.style.cssText = 'position:absolute;inset:0;';
+      const cv = document.createElement('canvas');
+      cv.style.cssText = 'position:absolute;left:0;width:100%;will-change:transform;';
+      sway.appendChild(cv);
+      shear.appendChild(sway);
+      box.appendChild(shear);
+    }
+    const sway = shear.firstElementChild, cv = sway.firstElementChild;
+    shear.style.left = (-over).toFixed(0) + 'px';
+    shear.style.width = (W + 2 * over).toFixed(0) + 'px';
+    shear.style.height = H + 'px';
+    shear.style.transform = 'skewX(' + (Math.atan(tan) * R2D).toFixed(2) + 'deg)';
+    box.style.opacity = String(spec.opacity === undefined ? 1 : spec.opacity);
+    cv.style.top = -T + 'px';
+    cv.style.height = (H + T) + 'px';
+    const cw = Math.max(2, Math.round((W + 2 * over) * spec.res));
+    const ch = Math.max(2, Math.round((H + T) * spec.res));
+    if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, cw, ch);
+    const rnd = weatherRng(spec.seed || 4242);
+    const s = spec.res, Tp = T * s;
+    for (let i = 0; i < spec.n; i++) {
+      const x = rnd() * cw, y0 = rnd() * Tp;
+      // one item, repeated every period down the tile: the loop has no seam
+      for (let y = y0 - Tp; y < ch + Tp; y += Tp) spec.draw(g, x, y, s * k, rnd);
+    }
+    // a new speed restarts the loop where it stood (same direction)
+    const ms = Math.round(T / Math.max(1, spec.speed * k) * 1000);
+    weatherLoop(cv, [{ transform: 'translateY(0)' }, { transform: 'translateY(' + T + 'px)' }],
+      ms, 'fall' + T + '/' + ms);
+    if (spec.sway) {
+      weatherLoop(sway, [{ transform: 'translateX(' + (-spec.sway * k).toFixed(1) + 'px)' },
+        { transform: 'translateX(' + (spec.sway * k).toFixed(1) + 'px)' }],
+      spec.swayS * 1000, 'sway' + spec.sway);
+      if (sway._scwAnim) sway._scwAnim.effect.updateTiming({ direction: 'alternate', easing: 'ease-in-out' });
+    }
+  }
+
+  const RAIN_DEPTHS = [
+    // z, count per 1280 px of width, speed px/s, streak length, width, alpha
+    { z: 0, n: 300, v: 700, len: 12, w: 0.9, a: 0.20 },
+    { z: 1, n: 200, v: 1100, len: 22, w: 1.2, a: 0.32 },
+    { z: 2, n: 110, v: 1600, len: 36, w: 1.7, a: 0.48 },
+  ];
+
+  /* Rain: three depths, near streaks longer, brighter and faster. Intensity
+     from the condition (rainy 0.45, pouring 1), or from the precipitation
+     sensor when one is given. */
+  function weatherRain(layer, cfg, ws, ctx) {
+    const kind = ws && ws.precip;
+    const on = cfg.rain && (kind === 'rain' || kind === 'sleet' || kind === 'hail');
+    if (!on) {
+      for (const d of RAIN_DEPTHS) weatherDrop(layer, 'scw-rain-' + d.z);
+      weatherDrop(layer, 'scw-splash');
+      return;
+    }
+    const q = WEATHER_QUALITY[cfg.quality];
+    const I = ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity;
+    const share = kind === 'sleet' ? 0.55 : kind === 'hail' ? 0.6 : 1;
+    const dzien = ctx.light.e > 0;
+    const kol = dzien ? '214,224,236' : '150,164,186';
+    const wx = weatherWindX(ws, ctx);
+    for (const d of RAIN_DEPTHS) {
+      const len = d.len * (0.55 + 0.45 * I);
+      weatherFall(layer, {
+        cls: 'scw-rain-' + d.z, seed: 101 + d.z * 31,
+        n: Math.round(d.n * I * share * q.n * ctx.W / 1280),
+        speed: d.v * (0.75 + 0.25 * I), period: 0.5, res: q.res * 0.6,
+        slope: clamp(wx / 45, -1.3, 1.3) * (0.4 + 0.3 * d.z),
+        draw: (g, x, y, s) => {
+          g.strokeStyle = 'rgba(' + kol + ',' + (d.a * (0.7 + 0.3 * I)).toFixed(3) + ')';
+          g.lineWidth = Math.max(0.6, d.w * s * 1.4);
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + len * s); g.stroke();
+        },
+      }, ctx);
+    }
+    weatherSplash(layer, cfg, ws, ctx, I * share, kol);
+  }
+
+  /* Splashes: three thin bands of droplets along the horizon, each flashing
+     on its own phase of one short opacity loop, so the ground flickers the way
+     rain hitting it does. Opacity only. */
+  function weatherSplash(layer, cfg, ws, ctx, I, kol) {
+    if (!cfg.splashes || I <= 0) { weatherDrop(layer, 'scw-splash'); return; }
+    const q = WEATHER_QUALITY[cfg.quality];
+    const W = ctx.W, H = ctx.H, k = H / 400;
+    const box = weatherChild(layer, 'scw-splash');
+    const top = 0.8 * H, bh = 0.2 * H, res = q.res * 0.75;
+    const n = Math.round(90 * I * q.n * W / 1280);
+    for (let f = 0; f < 3; f++) {
+      let cv = box.children[f];
+      if (!cv) {
+        cv = document.createElement('canvas');
+        cv.style.cssText = 'position:absolute;left:0;width:100%;will-change:opacity;opacity:0;';
+        box.appendChild(cv);
+      }
+      cv.style.top = top + 'px'; cv.style.height = bh + 'px';
+      const cw = Math.round(W * res), ch = Math.max(2, Math.round(bh * res));
+      if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+      const g = cv.getContext('2d');
+      g.clearRect(0, 0, cw, ch);
+      g.fillStyle = 'rgba(' + kol + ',0.6)';
+      g.strokeStyle = 'rgba(' + kol + ',0.45)';
+      const rnd = weatherRng(707 + f * 13);
+      for (let i = 0; i < n; i++) {
+        // nearer splashes (lower) are bigger
+        const yy = rnd(), x = rnd() * cw, y = yy * ch, r = (0.8 + 2.2 * yy) * k * res;
+        g.lineWidth = Math.max(0.5, 0.7 * k * res);
+        g.beginPath(); g.ellipse(x, y, r * 2.2, r * 0.7, 0, Math.PI, 0); g.stroke();
+        for (const dx of [-1.6, 1.6]) {
+          g.beginPath(); g.arc(x + dx * r, y - r * (1.2 + rnd()), Math.max(0.4, r * 0.35), 0, Math.PI * 2); g.fill();
+        }
+      }
+      const a = weatherLoop(cv, [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0, offset: 0.55 },
+        { opacity: 0 }], 600, 'splash');
+      if (!cv._scwFaza) { a.currentTime = f * 200; cv._scwFaza = true; }
+    }
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
+    weatherRain(layer, cfg, ws, ctx);
     // the first frame lands at once; only later changes take their time
     if (!layer.classList.contains('scw-ready')) {
       setTimeout(() => layer.classList.add('scw-ready'), 50);
@@ -2559,6 +2717,12 @@
         o: 'Overcast greys the sky and hides the stars, the moon and the sun disc.' },
       { k: 'weather.clouds', et: 'clouds', typ: 'bool', dom: true, w: 'clouds',
         o: 'Clouds at three heights drifting with the wind, and a deck when it is overcast.' },
+      { k: 'weather.rain', et: 'rain', typ: 'bool', dom: true, w: 'rain',
+        o: 'Rain in three depths, slanted by the wind.' },
+      { k: 'weather.splashes', et: 'splashes', typ: 'bool', dom: true, w: 'splashes',
+        o: 'Droplets flickering along the horizon where the rain lands.' },
+      { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
+        o: 'Optional: a measured rate sets how hard it rains. Without it the condition does.' },
     ] },
     { tytul: 'Discs and files', pola: [
       { k: 'sun_image_width', et: 'sun: width (%)', typ: 'zakres', min: 3, max: 25, krok: 0.5, dom: 10.5,
