@@ -3,6 +3,12 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.23.0
+
+### Added
+- Wind: gust streaks across the sky from ~22 km/h or the windy conditions, and tumbling leaves (`weather.wind`, `weather.leaves`: `autumn` / `always` / `off`). One element and one Web Animation each, a timer only for when. ([#10](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/10))
+- `weather.gust_entity`, or the weather entity's own `wind_gust_speed`.
+
 ## 1.22.0
 
 ### Added
