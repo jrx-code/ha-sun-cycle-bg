@@ -67,6 +67,36 @@ Because everything is keyed to solar elevation, the panel on your wall
 matches the sky outside your window: pink dawn at dawn, golden hour at
 golden hour, stars at night.
 
+## Quick start
+
+**Install**
+1. HACS → menu (⋮) → *Custom repositories* → paste `https://github.com/jrx-code/hassio-sun-cycle-bg`, category **Integration** → *Add*.
+2. Find *Sun Cycle Background* → *Download*.
+3. Restart Home Assistant.
+4. *Settings → Devices & services → Add integration → Sun Cycle Background* → *Submit*.
+
+**Put the sky behind a dashboard**
+1. Open the dashboard → pencil (edit).
+2. *Add card* → *Sun Cycle Background*.
+3. In the card's YAML:
+   ```yaml
+   type: custom:sun-cycle-bg-card
+   profile: salon
+   ```
+4. Save. Repeat on every view that should have the sky.
+
+**Set it up**
+1. *Settings → Devices & services → Sun Cycle Background* → the cog.
+2. First time: *New profile*, name it `salon`.
+3. Change what you like (sky, stars, weather, planets); the preview is on the right.
+4. *Save*. Every background on that profile changes at once.
+
+Done.
+
+![The integration: its icon and the cog that opens the settings page](docs/integration.png)
+
+![The settings page: profiles on the left, the card's form, a preview](docs/settings.png)
+
 ## Performance
 
 Designed for wall-mounted kiosk tablets:
@@ -250,6 +280,8 @@ object (`moon: false` on one view, everything else from the profile). The last
 profile seen is kept in the browser, so a reload paints the right sky before
 Home Assistant answers. A card loaded without the integration warns once in
 the console and runs on its own YAML.
+
+![Entity fields: searchable pickers limited to the domains that fit](docs/entity-picker.png)
 
 The websocket commands, for scripts: `sun_cycle_bg/profile/list`, `get` and
 `subscribe` (any user; subscribe sends the current profile now and after every
