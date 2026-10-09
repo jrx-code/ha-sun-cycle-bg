@@ -6035,6 +6035,8 @@ function konfig() {
   const pw = k.weather || {};
   const w = { entity: "weather.sim", clouds_entity: "weather.sim_chmury", precipitation_entity: "sensor.sim_opad",
               quality: pw.quality || "low", glass: false, leaves: "autumn", veil: S.welon,
+              // A is the card's classic effects; since 2.2.0 the card defaults to the new ones
+              effects_style: "classic",
               aurora: { kp_entity: "sensor.sim_kp", min_kp: 5 } };
   // hail brings rain in the card: off in both variants so only the hail is compared
   if (S.e === "grad") w.rain = false;
@@ -6663,8 +6665,8 @@ const Burza = (() => {
     for (const [ts, m] of ud.uderzenia) if (t >= ts) { I = Math.max(I, m * Math.exp(-(t - ts) / 0.05)); po = ts; }
     return [I, po];
   }
-  function rysuj() {
-    const t = performance.now() / 1000;
+  function rysuj(_t, _dt, tWym) {
+    const t = tWym || performance.now() / 1000;
     const W = cv.width, H = cv.height;
     ctx.clearRect(0, 0, W, H);
     if (!ud || t > ud.koniec) { ud = null; stopPetli(); return; }
@@ -6695,6 +6697,8 @@ const Burza = (() => {
     start() { aktywny = true; cv = nowePlotno(); ctx = cv.getContext("2d"); wymiary(cv); tekstura = tekstura || budujTeksture(); plan(); setTimeout(() => aktywny && uderz(), 800); },
     stop() { aktywny = false; clearTimeout(timer); stopPetli(); if (cv) cv.remove(); cv = ctx = null; ud = null; },
     teraz() { uderz(); },
+    // for screenshots: draw the first return stroke now and stop there
+    migawka() { if (ud) { stopPetli(); rysuj(0, 0, ud.t0 + 0.012); } },
   };
 })();
 
@@ -6885,7 +6889,7 @@ suwak("nat", "I"); suwak("wiatr", "wiatr");
 // the card may move the sun disc a little: pick its position up now and then
 setInterval(() => { if (S.w === "B") wejscie(); }, 3000);
 // zamroz: stop the loop on the current frame (for screenshots in a software renderer)
-window.efektyPOC = { S, zmien, blyskTeraz, WE, zamroz: stopPetli, ustaw(o) { Object.assign(S, o); odswiez(); zmien(); } };
+window.efektyPOC = { S, zmien, blyskTeraz, WE, zamroz: stopPetli, migawka: () => Burza.migawka(), ustaw(o) { Object.assign(S, o); odswiez(); zmien(); } };
 odswiez();
 zmien();
 })();
