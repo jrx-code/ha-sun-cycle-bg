@@ -438,22 +438,22 @@ function czytajOpad(cont, prefiks) {
   const sp = w.querySelector('.scw-splash');
   return { warstwy, rozbryzgi: sp ? [...sp.children].map((c) => Math.round(c.getAnimations()[0].currentTime % 600)) : null };
 }
-out.push(['DESZCZ rainy, wiatr z zachodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t' },
+out.push(['DESZCZ rainy, wiatr z zachodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t', rain_style: 'classic' },
   'rainy', { cloud_coverage: 90, wind_speed: 30, wind_bearing: 270 }).cont, 'scw-rain')]);
-out.push(['DESZCZ pouring, bez wiatru', czytajOpad(pogoda(10, { entity: 'weather.t' },
+out.push(['DESZCZ pouring, bez wiatru', czytajOpad(pogoda(10, { entity: 'weather.t', rain_style: 'classic' },
   'pouring', { cloud_coverage: 100 }).cont, 'scw-rain')]);
-out.push(['DESZCZ rainy, wiatr ze wschodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t' },
+out.push(['DESZCZ rainy, wiatr ze wschodu 30 km/h', czytajOpad(pogoda(10, { entity: 'weather.t', rain_style: 'classic' },
   'rainy', { cloud_coverage: 90, wind_speed: 30, wind_bearing: 90 }).cont, 'scw-rain')]);
-out.push(['DESZCZ sunny: nic', czytajOpad(pogoda(10, { entity: 'weather.t' }, 'sunny', {}).cont, 'scw-rain')]);
-out.push(['DESZCZ rain: false, splashes: false', czytajOpad(pogoda(10, { entity: 'weather.t',
+out.push(['DESZCZ sunny: nic', czytajOpad(pogoda(10, { entity: 'weather.t', rain_style: 'classic' }, 'sunny', {}).cont, 'scw-rain')]);
+out.push(['DESZCZ rain: false, splashes: false', czytajOpad(pogoda(10, { entity: 'weather.t', rain_style: 'classic',
   rain: false, splashes: false }, 'pouring', {}).cont, 'scw-rain')]);
 {
   // czujnik mm/h ustawia natezenie: 0,5 mm/h przy stanie pouring to mzawka
-  const z = pogoda(10, { entity: 'weather.t', precipitation_entity: 'sensor.mm' }, 'pouring', {});
+  const z = pogoda(10, { entity: 'weather.t', rain_style: 'classic', precipitation_entity: 'sensor.mm' }, 'pouring', {});
   const st = Object.assign({}, z.states, { 'sensor.mm': { state: '0.5' } });
   z.card.hass = { states: st, config: { latitude: 52.2297, longitude: 21.0122 } };
   out.push(['DESZCZ readWeather z czujnikiem 0.5 mm/h', { rate: window.sunCycleBg.readWeather(st,
-    window.sunCycleBg.readWeatherConfig({ entity: 'weather.t', precipitation_entity: 'sensor.mm' })).rate }]);
+    window.sunCycleBg.readWeatherConfig({ entity: 'weather.t', rain_style: 'classic', precipitation_entity: 'sensor.mm' })).rate }]);
 }
 
 // --- 1.19.0: snieg ------------------------------------------------------
@@ -467,13 +467,13 @@ function czytajSnieg(cont) {
   o.deszcz = w ? w.querySelectorAll(':scope > [class*="scw-rain"]').length : 0;
   return o;
 }
-out.push(['SNIEG snowy noc, lekki wiatr', czytajSnieg(pogoda(-20, { entity: 'weather.t' }, 'snowy',
+out.push(['SNIEG snowy noc, lekki wiatr', czytajSnieg(pogoda(-20, { entity: 'weather.t', rain_style: 'classic' }, 'snowy',
   { cloud_coverage: 90, wind_speed: 8, wind_bearing: 60 }).cont)]);
-out.push(['SNIEG snowy-rainy: snieg i deszcz', czytajSnieg(pogoda(5, { entity: 'weather.t' },
+out.push(['SNIEG snowy-rainy: snieg i deszcz', czytajSnieg(pogoda(5, { entity: 'weather.t', rain_style: 'classic' },
   'snowy-rainy', { cloud_coverage: 95 }).cont)]);
-out.push(['SNIEG rainy: bez sniegu', czytajSnieg(pogoda(5, { entity: 'weather.t' }, 'rainy',
+out.push(['SNIEG rainy: bez sniegu', czytajSnieg(pogoda(5, { entity: 'weather.t', rain_style: 'classic' }, 'rainy',
   { cloud_coverage: 95 }).cont)]);
-out.push(['SNIEG snow: false', czytajSnieg(pogoda(5, { entity: 'weather.t', snow: false }, 'snowy',
+out.push(['SNIEG snow: false', czytajSnieg(pogoda(5, { entity: 'weather.t', rain_style: 'classic', snow: false }, 'snowy',
   { cloud_coverage: 95 }).cont)]);
 
 // --- 1.20.0: grad -------------------------------------------------------
@@ -486,11 +486,11 @@ function czytajGrad(cont) {
   o.deszcz = w ? w.querySelectorAll(':scope > [class*="scw-rain"]').length : 0;
   return o;
 }
-out.push(['GRAD hail', czytajGrad(pogoda(30, { entity: 'weather.t' }, 'hail',
+out.push(['GRAD hail', czytajGrad(pogoda(30, { entity: 'weather.t', rain_style: 'classic' }, 'hail',
   { cloud_coverage: 95, wind_speed: 30, wind_bearing: 270 }).cont)]);
-out.push(['GRAD hail: false (deszcz zostaje)', czytajGrad(pogoda(30, { entity: 'weather.t', hail: false },
+out.push(['GRAD hail: false (deszcz zostaje)', czytajGrad(pogoda(30, { entity: 'weather.t', rain_style: 'classic', hail: false },
   'hail', { cloud_coverage: 95 }).cont)]);
-out.push(['GRAD pouring: bez gradu', czytajGrad(pogoda(30, { entity: 'weather.t' }, 'pouring',
+out.push(['GRAD pouring: bez gradu', czytajGrad(pogoda(30, { entity: 'weather.t', rain_style: 'classic' }, 'pouring',
   { cloud_coverage: 95 }).cont)]);
 
 // --- 1.21.0: mgla -------------------------------------------------------
@@ -684,12 +684,42 @@ function czytajSzybe(cont, ile) {
            animacje: krople.slice(0, 3).map((k) => ({ klatek: k.getAnimations()[0].effect.getKeyframes().length,
              opoznienie: k.getAnimations()[0].effect.getTiming().delay })) };
 }
-out.push(['SZYBA domyslnie wylaczona', czytajSzybe(pogoda(10, { entity: 'weather.t' }, 'rainy',
+out.push(['SZYBA domyslnie wylaczona', czytajSzybe(pogoda(10, { entity: 'weather.t', rain_style: 'classic' }, 'rainy',
   { cloud_coverage: 90 }).cont)]);
-out.push(['SZYBA glass: true, rainy', czytajSzybe(pogoda(10, { entity: 'weather.t', glass: true }, 'rainy',
+out.push(['SZYBA glass: true, rainy', czytajSzybe(pogoda(10, { entity: 'weather.t', rain_style: 'classic', glass: true }, 'rainy',
   { cloud_coverage: 90 }).cont)]);
-out.push(['SZYBA glass: true, snowy: brak', czytajSzybe(pogoda(10, { entity: 'weather.t', glass: true },
+out.push(['SZYBA glass: true, snowy: brak', czytajSzybe(pogoda(10, { entity: 'weather.t', rain_style: 'classic', glass: true },
   'snowy', { cloud_coverage: 90 }).cont)]);
+
+// --- 2.1.0: deszcz i szyba w shaderze WebGL ------------------------------
+out.push(['SHADER config', ['domyslnie', 'classic', 'shader', 'cos'].map((v) =>
+  window.sunCycleBg.readWeatherConfig(v === 'domyslnie' ? {} : { rain_style: v }).rain_style)]);
+function czytajShader(z) {
+  const w = z.cont.querySelector('.sun-cycle-weather');
+  const dzieci = w ? [...w.children].filter((k) => k.tagName !== 'STYLE').map((k) => k.className.replace('scw ', '')) : [];
+  return { gl: dzieci.includes('scw-gl'), klasyczny: dzieci.filter((k) => /scw-rain|scw-splash|scw-glass/.test(k)),
+           stan: window.sunCycleBg.rainShaderState(z.cont) };
+}
+out.push(['SHADER rainy, domyslny styl', czytajShader(pogoda(10, { entity: 'weather.t' }, 'rainy',
+  { cloud_coverage: 90, wind_speed: 30, wind_bearing: 270 }))]);
+out.push(['SHADER pouring noc, glass, quality low', czytajShader(pogoda(-20, { entity: 'weather.t', glass: true,
+  quality: 'low' }, 'pouring', { cloud_coverage: 100 }))]);
+out.push(['SHADER rain_style classic: paski DOM', czytajShader(pogoda(10, { entity: 'weather.t', rain_style: 'classic',
+  glass: true }, 'rainy', { cloud_coverage: 90 }))]);
+out.push(['SHADER snowy: brak warstwy', czytajShader(pogoda(10, { entity: 'weather.t' }, 'snowy', { cloud_coverage: 90 }))]);
+{
+  const z = pogoda(10, { entity: 'weather.t' }, 'pouring', { cloud_coverage: 100 });
+  const przed = czytajShader(z);
+  z.card.hass = { states: Object.assign({}, z.states, { 'weather.t': { state: 'cloudy', attributes: { cloud_coverage: 90 } } }),
+                  config: { latitude: 52.2297, longitude: 21.0122 } };
+  out.push(['SHADER deszcz ustaje: warstwa znika', { przed: przed.gl, po: czytajShader(z) }]);
+}
+{
+  const z = pogoda(10, { entity: 'weather.t', glass: true }, 'rainy', { cloud_coverage: 90 });
+  z.card.hass = { states: Object.assign({}, z.states, { 'weather.t': { state: 'cloudy', attributes: { cloud_coverage: 90 } } }),
+                  config: { latitude: 52.2297, longitude: 21.0122 } };
+  out.push(['SHADER deszcz ustaje, glass, szyba jeszcze sucha: warstwa znika', czytajShader(z)]);
+}
 
 // --- 1.25.0: zorza -------------------------------------------------------
 function zorza(elev, kp, aur, atr) {

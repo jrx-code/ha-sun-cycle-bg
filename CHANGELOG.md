@@ -3,6 +3,15 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 2.1.0
+
+### Changed
+- Rain, the splashes and the drops on the glass are drawn by one WebGL shader (`weather.rain_style: shader`, the default): thin faint streaks in four depths that fade against a bright sky, splash rings along the ground, and fogged glass with sliding lens drops that show the sky upside down. Why: the classic strips were evenly bright lines and the DOM drops had no glass and no image in them, and on the Pi 5 kiosk a single small fragment pass costs less than several full-frame strip layers. Cost rules: one canvas at 0.75 / 0.5 / 0.4 of the frame (`high` / `medium` / `low`, at most 1280 px wide), 30 fps cap (20 on `low`), no loop when nothing falls and the glass is dry, the page is hidden or the card is detached; the sky texture is rebuilt only when the weather print changes; *reduce motion* gets one still frame.
+- Fallback: without WebGL, or if the shader does not compile or link, or if the context keeps getting lost, the card warns once in the console and draws the classic rain. `rain_style: classic` keeps the 2.0 rain and glass as they were.
+
+### Added
+- `weather.rain_style` (`shader` | `classic`) in the card editor, and `window.sunCycleBg.rainShaderState()` for tests. ([#35](https://github.com/jrx-code/hassio-sun-cycle-bg/issues/35))
+
 ## 2.0.0
 
 ### Changed (breaking: the HACS category)
