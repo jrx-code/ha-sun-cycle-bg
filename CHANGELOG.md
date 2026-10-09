@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 1.29.0 (unreleased)
+
+### Added
+- Shared profiles: `profile: <name>` takes the card config from the [Sun Cycle Background profiles](https://github.com/jrx-code/hassio-sun-cycle-bg-profiles) integration, live over a websocket subscription, with the card's own YAML laid over it. The visual editor edits the profile itself (administrators), saves as it goes and can undo back to how it was when opened; the dashboard keeps one line per card. Without the integration the card runs on its own YAML.
+
 ## 1.28.0
 
 ### Added

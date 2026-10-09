@@ -210,6 +210,30 @@ layer.
    draws its own sun and moon, and `planets:` / `milky_way:` need paths of
    your own.
 
+### Optional: one config for many cards (shared profiles)
+
+A background card sits on every view, so a dashboard with many views carries
+the same config many times, and a dashboard generated and deployed by a script
+overwrites whatever was changed in the editor. With the companion integration
+[Sun Cycle Background profiles](https://github.com/jrx-code/hassio-sun-cycle-bg-profiles)
+(1.29.0 or later) each card carries one line:
+
+```yaml
+type: custom:sun-cycle-bg-card
+profile: salon
+```
+
+The config lives in Home Assistant (`.storage/sun_cycle_bg`, in every backup).
+Open the card's editor: it edits the profile and saves each change at once for
+every card on it; *Undo changes since opening* puts it back. Only an
+administrator can change a profile; every user, a non-admin wall kiosk included,
+follows it live, without a reload, and after a lost connection catches up by
+itself. Keys the card sets in its own YAML are laid over the profile object by
+object (`moon: false` on one view, everything else from the profile). The last
+profile seen is kept in the browser, so a reload paints the right sky before
+Home Assistant answers. Without the integration the card warns once in the
+console and runs on its own YAML.
+
 ### Optional: the real ISS
 
 `stars.iss: true` needs the pass sensors. Install
