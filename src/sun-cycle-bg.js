@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.24.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.25.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -92,6 +92,10 @@
  *     wind: true                    # gust streaks from ~22 km/h
  *     leaves: autumn                # autumn | always | off
  *     glass: false                  # true: raindrops on the glass while it rains
+ *     aurora:                       # only with a Kp sensor
+ *       kp_entity: sensor.planetary_k_index
+ *       min_kp: 5
+ *       placement: edges            # edges (where north is) | sky
  *     gust_entity: sensor.gust      # optional
  *     precipitation_entity: sensor.rain_rate   # optional, mm/h
  *
@@ -1483,7 +1487,7 @@
     exceptional: [95, 0.8, 'rain', 0.6],
   };
   // children of the weather layer, bottom to top
-  const WEATHER_ORDER = ['scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
+  const WEATHER_ORDER = ['scw-aurora', 'scw-veil', 'scw-clouds-high', 'scw-clouds-mid', 'scw-clouds-deck',
                          'scw-clouds-low', 'scw-bolt', 'scw-fog', 'scw-rain-0', 'scw-snow-0', 'scw-rain-1', 'scw-snow-1',
                          'scw-splash', 'scw-rain-2', 'scw-snow-2', 'scw-hail-0', 'scw-hail-bounce',
                          'scw-hail-1', 'scw-wind', 'scw-flash', 'scw-glass'];
@@ -1510,6 +1514,12 @@
       lightning: w.lightning !== false,
       wind: w.wind !== false,
       glass: w.glass === true,
+      aurora: (() => {
+        const a = w.aurora;
+        if (!a || typeof a !== 'object' || !str(a.kp_entity)) return null;
+        return { kp_entity: str(a.kp_entity), min_kp: numOr(a.min_kp, 5),
+                 placement: a.placement === 'sky' ? 'sky' : 'edges' };
+      })(),
       leaves: w.leaves === false || w.leaves === 'off' ? false : (w.leaves === 'always' ? 'always' : 'autumn'),
     };
   }
@@ -1582,8 +1592,11 @@
     } else if (isFinite(a.wind_gust_speed)) {
       gust = windKmh(a.wind_gust_speed, a.wind_speed_unit);
     }
+    let kp = null;
+    const kps = cfg.aurora && states[cfg.aurora.kp_entity];
+    if (kps && isFinite(Number(kps.state)) && kps.state !== '') kp = Number(kps.state);
     return {
-      cond, rate, gust,
+      cond, rate, gust, kp,
       cover: clamp(1 - (1 - low) * (1 - mid * 0.8) * (1 - high * 0.35), 0, 1),
       low, mid, high, fog,
       storm: c[1],
@@ -2447,7 +2460,75 @@
     }
   }
 
+  /* Aurora, only when there is data for it: a Kp index at or above `min_kp`,
+     a dark sky (sun below -10 deg) and cover under ~60 %. The curtains are
+     painted once; they drift sideways on a long transform loop and breathe on
+     an opacity loop. By default they stand where the north is: with the
+     usual 50-310 deg window that is past both edges of the frame, so they rise
+     at the edges and fade towards the middle. `placement: sky` lays them over
+     the top of the frame instead. */
+  function auroraCurtain(w, h, seed) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const rnd = weatherRng(seed);
+    const f1 = 0.03 + rnd() * 0.03, f2 = 0.09 + rnd() * 0.06, p1 = rnd() * 6.3, p2 = rnd() * 6.3;
+    for (let x = 0; x < w; x++) {
+      // the curtain has to repeat every half width for the loop: phases in whole turns
+      const u = (x / (w / 2)) * Math.PI * 2;
+      const wys = h * (0.5 + 0.25 * Math.sin(u * Math.round(w * f1 / 6) + p1) + 0.15 * Math.sin(u * Math.round(w * f2 / 6) + p2));
+      const jas = clamp(0.35 + 0.4 * Math.sin(u * 3 + p2) + 0.25 * Math.sin(u * 7 + p1), 0, 1);
+      const gr = g.createLinearGradient(0, h, 0, h - wys);
+      gr.addColorStop(0, 'rgba(70,255,150,0)');
+      gr.addColorStop(0.08, 'rgba(70,255,150,' + (0.9 * jas).toFixed(3) + ')');
+      gr.addColorStop(0.55, 'rgba(60,220,140,' + (0.45 * jas).toFixed(3) + ')');
+      gr.addColorStop(1, 'rgba(180,80,220,0)');
+      g.fillStyle = gr; g.fillRect(x, h - wys, 1, wys);
+    }
+    return c;
+  }
+
+  function weatherAurora(layer, cfg, ws, ctx) {
+    const a = cfg.aurora;
+    let sila = 0;
+    if (a && ws && ws.kp !== null && ws.kp >= a.min_kp && ctx.light.e < -10) {
+      sila = clamp((ws.kp - a.min_kp + 1) / 3, 0.35, 1) * clamp(1 - ws.cover / 0.6, 0, 1) *
+        smoothstep(clamp((-10 - ctx.light.e) / 4, 0, 1));
+    }
+    if (sila <= 0.02) { weatherDrop(layer, 'scw-aurora'); return; }
+    const W = ctx.W, H = ctx.H;
+    const box = weatherChild(layer, 'scw-aurora');
+    box.style.mixBlendMode = 'screen';
+    box.style.opacity = sila.toFixed(3);
+    const tryb = a.placement === 'sky' ? 'sky' : 'edges';
+    if (box._scwTryb !== tryb || box._scwW !== W) {
+      for (const an of box.getAnimations({ subtree: true })) an.cancel();
+      box.textContent = '';
+      box._scwTryb = tryb; box._scwW = W;
+      const res = WEATHER_QUALITY[cfg.quality].res * 0.5;
+      const pasy = tryb === 'sky'
+        ? [{ left: 0, width: W, mask: 'linear-gradient(180deg,transparent 0%,#000 30%,#000 70%,transparent 100%)' }]
+        : [{ left: 0, width: W * 0.24, mask: 'linear-gradient(90deg,#000 0%,#000 25%,transparent 100%)' },
+           { left: W * 0.76, width: W * 0.24, mask: 'linear-gradient(270deg,#000 0%,#000 25%,transparent 100%)' }];
+      pasy.forEach((p, i) => {
+        const okno = document.createElement('div');
+        okno.style.cssText = 'position:absolute;top:' + (0.2 * H).toFixed(0) + 'px;height:' + (0.72 * H).toFixed(0) +
+          'px;left:' + p.left.toFixed(0) + 'px;width:' + p.width.toFixed(0) + 'px;overflow:hidden;' +
+          '-webkit-mask-image:' + p.mask + ';mask-image:' + p.mask + ';';
+        const cv = auroraCurtain(Math.max(8, Math.round(2 * p.width * res)), Math.max(8, Math.round(0.72 * H * res)), 77 + i * 13);
+        cv.style.cssText = 'position:absolute;left:0;top:0;width:200%;height:100%;will-change:transform,opacity;';
+        okno.appendChild(cv);
+        box.appendChild(okno);
+        weatherLoop(cv, [{ transform: 'translateX(0)' }, { transform: 'translateX(-50%)' }], 90000 + i * 17000, 'drift');
+        const puls = cv.animate([{ opacity: 0.55 }, { opacity: 1 }, { opacity: 0.7 }, { opacity: 0.95 }, { opacity: 0.55 }],
+          { duration: 11000 + i * 3000, iterations: Infinity, easing: 'ease-in-out' });
+        if (weatherCalm()) puls.pause();
+      });
+    }
+  }
+
   function drawWeather(layer, cfg, ws, ctx) {
+    weatherAurora(layer, cfg, ws, ctx);
     weatherVeil(layer, cfg, ws, ctx);
     weatherClouds(layer, cfg, ws, ctx);
     weatherFog(layer, cfg, ws, ctx);
@@ -3237,6 +3318,12 @@
         o: 'Tumbling leaves with the wind: autumn only (Sept-Nov), all year (green outside autumn), or none.' },
       { k: 'weather.glass', et: 'drops on the glass', typ: 'bool', dom: false, w: 'glass',
         o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
+      { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'tekst', dom: '', hint: 'sensor.planetary_k_index',
+        o: 'Northern lights only when this Kp index reaches the threshold below, on a dark and mostly clear night.' },
+      { k: 'weather.aurora.min_kp', et: 'aurora: from Kp', typ: 'zakres', min: 1, max: 9, krok: 1, dom: 5,
+        o: 'The Kp at which the aurora shows. Around 53 deg N it takes about 5 or more.' },
+      { k: 'weather.aurora.placement', et: 'aurora: where', typ: 'wybor', opcje: ['edges', 'sky'], dom: 'edges',
+        o: 'edges: where the north is in the sky window (both edges by default). sky: across the top.' },
       { k: 'weather.gust_entity', et: 'gust sensor', typ: 'tekst', dom: '', hint: 'sensor.wind_gust',
         o: "Optional: gusts make the wind visible sooner. Without it the weather entity's gust, if it has one." },
       { k: 'weather.precipitation_entity', et: 'rain rate (mm/h)', typ: 'tekst', dom: '', hint: 'sensor.rain_rate',
