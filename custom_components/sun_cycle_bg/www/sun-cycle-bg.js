@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.1.0 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.1.1 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3100,8 +3100,12 @@ void main(){
     const cv = weatherChild(layer, 'scw-gl', 'canvas');      // its place in WEATHER_ORDER
     let gl = null;
     try {
-      gl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false, depth: false,
-                                    stencil: false, powerPreference: 'low-power' });
+      // webgl2 first: the Pi 5 kiosk's Android WebView (Chrome 144, V3D 7.1)
+      // offers no webgl1 context at all, only webgl2. The shaders are GLSL ES
+      // 1.00, which a webgl2 context runs as they are.
+      const opts = { premultipliedAlpha: true, alpha: true, antialias: false, depth: false,
+                     stencil: false, powerPreference: 'low-power' };
+      gl = cv.getContext('webgl2', opts) || cv.getContext('webgl', opts);
     } catch (e) { gl = null; }
     if (!gl) { cv.remove(); glBroken('no webgl context'); return null; }
     const sh = (type, src) => {

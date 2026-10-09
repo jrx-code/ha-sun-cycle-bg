@@ -3,6 +3,11 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
+## 2.1.1
+
+### Fixed
+- The rain shader never ran on the Raspberry Pi 5 kiosk: its Android WebView (Chrome 144, V3D 7.1) offers no WebGL 1 context, only WebGL 2, and the card fell back to the classic rain. It now asks for WebGL 2 first (the GLSL ES 1.00 shaders run there unchanged) and WebGL 1 second.
+
 ## 2.1.0
 
 ### Changed

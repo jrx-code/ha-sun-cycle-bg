@@ -729,7 +729,8 @@ void main(){
   return {
     start() {
       cv = nowePlotno();
-      gl = cv.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false, depth: false });
+      const o = { premultipliedAlpha: true, alpha: true, antialias: false, depth: false };
+      gl = cv.getContext("webgl2", o) || cv.getContext("webgl", o);   // kiosk Pi 5: webgl2 only
       if (!gl) { blad("WebGL niedostępny w tej przeglądarce: wariant C nie może działać."); return; }
       try {
         prog = gl.createProgram();
