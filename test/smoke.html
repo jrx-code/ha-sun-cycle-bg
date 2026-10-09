@@ -313,6 +313,82 @@ out.push(['MLECZNA wlasny plik bez polozenia', window.sunCycleBg.readMilkyConfig
 out.push(['MLECZNA galToEq(0,0)', window.sunCycleBg.galToEq(0, 0)]);
 out.push(['MLECZNA galToEq(280.5,-32.9) = LMC', window.sunCycleBg.galToEq(280.5, -32.9)]);
 
+// --- 1.16.0+: warstwa pogody --------------------------------------------
+// Ten sam kontener co buduj(), ale z encja pogody w stanach. `stan` to stan
+// encji weather.*, `atr` jej atrybuty, `chmury` atrybuty encji warstw.
+function pogoda(elev, wcfg, stan, atr, chmury, extra) {
+  document.getElementById('host').innerHTML = '';
+  const cont = document.createElement('hui-view-container');
+  cont.style.cssText = 'display:block;position:relative;width:1280px;height:400px';
+  cont.appendChild(document.createElement('hui-view-background'));
+  cont.appendChild(document.createElement('hui-view'));
+  document.getElementById('host').appendChild(cont);
+  const card = document.createElement('sun-cycle-bg-card');
+  card.setConfig(Object.assign({ assets: '../demo/assets/', stars: { count: 40 } },
+    wcfg === undefined ? {} : { weather: wcfg }, extra || {}));
+  cont.insertBefore(card, cont.firstChild);
+  const states = { 'sun.sun': { attributes: { elevation: elev, azimuth: 200 } } };
+  if (stan) states['weather.t'] = { state: stan, attributes: atr || {} };
+  if (chmury) states['weather.c'] = { state: 'Poor', attributes: chmury };
+  card.hass = { states, config: { latitude: 52.2297, longitude: 21.0122 } };
+  return { cont, card, states };
+}
+function czytajPogode(cont) {
+  const w = cont.querySelector('.sun-cycle-weather');
+  if (!w) return { warstwa: false };
+  const v = w.querySelector('.scw-veil');
+  // warstwa ma byc ostatnia przed hui-view: nad niebem, pod kartami
+  let n = w.nextElementSibling;
+  return {
+    warstwa: true,
+    nadNiebem: !!(n && n.tagName === 'HUI-VIEW'),
+    dzieci: [...w.children].filter((k) => k.tagName !== 'STYLE').map((k) => k.className.replace('scw ', '')),
+    welon: v ? { krycie: +v.style.opacity, tlo: v.style.background.slice(0, 60) } : null,
+  };
+}
+out.push(['POGODA bez bloku weather', czytajPogode(pogoda(-20, undefined, 'rainy').cont)]);
+out.push(['POGODA weather bez encji', czytajPogode(pogoda(20, {}, 'rainy').cont)]);
+out.push(['POGODA sunny poludnie', czytajPogode(pogoda(40, { entity: 'weather.t' }, 'sunny',
+  { cloud_coverage: 5 }).cont)]);
+out.push(['POGODA cloudy poludnie', czytajPogode(pogoda(40, { entity: 'weather.t' }, 'cloudy',
+  { cloud_coverage: 92 }).cont)]);
+out.push(['POGODA rainy przy 15% z modelu (podloga stanu)', czytajPogode(pogoda(40,
+  { entity: 'weather.t' }, 'rainy', { cloud_coverage: 15 }).cont)]);
+out.push(['POGODA lightning-rainy noc', czytajPogode(pogoda(-20, { entity: 'weather.t' },
+  'lightning-rainy', { cloud_coverage: 100 }).cont)]);
+out.push(['POGODA warstwy z astroweather', czytajPogode(pogoda(5, { entity: 'weather.t',
+  clouds_entity: 'weather.c' }, 'partlycloudy', { cloud_coverage: 15 },
+  { cloud_area_fraction_low: 90, cloud_area_fraction_medium: 60, cloud_area_fraction_high: 10,
+    fog_area_fraction: 0 }).cont)]);
+out.push(['POGODA veil: false', czytajPogode(pogoda(40, { entity: 'weather.t', veil: false },
+  'cloudy', { cloud_coverage: 92 }).cont)]);
+out.push(['POGODA readWeather (m/s, kierunek WSW)', window.sunCycleBg.readWeather(
+  { 'weather.t': { state: 'windy', attributes: { wind_speed: 10, wind_speed_unit: 'm/s',
+    wind_bearing: 'WSW', visibility: 0.4 } } }, { entity: 'weather.t' })]);
+{
+  // zdjecie bloku weather w edytorze ma zdjac warstwe, nie zostawic jej na niebie
+  const { cont, card, states } = pogoda(40, { entity: 'weather.t' }, 'cloudy', { cloud_coverage: 92 });
+  const przed = !!cont.querySelector('.sun-cycle-weather');
+  card.setConfig({ assets: '../demo/assets/', stars: { count: 40 } });
+  card.hass = { states, config: { latitude: 52.2297, longitude: 21.0122 } };
+  card._apply(true);
+  out.push(['POGODA zdjecie bloku weather', { przed, po: !!cont.querySelector('.sun-cycle-weather') }]);
+}
+
+{
+  // edytor: grupa Weather jest, a tabela domyslnych zgadza sie z readWeatherConfig
+  const ed = document.createElement('sun-cycle-bg-card-editor');
+  document.body.appendChild(ed);
+  ed.setConfig({ type: 'custom:sun-cycle-bg-card', weather: { entity: 'weather.t' } });
+  const r = ed.shadowRoot;
+  out.push(['EDYTOR grupy i zgodnosc domyslnych', {
+    grupy: [...r.querySelectorAll('.scb-tyt')].map((e) => e.textContent),
+    blad: r.querySelector('.scb-blad') ? r.querySelector('.scb-blad').textContent : null,
+    yaml: r.querySelector('.scb-yaml').textContent,
+  }]);
+  ed.remove();
+}
+
 const contNoc = buduj(-16.18, 321.56, OBRAZKI);
 out.push(['OBRAZKI noc  przed wczytaniem pliku', czytaj(contNoc, -16.18, 321.56)]);
 setTimeout(() => {

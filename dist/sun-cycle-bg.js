@@ -1,4 +1,4 @@
-/* sun-cycle-bg 1.15.3 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 1.16.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -76,6 +76,12 @@
  *     #   duration: 330   # fallback arc: seconds, azimuth from -> to, peak
  *     #   az: [200, 95]
  *     #   max_alt: 41
+ *
+ *   weather:              # off unless set; see "Weather" in the README
+ *     entity: weather.home          # condition, cloud_coverage, wind, visibility
+ *     clouds_entity: weather.astro  # optional: cover per height, fog fraction
+ *     quality: medium               # high | medium | low
+ *     veil: true                    # overcast greys the sky over everything
  *
  *   # Optional: draw the discs from your own artwork instead of the render.
  *   # Both are independent; whatever is left out keeps the drawn version. The
@@ -1441,6 +1447,207 @@
     return layer;
   }
 
+  // --- weather -------------------------------------------------------------
+  /* Everything the sky does that the sun does not decide. One layer above the
+     whole sky (backdrop, Milky Way, stars, planets, moon, sun), holding one
+     child per effect in a fixed order. The performance contract is the card's
+     own: nothing animates in JS. A weather state is fingerprinted like the
+     planet sensors, the layer is touched only when that print changes, and
+     whatever moves does so on CSS keyframes or a Web Animation on transform
+     and opacity. A timer may decide *when* something happens (a lightning
+     strike, a leaf), never how it moves. */
+  const WEATHER_QUALITY = {
+    high: { n: 1, res: 1 },          // n: share of the particle budget
+    medium: { n: 0.6, res: 0.75 },   // res: raster scale of painted strips
+    low: { n: 0.35, res: 0.5 },
+  };
+  // condition -> [cover floor %, storminess 0-1, precipitation, intensity 0-1]
+  const WEATHER_COND = {
+    sunny: [0, 0], 'clear-night': [0, 0], partlycloudy: [30, 0], cloudy: [85, 0.15],
+    fog: [55, 0.1], rainy: [82, 0.35, 'rain', 0.45], pouring: [95, 0.6, 'rain', 1],
+    lightning: [70, 0.6], 'lightning-rainy': [95, 0.85, 'rain', 0.8],
+    snowy: [85, 0.15, 'snow', 0.6], 'snowy-rainy': [90, 0.3, 'sleet', 0.6],
+    hail: [90, 0.7, 'hail', 0.8], windy: [0, 0], 'windy-variant': [65, 0.05],
+    exceptional: [95, 0.8, 'rain', 0.6],
+  };
+  // children of the weather layer, bottom to top
+  const WEATHER_ORDER = ['scw-veil'];
+
+  /* `weather:` block -> full config. Absent or false = no layer at all. */
+  function readWeatherConfig(w) {
+    if (!w) return null;
+    if (w === true) w = {};
+    if (typeof w !== 'object') return null;
+    const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    return {
+      entity: str(w.entity),
+      clouds_entity: str(w.clouds_entity),
+      quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
+      veil: w.veil !== false,
+    };
+  }
+
+  // wind speed in km/h whatever unit the entity reports in
+  function windKmh(v, unit) {
+    const n = Number(v);
+    if (!isFinite(n)) return 0;
+    const u = String(unit || 'km/h').toLowerCase();
+    if (u === 'm/s') return n * 3.6;
+    if (u === 'mph') return n * 1.609344;
+    if (u === 'kn' || u === 'kt' || u === 'knots') return n * 1.852;
+    if (u === 'ft/s') return n * 1.09728;
+    return n;
+  }
+  // HA reports the bearing as degrees or as a compass point
+  function bearingOf(v) {
+    if (isFinite(v) && v !== null && v !== '') return ((Number(v) % 360) + 360) % 360;
+    const k = String(v || '').toUpperCase();
+    return COMPASS[k] !== undefined ? COMPASS[k] : null;
+  }
+
+  /* What the entities say, reduced to the handful of numbers the effects use.
+     The condition sets a floor under the cover: a forecast model's
+     `cloud_coverage` of 15 % next to a state of `rainy` is two models
+     disagreeing, and the one that names rain is the one people look at. */
+  function readWeather(states, cfg) {
+    const w = cfg.entity && states[cfg.entity];
+    if (!w) return null;
+    const a = w.attributes || {};
+    const cond = String(w.state || '');
+    const c = WEATHER_COND[cond] || [0, 0];
+    const pct = (v) => (isFinite(v) && v !== null && v !== '' ? clamp(Number(v) / 100, 0, 1) : null);
+    let total = pct(a.cloud_coverage);
+    let low = null, mid = null, high = null, fog = null;
+    const cl = cfg.clouds_entity && states[cfg.clouds_entity];
+    if (cl) {
+      const b = cl.attributes || {};
+      low = pct(b.cloud_area_fraction_low);
+      mid = pct(b.cloud_area_fraction_medium);
+      high = pct(b.cloud_area_fraction_high);
+      fog = pct(b.fog_area_fraction);
+      if (total === null) total = pct(b.cloud_area_fraction !== undefined ? b.cloud_area_fraction : b.cloudcover_percentage);
+    }
+    if (total === null) total = c[0] / 100;
+    total = Math.max(total, c[0] / 100);
+    // one number only: spread it over the tiers the way a cover usually is
+    if (low === null) low = total;
+    if (mid === null) mid = total * 0.75;
+    if (high === null) high = total * 0.45;
+    const floor = c[0] / 100;
+    low = Math.max(low, floor);
+    const vis = Number(a.visibility);
+    const visKm = isFinite(vis) && a.visibility !== null
+      ? (String(a.visibility_unit || 'km').toLowerCase() === 'mi' ? vis * 1.609344 : vis) : null;
+    if (fog === null) fog = 0;
+    if (cond === 'fog') fog = Math.max(fog, 0.85);
+    if (visKm !== null && visKm < 1) fog = Math.max(fog, clamp(1 - visKm, 0.3, 0.95));
+    return {
+      cond,
+      cover: clamp(1 - (1 - low) * (1 - mid * 0.8) * (1 - high * 0.35), 0, 1),
+      low, mid, high, fog,
+      storm: c[1],
+      precip: c[2] || null,
+      intensity: c[3] || 0,
+      wind: windKmh(a.wind_speed, a.wind_speed_unit),
+      bearing: bearingOf(a.wind_bearing),
+    };
+  }
+
+  /* Light on the weather: what colour a cloud top, a cloud base and an
+     overcast sky are, from the sun's elevation, how stormy it is, and the
+     moon when it is up at night. The anchors were tuned on the design page
+     (demo/tlo-pogoda.html) against this card's own palette. */
+  function weatherLight(e, storm, moon) {
+    const A = {
+      day: { top: [252, 252, 254], bot: [200, 207, 218], veil: [152, 160, 170] },
+      gold: { top: [255, 218, 184], bot: [176, 146, 152], veil: [150, 132, 132] },
+      dusk: { top: [206, 140, 128], bot: [88, 80, 112], veil: [72, 66, 86] },
+      night: { top: [56, 62, 80], bot: [24, 28, 40], veil: [14, 17, 24] },
+    };
+    const mix = (a, b, t) => {
+      t = clamp(t, 0, 1);
+      return { top: lerpA(a.top, b.top, t), bot: lerpA(a.bot, b.bot, t), veil: lerpA(a.veil, b.veil, t) };
+    };
+    let c;
+    if (e >= 10) c = A.day;
+    else if (e >= 2) c = mix(A.gold, A.day, (e - 2) / 8);
+    else if (e >= -6) c = mix(A.dusk, A.gold, (e + 6) / 8);
+    else if (e >= -14) c = mix(A.night, A.dusk, (e + 14) / 8);
+    else c = A.night;
+    if (e < -6 && moon && moon.alt > 0) {
+      const m = moon.k * Math.sin(moon.alt * D2R) * 0.6;
+      c = { top: lerpA(c.top, [120, 128, 150], m), bot: c.bot, veil: lerpA(c.veil, [40, 44, 56], m) };
+    }
+    const dim = (x, f) => lerpA(x, x.map((v) => v * f), storm);
+    return { top: dim(c.top, 0.48), bot: dim(c.bot, 0.42), veil: dim(c.veil, 0.55), e };
+  }
+
+  const WEATHER_CSS = (sel) =>
+    sel + '{position:absolute;inset:0;overflow:hidden;pointer-events:none;}' +
+    sel + ' .scw{position:absolute;inset:0;pointer-events:none;}' +
+    sel + '.scw-ready .scw-veil{transition:opacity 60s linear;}' +
+    // a still frame for anyone who asked their system for less motion
+    '@media (prefers-reduced-motion: reduce){' + sel + ' *{animation-play-state:paused!important;}}';
+
+  let WEATHER_SEQ = 0;
+  function buildWeather(cfg) {
+    const inst = 'scw-i' + (++WEATHER_SEQ);
+    const layer = document.createElement('div');
+    layer.className = 'sun-cycle-weather ' + inst;
+    const st = document.createElement('style');
+    st.textContent = WEATHER_CSS('.' + inst);
+    layer.appendChild(st);
+    layer.scwConfig = cfg;
+    layer._scwTimers = [];
+    layer.scsStop = () => {
+      layer._scwTimers.forEach(clearTimeout);
+      layer._scwTimers = [];
+      for (const a of layer.getAnimations ? layer.getAnimations({ subtree: true }) : []) a.cancel();
+    };
+    return layer;
+  }
+
+  // the child for one effect, created in its place in WEATHER_ORDER
+  function weatherChild(layer, cls, tag) {
+    let el = layer.querySelector(':scope > .' + cls);
+    if (el) return el;
+    el = document.createElement(tag || 'div');
+    el.className = 'scw ' + cls;
+    const moje = WEATHER_ORDER.indexOf(cls);
+    let nast = null;
+    for (const k of layer.children) {
+      const i = WEATHER_ORDER.findIndex((x) => k.classList.contains(x));
+      if (i > moje) { nast = k; break; }
+    }
+    layer.insertBefore(el, nast);
+    return el;
+  }
+  const weatherDrop = (layer, cls) => {
+    const el = layer.querySelector(':scope > .' + cls);
+    if (el) { for (const a of el.getAnimations ? el.getAnimations({ subtree: true }) : []) a.cancel(); el.remove(); }
+  };
+
+  /* The sky dims and greys under cloud: one element, one opacity, a minute to
+     get there. Above every sky layer, so an overcast night has no stars and a
+     grey noon no sun disc. */
+  function weatherVeil(layer, cfg, ws, ctx) {
+    if (!cfg.veil || !ws) { weatherDrop(layer, 'scw-veil'); return; }
+    const v = weatherChild(layer, 'scw-veil');
+    const L = ctx.light;
+    const a = clamp(smoothstep(clamp((ws.cover - 0.35) / 0.65, 0, 1)) * 0.82 + ws.storm * 0.12, 0, 0.95);
+    v.style.background = 'linear-gradient(180deg,' + rgb(L.veil.map((x) => x * 0.85)) + ',' +
+      rgb(lerpA(L.veil, L.top, 0.2)) + ')';
+    v.style.opacity = a.toFixed(3);
+  }
+
+  function drawWeather(layer, cfg, ws, ctx) {
+    weatherVeil(layer, cfg, ws, ctx);
+    // the first frame lands at once; only later changes take their time
+    if (!layer.classList.contains('scw-ready')) {
+      setTimeout(() => layer.classList.add('scw-ready'), 50);
+    }
+  }
+
   class SunCycleBgCard extends HTMLElement {
     // The visual editor. Lovelace asks the class, not the element.
     static getConfigElement() {
@@ -1480,6 +1687,7 @@
         : null;
       this._planetCfg = readPlanetConfig(this._cfg.planets, assets);
       this._milkyCfg = readMilkyConfig(this._cfg.milky_way, assets);
+      this._weatherCfg = readWeatherConfig(this._cfg.weather);
       this._warmDusk = this._cfg.twilight_palette === true;
 
       // --- optional artwork for the two discs ----------------------------
@@ -1532,7 +1740,66 @@
       const moved = this._painted === undefined ||
         Math.abs(e - this._painted.e) >= 0.15 ||
         (this._azim !== null && Math.abs(a - this._painted.a) >= 0.6);
-      if (moved) this._apply(); else { this._issSync(); this._planetSync(); }
+      if (moved) this._apply(); else { this._issSync(); this._planetSync(); this._weatherSync(); }
+    }
+
+    /* The weather entities change every few minutes at most, and `hass` lands
+       on every state change in the house: print first, draw only on a change.
+       The print carries the light as well (sun elevation in half degrees, and
+       the moon when it matters), because the same overcast is grey at noon
+       and near-black at midnight. */
+    _weatherSync() {
+      const cfg = this._weatherCfg, c = this._container;
+      if (!c) return;
+      if (!cfg) { zdejmij(c, '.sun-cycle-weather'); return; }
+      const st = this._hass && this._hass.states;
+      if (!st || this._elev === undefined) return;
+      const sig = podpis(cfg);
+      let layer = c.querySelector('.sun-cycle-weather');
+      if (layer && layer._scsPodpis !== sig) { layer.scsStop(); layer.remove(); layer = null; }
+      if (!layer) {
+        layer = buildWeather(cfg);
+        layer._scsPodpis = sig;
+        this._before(c, layer);
+      } else {
+        // above every sky layer, including one built after it (a moon switched
+        // on later, a star field rebuilt on an edit)
+        let n = layer.nextElementSibling;
+        while (n && !/(^|\s)sun-cycle-/.test(n.className || '')) n = n.nextElementSibling;
+        if (n) this._before(c, layer);
+      }
+      const ws = readWeather(st, cfg);
+      const ctx = this._weatherCtx(ws);
+      const box = c.getBoundingClientRect();
+      const print = podpis([ws, Math.round(this._elev * 2), ctx.moonPrint,
+                            Math.round(box.width), Math.round(box.height)]);
+      if (print === layer._print) return;
+      layer._print = print;
+      drawWeather(layer, cfg, ws, ctx);
+    }
+
+    _weatherCtx(ws) {
+      const c = this._container, e = this._elev;
+      const r = c.getBoundingClientRect();
+      let moon = null;
+      if (isFinite(this._lat) && isFinite(this._lon) && e < -6) {
+        const J = julian(new Date());
+        const se = sunEq(J), me = moonEq(J);
+        const mp = altaz(me.ra, me.dec, J, this._lat, this._lon);
+        const elong = ((me.lam - se.lam) % 360 + 360) % 360;
+        moon = { alt: mp.alt, az: mp.az, k: (1 - Math.cos(elong * D2R)) / 2 };
+      }
+      return {
+        e, moon,
+        moonPrint: moon ? [Math.round(moon.alt / 5), Math.round(moon.k * 10)] : null,
+        light: weatherLight(e, ws ? ws.storm : 0, moon),
+        W: Math.round(r.width) || window.innerWidth,
+        H: Math.round(r.height) || window.innerHeight,
+        az0: this._az0, az1: this._az1,
+        proj: (alt, az) => this._project(alt, az),
+        lat: this._lat, lon: this._lon,
+        month: new Date().getMonth() + 1,
+      };
     }
 
     /* `hass` arrives on every state change in the house; the ISS pass sensors
@@ -1995,6 +2262,9 @@
         ext.style.transition = 'opacity 2s linear';
       }
 
+      // --- weather, last: it covers everything above ------------------------
+      this._weatherSync();
+
       if (!force) this._painted = { e, a: this._azim === null ? 0 : this._azim };
     }
 
@@ -2116,6 +2386,18 @@
         o: 'Roll of the photograph. "frame" only.' },
       { k: 'milky_way.fov', et: 'frame: field (deg)', typ: 'zakres', min: 20, max: 150, krok: 1, dom: 62, m: 'fov',
         o: 'How much sky the photograph spans. The measured value is 62; more enlarges it. "frame" only.' },
+    ] },
+    { tytul: 'Weather', wlacznik: 'weather', domWl: false, skrotWl: {}, pola: [
+      { k: 'weather', et: 'weather', typ: 'bool', dom: false, glowna: true,
+        o: 'The sky follows the weather entity: cover dims it, and the effects below draw what it reports.' },
+      { k: 'weather.entity', et: 'weather entity', typ: 'tekst', dom: '', hint: 'weather.home',
+        o: 'Condition, cloud cover, wind and visibility come from here. Without it nothing is drawn.' },
+      { k: 'weather.clouds_entity', et: 'cloud layers', typ: 'tekst', dom: '', hint: 'weather.astroweather',
+        o: 'Optional: cover per height and fog (AstroWeather attributes). Without it the total cover is spread over the heights.' },
+      { k: 'weather.quality', et: 'quality', typ: 'wybor', opcje: ['high', 'medium', 'low'], dom: 'medium', w: 'quality',
+        o: 'Particle count and the resolution strips are painted at. low suits a weak kiosk.' },
+      { k: 'weather.veil', et: 'sky veil', typ: 'bool', dom: true, w: 'veil',
+        o: 'Overcast greys the sky and hides the stars, the moon and the sun disc.' },
     ] },
     { tytul: 'Discs and files', pola: [
       { k: 'sun_image_width', et: 'sun: width (%)', typ: 'zakres', min: 3, max: 25, krok: 0.5, dom: 10.5,
@@ -2639,9 +2921,10 @@
      assumed. */
   function edytorSprawdzDomyslne() {
     const bledy = [];
-    const zrodla = { s: readStarConfig({}), p: readPlanetConfig(true), m: readMilkyConfig({}) };
+    const zrodla = { s: readStarConfig({}), p: readPlanetConfig(true), m: readMilkyConfig({}),
+                     w: readWeatherConfig({}) };
     for (const g of EDYTOR_GRUPY) for (const pole of g.pola) {
-      for (const [znacznik, blok] of [['s', 's'], ['p', 'p'], ['m', 'm']]) {
+      for (const [znacznik, blok] of [['s', 's'], ['p', 'p'], ['m', 'm'], ['w', 'w']]) {
         if (!pole[znacznik]) continue;
         let v = zrodla[blok];
         for (const k of String(pole[znacznik]).split('.')) v = v && v[k];
@@ -2660,6 +2943,7 @@
 
   // A tuning page builds star layers directly, with its own frames and configs.
   window.sunCycleBg = { buildStars, readStarConfig, COMPASS, paletteFor,
+                       readWeatherConfig, readWeather, weatherLight,
                        buildMilky, readMilkyConfig, drawMilky, galToEq, frameToGal,
                        buildPlanets, readPlanetConfig, placePlanets,
                        PLANET_BODIES, PLANET_DISCS, PLANET_SCALE, PLANET_SCALES,
