@@ -3,7 +3,14 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 2.3.3
+## 2.4.0
+
+### Changed
+- Wind (`effects_style: new`) is leaves only: the curly gust lines are gone. Leaves show from the first km/h and are scattered over the frame at once; there are more of them and they fly faster as the wind rises, and the gust swell is as strong as the gust sensor is above the mean wind.
+
+### Added
+- `weather.wind_entity`: wind speed from a sensor (e.g. a Netatmo anemometer) instead of the weather entity.
+
 
 ### Changed
 - Clouds are back to the classic strips by default (`weather.clouds_style: classic`): painted once and slid by the compositor, they move smoothly on the Pi 5 kiosk. The shader clouds (`clouds_style: shader`) stuttered there and, slid between renders (2.3.1), jumped back and forth, because their tiers move at different speeds. The other new effects stay.

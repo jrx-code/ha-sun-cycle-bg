@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.3.3 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.4.0 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1767,6 +1767,7 @@
       entity: str(w.entity),
       clouds_entity: str(w.clouds_entity),
       gust_entity: str(w.gust_entity),
+      wind_entity: str(w.wind_entity),
       precipitation_entity: str(w.precipitation_entity),
       season_entity: str(w.season_entity),
       quality: WEATHER_QUALITY[w.quality] ? w.quality : 'medium',
@@ -1878,7 +1879,11 @@
       storm: c[1],
       precip: c[2] || null,
       intensity: c[3] || 0,
-      wind: windKmh(a.wind_speed, a.wind_speed_unit),
+      wind: (() => {                          // a wind sensor (e.g. the Netatmo anemometer) wins over the forecast
+        const we = cfg.wind_entity && states[cfg.wind_entity];
+        return we && isFinite(Number(we.state)) && we.state !== '' ? windKmh(we.state, (we.attributes || {}).unit_of_measurement)
+          : windKmh(a.wind_speed, a.wind_speed_unit);
+      })(),
       bearing: bearingOf(a.wind_bearing),
     };
   }
@@ -3975,91 +3980,20 @@ void main(){
     };
     img.src = w.leafBase + plik;
   }
-  /* Wind lines: a curve built by a turtle from its curvature along the arc
-     (a wave around the wind's heading, plus a loop as a sin^2 bump turning a
-     full circle), units of frame heights; drawn as a filled ribbon, tapered,
-     between a tail and a head index. Chosen on demo/tlo-wiatr-zawijasy.html
-     (variant 3, "wiązka"). */
-  function fxCurve(o) {
-    const N = o.n, L = o.L, ds = L / N;
-    let x = o.x, y = o.y, th = o.th + o.A * Math.sin(o.f);
-    const pts = [[x, y]];
-    for (let i = 1; i <= N; i++) {
-      const s = i * ds;
-      let k = o.A * o.w * Math.cos(o.w * s + o.f);
-      if (o.loop) {
-        const u = (s - (o.loop.s - o.loop.L / 2)) / o.loop.L;
-        if (u > 0 && u < 1) k += o.loop.sign * (4 * Math.PI / o.loop.L) * Math.sin(Math.PI * u) ** 2;
-      }
-      th += k * ds;
-      x += Math.cos(th) * ds; y += Math.sin(th) * ds;
-      pts.push([x, y]);
-    }
-    return pts;
-  }
-  function fxBundle(kier, y, asp) {
-    const L = 0.9 + Math.random() * 0.4;
-    const x = kier > 0 ? -0.1 + Math.random() * asp * 0.75 : asp * 0.25 + Math.random() * asp * 0.85;
-    const th = (kier > 0 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.2, wv = 4 + Math.random() * 3, f = Math.random() * 6;
-    const nitki = [0, 1, 2].map((j) => fxCurve({ x: x + (j - 1) * 0.004, y: y + (j - 1) * 0.012, th, L, n: 200,
-      A: 0.28 * (0.8 + 0.2 * j), w: wv, f: f + j * 0.35,
-      loop: Math.random() < 0.8 ? { s: L * (0.25 + 0.2 * j + Math.random() * 0.1), L: 0.16 + Math.random() * 0.05, sign: -kier } : null }));
-    return { nitki, P: nitki[1], dlug: L, ogon: 200 * 0.6, glowa: 0, ox: 0 };
-  }
-  function fxRibbon(g, P, a, b, szer, ox, sc) {
-    a = Math.max(0, a); b = Math.min(P.length - 1, b);
-    if (b - a < 1.5) return;
-    const i0 = Math.floor(a), i1 = Math.ceil(b), Lft = [], Rgt = [];
-    for (let i = i0; i <= i1; i++) {
-      const p = P[i], q = P[Math.min(P.length - 1, i + 1)], r = P[Math.max(0, i - 1)];
-      let tx = q[0] - r[0], ty = q[1] - r[1];
-      const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
-      const w = szer(clamp((i - a) / (b - a), 0, 1));
-      const X = ox + p[0] * sc, Y = p[1] * sc;
-      Lft.push([X - ty * w, Y + tx * w]); Rgt.push([X + ty * w, Y - tx * w]);
-    }
-    g.beginPath();
-    g.moveTo(Lft[0][0], Lft[0][1]);
-    for (let i = 1; i < Lft.length; i++) g.lineTo(Lft[i][0], Lft[i][1]);
-    for (let i = Rgt.length - 1; i >= 0; i--) g.lineTo(Rgt[i][0], Rgt[i][1]);
-    g.closePath();
-    g.fill();
-  }
   function fxWind(D, t, dt, W, H) {
     const w = D.wind, g = D.g, k = H / 1080, kier = w.kier, s = w.sila;
-    const G = Math.pow(fxGust(t), 1.3);
-    const V = (0.35 + w.kmh / 45) * W / 6 * (0.55 + 0.9 * G);
-    // wind lines (2.3.0): bundles of three thin strands on a wave, each strand
-    // looping once somewhere else, drawn on from the head and erased from the
-    // tail, drifting downwind; more of them in a stronger wind and in a gust
-    const asp = W / H, maxW = Math.max(2, Math.round(3 * w.n));
-    const vFrame = (0.05 + w.kmh / 260) * (1 + 1.4 * G);              // frame widths per second
-    if (t > D.nextSmuga && D.smugi.length < maxW) {
-      D.smugi.push(fxBundle(kier, 0.08 + Math.random() * 0.72, asp));
-      D.nextSmuga = t + (1.4 + Math.random() * 2) / (0.5 + w.kmh / 40) / (0.7 + G);
-    }
-    const kol = w.e > 5 ? [228, 255, 246] : w.e > -6 ? [200, 245, 232] : [150, 225, 205];
-    const jas = w.e > 5 ? 0.8 : w.e > -6 ? 0.62 : 0.42;
-    const w0 = Math.max(0.7, 1.3 * H / 540);
-    g.globalAlpha = 1;
-    g.fillStyle = 'rgba(' + kol + ',' + (0.8 * jas).toFixed(3) + ')';
-    D.smugi = D.smugi.filter((l) => {
-      l.glowa += vFrame * asp / l.dlug * (l.P.length - 1) * 1.5 * dt;
-      l.ox += kier * vFrame * asp * 0.25 * dt;
-      if (l.glowa > l.P.length - 1 + l.ogon) return false;
-      l.nitki.forEach((P, j) => {
-        const d = j * 6;                                  // strands lag a little behind each other
-        fxRibbon(g, P, l.glowa - l.ogon - d, l.glowa - d,
-                 (u) => w0 * (1 - 0.3 * j) * Math.pow(Math.sin(Math.PI * u), 0.6), l.ox * H, H);
-      });
-      return true;
-    });
+    // the gust swell: a slow oscillation, as strong as the sensor's gust is above the mean wind
+    const G = Math.pow(fxGust(t), 1.3) * (0.25 + 0.75 * w.gust);
+    const V = (0.12 + w.kmh / 40) * W / 6 * (0.6 + 0.9 * G);
     if (D.leafSprites) {
       const skala = LEAF_SETS[w.liscie][2];
-      const ile = Math.round((4 + 14 * s) * w.n);
-      if (D.liscie.length < ile && Math.random() < dt * (0.6 + 2 * G)) {
+      const ile = Math.round((3 + 24 * s) * w.n);
+      // at once: the first leaves are scattered over the frame instead of all entering at the edge
+      const naraz = !D.liscieStart;
+      if (naraz) D.liscieStart = true;
+      for (let r = 0; r < (naraz ? Math.ceil(ile * 0.6) : 1); r++) if (D.liscie.length < ile && (naraz || Math.random() < dt * (0.8 + 3 * s + 2 * G))) {
         const z = [0.45, 0.7, 1][Math.random() * 3 | 0];
-        D.liscie.push({ x: kier > 0 ? -60 * k : W + 60 * k, y: Math.random() * H * 0.7, z, kom: Math.random() * D.leafSprites.length | 0,
+        D.liscie.push({ x: naraz ? Math.random() * W : (kier > 0 ? -60 * k : W + 60 * k), y: Math.random() * H * 0.7, z, kom: Math.random() * D.leafSprites.length | 0,
                         bok: (34 + Math.random() * 22) * k * z * skala, vx: 0, vy: 0, th: Math.random() * 6.3, om: (Math.random() - 0.5) * 2,
                         psi: Math.random() * 6.3, psiV: 2 + Math.random() * 5, os: Math.random() * 3.14, ph: Math.random() * 6.3,
                         phV: 1.8 + Math.random() * 2.2 });
@@ -4215,13 +4149,16 @@ void main(){
     const wx = weatherWindX(ws, ctx);
     const I = clamp(ws.rate !== null && ws.rate !== undefined ? ws.rate : ws.intensity, 0.15, 1);
     const hail = cfg.hail && ws.precip === 'hail' ? { I, n: 0.4 + 0.6 * n, wx, dzien: e > 5 } : null;
-    let sila = 0;
+    // leaves from the first km/h (2.4.0): more and faster with the wind, lifted by real gusts
+    let sila = 0, gust = 0, v = 0;
     if (cfg.wind) {
-      const v = Math.max(ws.wind, ws.gust !== null && ws.gust !== undefined ? ws.gust * 0.8 : 0);
-      sila = clamp((v - 18) / 40, 0, 1);
+      const g = ws.gust !== null && ws.gust !== undefined ? ws.gust : 0;
+      v = Math.max(ws.wind, g * 0.8);
+      sila = v >= 1 ? clamp(v / 45, 0.08, 1) : 0;
       if (ws.cond === 'windy' || ws.cond === 'windy-variant') sila = Math.max(sila, 0.5);
+      gust = clamp((g - ws.wind) / Math.max(ws.wind, 4), 0, 1);
     }
-    const wind = sila > 0 ? { sila, kier: wx < 0 ? -1 : 1, kmh: Math.max(ws.wind, 20), n: 0.4 + 0.6 * n, dzien: e > 5, e,
+    const wind = sila > 0 ? { sila, gust, kier: wx < 0 ? -1 : 1, kmh: v, n: 0.4 + 0.6 * n, dzien: e > 5, e,
                                liscie: leafSeason(cfg.leaves, ctx.season), leafBase: cfg.leafBase } : null;
     const czest = cfg.lightning ? LIGHTNING[ws.cond] || 0 : 0;
     if (!hail && !wind && !czest) { fx2Destroy(layer); return {}; }
@@ -4234,7 +4171,7 @@ void main(){
     D.hail = hail;
     if (!hail) { D.kul = []; D.odb = []; D.drob = []; }
     D.wind = wind;
-    if (!wind) { D.smugi = []; D.liscie = []; }
+    if (!wind) { D.smugi = []; D.liscie = []; D.liscieStart = false; }
     else fxLeafSprites(D, wind);
     D.storm = czest ? { czest, dzien: e > 5 } : null;
     D.calm = weatherCalm();
