@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.3.2 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.3.3 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -1784,6 +1784,9 @@
       rain_style: w.rain_style === 'classic' ? 'classic' : 'shader',
       // the other effects: drawn on two canvases, or the classic layers
       effects_style: w.effects_style === 'classic' ? 'classic' : 'new',
+      // clouds (2.3.3): the classic strips slid by the compositor by default; the shader
+      // clouds stuttered on the Pi 5 kiosk and, slid between renders, jumped back and forth
+      clouds_style: w.clouds_style === 'shader' ? 'shader' : 'classic',
       aurora: (() => {
         const a = w.aurora;
         if (!a || typeof a !== 'object' || !str(a.kp_entity)) return null;
@@ -2045,9 +2048,10 @@
      The canvas is repainted only when the cover or the light changes. */
   const CLOUD_TIERS = [
     // tier, cover key, max clouds, band [top, bottom] in frame height, size, opacity, speed share
-    { k: 'high', cls: 'scw-clouds-high', max: 9, y: [0.03, 0.26], s: 0.42, a: 0.62, v: 0.45, typ: 'cirrus' },
-    { k: 'mid', cls: 'scw-clouds-mid', max: 8, y: [0.10, 0.44], s: 0.30, a: 0.92, v: 0.7, typ: 'alto' },
-    { k: 'low', cls: 'scw-clouds-low', max: 9, y: [0.20, 0.62], s: 0.30, a: 1, v: 1, typ: 'cumulus' },
+    // opacities lowered in 2.3.3 (were 0.62 / 0.92 / 1): the dashboard's text stays readable over a cloud
+    { k: 'high', cls: 'scw-clouds-high', max: 9, y: [0.03, 0.26], s: 0.42, a: 0.5, v: 0.45, typ: 'cirrus' },
+    { k: 'mid', cls: 'scw-clouds-mid', max: 8, y: [0.10, 0.44], s: 0.30, a: 0.7, v: 0.7, typ: 'alto' },
+    { k: 'low', cls: 'scw-clouds-low', max: 9, y: [0.20, 0.62], s: 0.30, a: 0.75, v: 1, typ: 'cumulus' },
   ];
 
   function cloudPuffs(g, typ, w, h, rnd) {
@@ -3715,7 +3719,7 @@ void main(){
     if (!ws) return on;
     const L = ctx.light, e = L.e, wx = weatherWindX(ws, ctx), kier = wx < 0 ? -1 : 1;
     const sun = fxSun(ctx), sunA = clamp((e + 4) / 14, 0, 1);
-    if (cfg.clouds && Math.max(ws.low, ws.mid, ws.high) > 0.02) {
+    if (cfg.clouds && cfg.clouds_style === 'shader' && Math.max(ws.low, ws.mid, ws.high) > 0.02) {
       const szary = clamp((ws.cover - 0.5) / 0.5, 0, 1) * 0.5;
       // at night the moon, when it is up, lights the clouds the way the sun does by day
       const noc = clamp((-4 - e) / 8, 0, 1);
@@ -5203,6 +5207,8 @@ void main(){
         o: 'Drops land, sit and dry while it rains; big ones slide down leaving a trail. Under the cards, not over the text.' },
       { k: 'weather.rain_style', et: 'rain style', typ: 'wybor', opcje: ['shader', 'classic'], dom: 'shader', w: 'rain_style',
         o: 'shader: rain and the glass drops drawn by one WebGL canvas (thin streaks in four depths, lens drops on fogged glass), 30 fps cap. classic: the older DOM strips; also the fallback without WebGL.' },
+      { k: 'weather.clouds_style', et: 'clouds style', typ: 'wybor', opcje: ['classic', 'shader'], dom: 'classic', w: 'clouds_style',
+        o: 'classic: cloud strips painted once and slid by the compositor, smooth and cheap. shader: clouds in perspective lit from the sun, drawn by WebGL (heavier; stutters on a slow GPU).' },
       { k: 'weather.effects_style', et: 'effects style', typ: 'wybor', opcje: ['new', 'classic'], dom: 'new', w: 'effects_style',
         o: 'new: clouds in perspective lit from the sun, fog banks, snow in six depths and the aurora drawn by one WebGL canvas; bouncing hail, fluttering leaves and branched lightning on one 2D canvas. classic: the older layers; also the fallback without WebGL.' },
       { k: 'weather.aurora.kp_entity', et: 'aurora: Kp sensor', typ: 'encja', domeny: ['sensor', 'input_number'], dom: '', hint: 'sensor.planetary_k_index',

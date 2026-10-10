@@ -3,7 +3,12 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 2.3.2
+## 2.3.3
+
+### Changed
+- Clouds are back to the classic strips by default (`weather.clouds_style: classic`): painted once and slid by the compositor, they move smoothly on the Pi 5 kiosk. The shader clouds (`clouds_style: shader`) stuttered there and, slid between renders (2.3.1), jumped back and forth, because their tiers move at different speeds. The other new effects stay.
+- Classic cloud opacity lowered (low 1 -> 0.75, middle 0.92 -> 0.7, high 0.62 -> 0.5) so the dashboard's text stays readable.
+
 
 ### Fixed
 - Clouds (`effects_style: new`) looked like smeared white paint and covered the dashboard's text: the low tier is smaller (sky-plane scale 3.4 instead of 2.8), warped half as much, with a lumpier cauliflower edge; thin edges are translucent by day too, and a cloud's opacity tops out at about 0.8.
