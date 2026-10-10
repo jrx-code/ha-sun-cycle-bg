@@ -3,7 +3,12 @@
 All notable changes to this card. Versions before 1.16.0 are described in the
 [GitHub releases](https://github.com/jrx-code/hassio-sun-cycle-bg/releases).
 
-## 2.3.1
+## 2.3.2
+
+### Fixed
+- Clouds (`effects_style: new`) looked like smeared white paint and covered the dashboard's text: the low tier is smaller (sky-plane scale 3.4 instead of 2.8), warped half as much, with a lumpier cauliflower edge; thin edges are translucent by day too, and a cloud's opacity tops out at about 0.8.
+- The middle tier and the cirrus ended in a hard horizontal line (at 90 % and 80 % of the frame height); they now fade out before it.
+
 
 ### Fixed
 - Clouds stuttered on the Pi 5 kiosk: the shader was capped at 15 fps and managed about 10 uneven frames a second there (the WebView runs near 28 fps, GPU-bound), so the clouds moved in visible jumps. When clouds are the only shader effect, they are now rendered every 2 s on a canvas 25 % wider than the frame, and between renders the compositor slides that canvas at the clouds' own speed (taken from the shader's sky plane), so they glide at the page's frame rate and the GPU renders them 20 times less often. With fog, snow or aurora on as well the canvas renders as before. Kiosk: about 59 frames a second, 0 to 0.3 % janky.

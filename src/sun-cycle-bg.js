@@ -1,4 +1,4 @@
-/* sun-cycle-bg 2.3.1 — a living day-cycle background for Home Assistant dashboards.
+/* sun-cycle-bg 2.3.2 — a living day-cycle background for Home Assistant dashboards.
  *
  * An invisible Lovelace card that paints the view background from the real
  * position of the sun and moon, and keeps it moving all day:
@@ -3412,7 +3412,7 @@ void main(){
     vec2 p = plaszcz(uv, asp, 1.3) + vec2(uT*uWind*0.6, 0.);
     float w = fbm2(p*vec2(1.2, 2.5) + 3.1);
     float n = fbm3(vec2(p.x*0.9 + 0.7*w, p.y*7.0 + 2.*w));
-    float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz);
+    float d = pokr(n, uCov.z*0.8, 0.28)*(1. - horyz)*smoothstep(0.8, 0.68, uv.y);   // fade out before the cut-off (2.3.2)
     vec3 c = mix(uTop, uBot, 0.25) + 0.25*uSunA*exp(-dSun*2.5)*vec3(1., 0.92, 0.8);
     o = nad(o, c, d*0.55*(1. - 0.8*zakr)*(1. - 0.75*noc));
   }
@@ -3420,7 +3420,7 @@ void main(){
     vec2 p = plaszcz(uv, asp, 2.4) + vec2(uT*uWind*1.4, uT*0.01);
     float n = fbm4(p*2.0 + 1.7);
     float n2s = fbm3((p + vec2(sd.x, -0.6)*0.05)*2.0 + 1.7);
-    float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz);
+    float d = pokr(n, uCov.y*0.85, 0.08)*(1. - 0.7*horyz)*smoothstep(0.9, 0.78, uv.y); // no hard edge at 0.9 (2.3.2)
     float lit = clamp(0.6 + 4.0*(n - n2s - 0.02), 0., 1.);
     lit = mix(lit, 0.4, 0.7*noc);
     vec3 c = mix(uBot, uTop, lit) + uGlow*noc*0.5*luna;
@@ -3437,21 +3437,21 @@ void main(){
     o = nad(o, c, a);
   }
   if (uCov.x > 0.02){
-    vec2 p = plaszcz(uv, asp, 2.8) + vec2(uT*uWind*2.4, 0.);
+    vec2 p = plaszcz(uv, asp, 3.4) + vec2(uT*uWind*2.4, 0.);
     vec2 w = vec2(fbm2(p*0.9 + vec2(0., uT*0.012)), fbm2(p*0.9 + vec2(5.2, 1.3 - uT*0.01)));
-    float wa = mix(0.22, 0.45, smoothstep(0.0, 0.6, uv.y));           // less warp at the top: no smear
+    float wa = mix(0.12, 0.25, smoothstep(0.0, 0.6, uv.y));           // little warp: puffs, not smeared paint (2.3.2)
     vec2 qq = p + wa*(w - 0.5);
-    float n = fbm4(qq*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qq*4.5) - 0.5);
+    float n = fbm4(qq*vec2(1.0, 1.5)) + 0.16*(fbm2(OKT*qq*5.5) - 0.5);   // a lumpier, cauliflower edge
     vec2 ldD = mix(vec2(0., -1.), sd, 0.45 + 0.3*uSunA);              // day: sky above, sun's side
     vec2 ldN = mix(vec2(0., 1.), sd, min(1., uSunA*2.));               // night: the town below, or the moon
     vec2 ld = normalize(mix(ldD, ldN, noc) + vec2(0., 1e-4));
-    vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 2.8) + vec2(uT*uWind*2.4, 0.);
+    vec2 ps = plaszcz(clamp(uv + ld*0.035, 0., 1.), asp, 3.4) + vec2(uT*uWind*2.4, 0.);
     vec2 qs = ps + wa*(w - 0.5);
-    float ns = fbm4(qs*vec2(1.0, 1.5)) + 0.10*(fbm2(OKT*qs*4.5) - 0.5);
+    float ns = fbm4(qs*vec2(1.0, 1.5)) + 0.16*(fbm2(OKT*qs*5.5) - 0.5);
     float cov = uCov.x*(1. - 0.6*uDeck);
     float thr = mix(0.70, 0.30, cov);
     float d = smoothstep(thr, thr + mix(0.03, 0.07, uv.y) + 0.06*noc, n);  // crisper at the top, softer at night
-    d *= mix(1., smoothstep(thr, thr + 0.2, n), 0.65*noc);                 // night: thin edges thin out, no cut-outs
+    d *= mix(1., smoothstep(thr, thr + 0.2, n), 0.35 + 0.3*noc);          // thin edges thin out (more at night): no cut-outs
     float podst = smoothstep(thr - 0.04, thr + 0.10, ns + 0.08);
     float grub = clamp((n - thr)/0.3, 0., 1.);
     float lit = clamp(0.45 + 6.0*(n - ns), 0., 1.);
@@ -3463,7 +3463,8 @@ void main(){
     c += uDusk*vec3(0.25, 0.12, 0.05)*(1. - lit)*smoothstep(0.3, 0.9, uv.y)*(1. - 0.6*zakr);
     c = mix(c, mix(uVeil, uTop, 0.4), horyz*0.5);
     c += uGlow*noc*(0.2 + 0.8*luna)*(1. - 0.4*grub);                        // undersides catch the town's glow
-    o = nad(o, c, d*podst*0.97*(1. - 0.4*horyz)*(1. - 0.25*noc - 0.25*noc*uDeck));
+    // at most ~0.8: the dashboard's text has to stay readable over a cloud (2.3.2)
+    o = nad(o, c, d*podst*0.82*(1. - 0.4*horyz)*(1. - 0.25*noc - 0.25*noc*uDeck));
   }
   gl_FragColor = o;
 }` },
